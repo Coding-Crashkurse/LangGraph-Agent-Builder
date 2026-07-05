@@ -1,0 +1,75 @@
+{
+  "slug": "library-rag",
+  "name": "Library RAG Agent",
+  "description": "Answers questions about the library corpus with human release approval.",
+  "version": 1,
+  "nodes": [
+    {
+      "id": "retrieve",
+      "component": "pgvector_retriever",
+      "component_version": 1,
+      "config": { "collection": "library-docs", "top_k": 4 },
+      "position": { "x": 120, "y": 160 }
+    },
+    {
+      "id": "agent",
+      "component": "llm_agent",
+      "component_version": 1,
+      "config": {
+        "model": "openai:gpt-4o-mini",
+        "system_prompt": "You answer questions about the library corpus. Ground every answer in the provided context documents and cite the source names in brackets.",
+        "use_documents": true,
+        "temperature": 0.0
+      },
+      "position": { "x": 420, "y": 160 }
+    },
+    {
+      "id": "tools",
+      "component": "mcp_toolset",
+      "component_version": 1,
+      "config": {
+        "transport": "streamable_http",
+        "url": "http://localhost:9000/mcp"
+      },
+      "position": { "x": 420, "y": 380 }
+    },
+    {
+      "id": "review",
+      "component": "human_approval",
+      "component_version": 1,
+      "config": { "prompt": "Release this answer?" },
+      "position": { "x": 720, "y": 160 }
+    }
+  ],
+  "edges": [
+    { "kind": "control", "source": "__start__", "target": "retrieve" },
+    { "kind": "control", "source": "retrieve", "target": "agent" },
+    { "kind": "attach", "source": "tools", "target": "agent" },
+    { "kind": "control", "source": "agent", "target": "review" },
+    { "kind": "control", "source": "review", "source_handle": "approved", "target": "__end__" },
+    { "kind": "control", "source": "review", "source_handle": "rejected", "target": "agent" }
+  ],
+  "publish": {
+    "a2a": true,
+    "mcp": true,
+    "agent_card": {
+      "name": "Library RAG Agent",
+      "description": "Answers questions about the library corpus, grounded in retrieved documents.",
+      "skills": [
+        {
+          "id": "qa",
+          "name": "Corpus Q&A",
+          "description": "Question answering over the ingested library collection.",
+          "tags": ["rag", "qa"],
+          "examples": ["Who wrote The Name of the Rose?", "Summarize the chapter on indexing."]
+        }
+      ],
+      "default_input_modes": ["text/plain"],
+      "default_output_modes": ["text/plain"]
+    },
+    "mcp_tool": {
+      "name": "ask_library",
+      "description": "Ask the library corpus a question (non-HITL runs only)."
+    }
+  }
+}

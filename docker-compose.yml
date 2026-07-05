@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    container_name: graphforge-postgres
+    environment:
+      POSTGRES_USER: graphforge
+      POSTGRES_PASSWORD: graphforge
+      POSTGRES_DB: graphforge
+    ports:
+      # 5432 on this machine is commonly taken by other projects; GraphForge uses 55432.
+      - "55432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U graphforge -d graphforge"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  pgdata:
