@@ -83,7 +83,7 @@ async def build_services(settings: Settings) -> AppServices:
     orchestrator = Orchestrator(
         settings=settings, registry=registry, secrets=secrets, runs=runs, executor=executor
     )
-    return AppServices(
+    services = AppServices(
         settings=settings,
         engine=engine,
         sessions=sessions,
@@ -99,6 +99,10 @@ async def build_services(settings: Settings) -> AppServices:
         mcp_servers=McpServersService(sessions),
         orchestrator=orchestrator,
     )
+    from lga.services.locator import set_services
+
+    set_services(services)
+    return services
 
 
 def _static_dir(settings: Settings) -> Path | None:
@@ -109,9 +113,7 @@ def _static_dir(settings: Settings) -> Path | None:
     return bundled if (bundled / "index.html").exists() else None
 
 
-def create_app(
-    settings: Settings | None = None, *, backend_only: bool = False
-) -> FastAPI:
+def create_app(settings: Settings | None = None, *, backend_only: bool = False) -> FastAPI:
     settings = settings or get_settings()
 
     @asynccontextmanager

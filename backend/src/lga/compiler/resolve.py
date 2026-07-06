@@ -77,8 +77,7 @@ def _resolve_refs(
                         f"secret {name!r} does not exist",
                         node_id=node_id,
                         field=field,
-                        fix_hint="Create a credential variable or set "
-                        f"LGA_CRED_{name.upper()}.",
+                        fix_hint=f"Create a credential variable or set LGA_CRED_{name.upper()}.",
                     )
                 )
                 return None

@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from typing import Annotated, Optional
+from typing import Annotated
 
 import typer
 
@@ -38,7 +38,7 @@ app.add_typer(apikey_app, name="apikey")
 def migrate(
     revision: Annotated[str, typer.Option(help="Target revision")] = "head",
     sql: Annotated[bool, typer.Option("--sql", help="Offline: print SQL only")] = False,
-    env_file: Annotated[Optional[Path], typer.Option(help="Extra .env file")] = None,
+    env_file: Annotated[Path | None, typer.Option(help="Extra .env file")] = None,
 ) -> None:
     """Alembic upgrade against the resolved database."""
     settings = build_settings(env_file)
@@ -53,8 +53,8 @@ def migrate(
 
 @app.command()
 def config(
-    env_file: Annotated[Optional[Path], typer.Option(help="Extra .env file")] = None,
-    json_out: Annotated[bool, typer.Option("--json")] = False,
+    env_file: Annotated[Path | None, typer.Option(help="Extra .env file")] = None,
+    json_out: Annotated[bool, typer.Option("--json/--no-json")] = False,
 ) -> None:
     """Print the effective resolved config (secrets masked) + source per key."""
     settings = build_settings(env_file)
@@ -77,7 +77,7 @@ def config(
 
 
 @app.command()
-def version(json_out: Annotated[bool, typer.Option("--json")] = False) -> None:
+def version(json_out: Annotated[bool, typer.Option("--json/--no-json")] = False) -> None:
     """Package version, A2A protocolVersion, LangGraph version, DB backend."""
     import langgraph
 

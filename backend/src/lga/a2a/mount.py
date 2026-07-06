@@ -11,12 +11,12 @@ from typing import TYPE_CHECKING, Any
 
 import httpx
 from a2a.server.apps import A2AStarletteApplication
-from a2a.server.request_handlers import DefaultRequestHandler
 from starlette.responses import JSONResponse
 from starlette.routing import Route
 
 from lga.a2a.card import LEGACY_WELL_KNOWN_PATH, WELL_KNOWN_PATH, build_card
 from lga.a2a.executor import LGAAgentExecutor
+from lga.a2a.handler import LGARequestHandler
 from lga.a2a.push import DbPushConfigStore, GuardedPushSender
 from lga.a2a.scope import current_client_scope, scope_for_api_key, scope_for_ip
 from lga.a2a.tasks import DbTaskStore
@@ -35,14 +35,14 @@ def effective_path(scope: dict) -> str:
     path: str = scope.get("path", "/")
     root: str = scope.get("root_path", "")
     if root and path.startswith(root):
-        path = path[len(root):]
+        path = path[len(root) :]
     return path or "/"
 
 
 class _AgentAuthMiddleware:
     """HTTP-layer auth (SPEC §7.10/§7.11): 401 before JSON-RPC ever sees the request."""
 
-    def __init__(self, app: Any, svc: "AppServices", auth_mode: str) -> None:
+    def __init__(self, app: Any, svc: AppServices, auth_mode: str) -> None:
         self._app = app
         self._svc = svc
         self._auth_mode = auth_mode
@@ -78,7 +78,7 @@ class _AgentAuthMiddleware:
 
 
 class A2AManager:
-    def __init__(self, svc: "AppServices") -> None:
+    def __init__(self, svc: AppServices) -> None:
         self._svc = svc
         self._apps: dict[str, Any] = {}
         self._cards: dict[str, dict[str, Any]] = {}
@@ -117,7 +117,7 @@ class A2AManager:
                     stream_tokens=spec.flow.a2a.stream_tokens,
                 )
                 push_store = DbPushConfigStore(svc.sessions, svc.settings)
-                handler = DefaultRequestHandler(
+                handler = LGARequestHandler(
                     agent_executor=agent_executor,
                     task_store=DbTaskStore(svc.sessions, slug),
                     push_config_store=push_store,

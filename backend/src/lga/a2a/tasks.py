@@ -42,9 +42,7 @@ class IllegalTaskTransitionError(RuntimeError):
 class DbTaskStore(TaskStore):
     """Persists full Task snapshots + transition history; scope-aware (§7.11)."""
 
-    def __init__(
-        self, sessions: async_sessionmaker[AsyncSession], flow_slug: str
-    ) -> None:
+    def __init__(self, sessions: async_sessionmaker[AsyncSession], flow_slug: str) -> None:
         self._sessions = sessions
         self._flow_slug = flow_slug
 
@@ -76,9 +74,7 @@ class DbTaskStore(TaskStore):
                     client_scope=self._scope(context),
                 )
                 session.add(row)
-                session.add(
-                    TaskTransitionRow(task_id=task.id, from_state="", to_state=new_state)
-                )
+                session.add(TaskTransitionRow(task_id=task.id, from_state="", to_state=new_state))
             else:
                 old_state = row.state
                 if old_state != new_state:
@@ -94,18 +90,14 @@ class DbTaskStore(TaskStore):
                             f"illegal transition {old_state} → {new_state}"
                         )
                     session.add(
-                        TaskTransitionRow(
-                            task_id=task.id, from_state=old_state, to_state=new_state
-                        )
+                        TaskTransitionRow(task_id=task.id, from_state=old_state, to_state=new_state)
                     )
                 row.state = new_state
                 row.context_id = task.context_id or row.context_id
                 row.task = task.model_dump(mode="json", exclude_none=True)
             await session.commit()
 
-    async def get(
-        self, task_id: str, context: ServerCallContext | None = None
-    ) -> Task | None:
+    async def get(self, task_id: str, context: ServerCallContext | None = None) -> Task | None:
         async with self._sessions() as session:
             row = await session.get(A2ATaskRow, task_id)
         if row is None:
@@ -127,12 +119,16 @@ class DbTaskStore(TaskStore):
     async def transitions(self, task_id: str) -> list[dict[str, Any]]:
         async with self._sessions() as session:
             rows = (
-                await session.execute(
-                    select(TaskTransitionRow)
-                    .where(TaskTransitionRow.task_id == task_id)
-                    .order_by(TaskTransitionRow.created_at)
+                (
+                    await session.execute(
+                        select(TaskTransitionRow)
+                        .where(TaskTransitionRow.task_id == task_id)
+                        .order_by(TaskTransitionRow.created_at)
+                    )
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
         return [
             {
                 "from": r.from_state,
@@ -145,13 +141,17 @@ class DbTaskStore(TaskStore):
     async def list_tasks(self, limit: int = 100) -> list[dict[str, Any]]:
         async with self._sessions() as session:
             rows = (
-                await session.execute(
-                    select(A2ATaskRow)
-                    .where(A2ATaskRow.flow_slug == self._flow_slug)
-                    .order_by(A2ATaskRow.created_at.desc())
-                    .limit(limit)
+                (
+                    await session.execute(
+                        select(A2ATaskRow)
+                        .where(A2ATaskRow.flow_slug == self._flow_slug)
+                        .order_by(A2ATaskRow.created_at.desc())
+                        .limit(limit)
+                    )
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
         return [
             {
                 "task_id": r.id,

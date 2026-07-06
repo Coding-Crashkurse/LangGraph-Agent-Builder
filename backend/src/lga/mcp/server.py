@@ -16,7 +16,7 @@ logger = logging.getLogger("lga.mcp.server")
 
 
 class McpManager:
-    def __init__(self, svc: "AppServices") -> None:
+    def __init__(self, svc: AppServices) -> None:
         self._svc = svc
         self.mcp = FastMCP(
             "lga",
@@ -48,17 +48,16 @@ class McpManager:
             policy = spec.flow.mcp.auto_resolve_interrupts
             timeout = spec.flow.mcp.timeout_s or svc.settings.mcp_timeout_s
 
-            def make_tool(
-                _spec: dict[str, Any], _slug: str, _policy: str | None, _timeout: float
-            ):
+            def make_tool(_spec: dict[str, Any], _slug: str, _policy: str | None, _timeout: float):
                 async def run_flow_tool(
                     input_text: str,
                     data: dict[str, Any] | None = None,
                     session_id: str | None = None,
                 ) -> str:
                     """Run the published flow; returns the terminal text result."""
-                    return await self._run(_spec, _slug, input_text, data, session_id,
-                                           _policy, _timeout)
+                    return await self._run(
+                        _spec, _slug, input_text, data, session_id, _policy, _timeout
+                    )
 
                 return run_flow_tool
 
@@ -78,12 +77,12 @@ class McpManager:
         data: dict[str, Any] | None,
         session_id: str | None,
         policy: str | None,
-        timeout: float,
+        timeout_s: float,
     ) -> str:
         svc = self._svc
 
         async def _execute() -> str:
-            run_id, thread_id, result = await svc.orchestrator.start_run(
+            run_id, _thread_id, result = await svc.orchestrator.start_run(
                 spec=spec,
                 flow_row=await svc.flows.get_by_slug(slug),
                 mode="api",
@@ -100,9 +99,7 @@ class McpManager:
                     if payload.get("kind") == "approval"
                     else {"text": f"auto-{policy}"}
                 )
-                _, result = await svc.orchestrator.resume_run(
-                    run_id, resume, background=False
-                )
+                _, result = await svc.orchestrator.resume_run(run_id, resume, background=False)
                 hops += 1
             if result.status == "input_required":
                 raise RuntimeError(
@@ -116,7 +113,7 @@ class McpManager:
                 )
             return result.result_text
 
-        return await asyncio.wait_for(_execute(), timeout=timeout)
+        return await asyncio.wait_for(_execute(), timeout=timeout_s)
 
     # ------------------------------------------------------------ asgi
     def http_app(self) -> Any:
@@ -129,7 +126,7 @@ class McpManager:
 class McpAuthMiddleware:
     """X-API-Key with mcp:invoke scope when auth is enabled (SPEC §8.1)."""
 
-    def __init__(self, app: Any, svc: "AppServices") -> None:
+    def __init__(self, app: Any, svc: AppServices) -> None:
         self._app = app
         self._svc = svc
 

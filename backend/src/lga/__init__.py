@@ -22,7 +22,7 @@ if TYPE_CHECKING:  # pragma: no cover
     from lga.services.settings import Settings
 
 
-def create_app(settings: "Settings | None" = None) -> "FastAPI":
+def create_app(settings: Settings | None = None) -> FastAPI:
     """Build the full FastAPI app (Studio API + A2A + MCP + static frontend)."""
     from lga.app import create_app as _create_app
 

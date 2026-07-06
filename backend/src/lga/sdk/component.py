@@ -11,7 +11,8 @@ import logging
 import re
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass, field as dc_field
+from dataclasses import dataclass
+from dataclasses import field as dc_field
 from enum import StrEnum
 from typing import Any, ClassVar
 
@@ -147,7 +148,7 @@ class Component(ABC):
         config[field_name] = value
         return config
 
-    async def health_check(self, ctx: BuildContext) -> None:
+    async def health_check(self, ctx: BuildContext) -> None:  # noqa: B027
         """Deep-validate hook (E9xx family); default: nothing to check."""
 
     @classmethod

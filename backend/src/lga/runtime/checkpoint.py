@@ -8,6 +8,19 @@ from typing import Any
 from lga.services.settings import Settings
 
 
+def _serde():
+    """Serializer that trusts our own port payload types in checkpoints."""
+    from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
+
+    return JsonPlusSerializer(
+        allowed_msgpack_modules=(
+            ("lga.sdk.ports", "Message"),
+            ("lga.sdk.ports", "Document"),
+            ("lga.sdk.ports", "FileRef"),
+        )
+    )
+
+
 class CheckpointerFactory:
     """Owns the process-wide checkpointer; runtime code never branches on backend."""
 
@@ -24,6 +37,7 @@ class CheckpointerFactory:
                 self._checkpointer = await self._stack.enter_async_context(
                     AsyncPostgresSaver.from_conn_string(self._settings.psycopg_dsn)
                 )
+                self._checkpointer.serde = _serde()
                 await self._checkpointer.setup()
             else:
                 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
@@ -33,6 +47,7 @@ class CheckpointerFactory:
                 self._checkpointer = await self._stack.enter_async_context(
                     AsyncSqliteSaver.from_conn_string(str(path))
                 )
+                self._checkpointer.serde = _serde()
                 await self._checkpointer.setup()
         return self._checkpointer
 

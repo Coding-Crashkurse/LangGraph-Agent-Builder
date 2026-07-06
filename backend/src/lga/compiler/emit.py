@@ -12,7 +12,7 @@ from langgraph.graph import END, START, StateGraph
 from lga.compiler.ir import FlowIR, NodeIR
 from lga.schema.diagnostics import RuntimeError_, RuntimeErrorCode
 from lga.schema.state import FlowState
-from lga.sdk.component import BuildContext, NodeKind
+from lga.sdk.component import BuildContext
 from lga.sdk.ports import PortFamily
 from lga.sdk.runtime import _stream_write, current_node_id
 
@@ -32,9 +32,7 @@ def _preview(value: Any, limit: int = 200) -> Any:
 def make_node_wrapper(node: NodeIR, fn, ctx: BuildContext):
     node_id = node.id
     output_names = set(node.outputs.keys())
-    route_labels = {
-        name for name, o in node.outputs.items() if o.port.family == PortFamily.ROUTE
-    }
+    route_labels = {name for name, o in node.outputs.items() if o.port.family == PortFamily.ROUTE}
     router_like = bool(route_labels)
 
     from langgraph.errors import GraphBubbleUp, GraphInterrupt
@@ -115,6 +113,16 @@ def pure_tool_providers(ir: FlowIR) -> set[str]:
     return out
 
 
+def wrap_component(component_cls: Any, ctx: BuildContext):
+    """Public wrapper builder — used by exported standalone flow.py files."""
+    from types import SimpleNamespace
+
+    outputs = {o.name: o for o in component_cls.outputs_for_config(ctx.config)}
+    shim = SimpleNamespace(id=ctx.node_id, outputs=outputs)
+    fn = component_cls().build(ctx)
+    return make_node_wrapper(shim, fn, ctx)  # type: ignore[arg-type]
+
+
 def emit(ir: FlowIR, contexts: dict[str, BuildContext]) -> StateGraph:
     graph: StateGraph = StateGraph(FlowState)
     providers = pure_tool_providers(ir)
@@ -134,9 +142,7 @@ def emit(ir: FlowIR, contexts: dict[str, BuildContext]) -> StateGraph:
     routers: dict[str, dict[str, str]] = {}
     for e in ir.edges:
         if e.kind == "router":
-            routers.setdefault(e.spec.source.node, {})[e.spec.source.output] = (
-                e.spec.target.node
-            )
+            routers.setdefault(e.spec.source.node, {})[e.spec.source.output] = e.spec.target.node
             continue
         if e.kind != "data":
             continue

@@ -183,9 +183,7 @@ public_files_router = APIRouter(tags=["files"])
 
 
 @public_files_router.get("/files/{file_id}")
-async def download_file(
-    file_id: str, svc: Services, token: str = Query(default="")
-) -> Response:
+async def download_file(file_id: str, svc: Services, token: str = Query(default="")) -> Response:
     found = await svc.files.get(file_id, token=token or None)
     if found is None:
         raise HTTPException(404, "file not found")

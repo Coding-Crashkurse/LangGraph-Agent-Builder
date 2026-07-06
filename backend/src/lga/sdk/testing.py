@@ -78,13 +78,27 @@ class ComponentTestHarness:
             "schema_version": "1",
             "flow": {"name": "harness", "slug": "harness", "description": "harness"},
             "nodes": [
-                {"id": "start", "component_id": "lga.io.start", "component_version": "1.0.0",
-                 "config": {}, "position": {"x": 0, "y": 0}},
-                {"id": "under_test", "component_id": component.component_id,
-                 "component_version": component.version, "config": node_cfg,
-                 "position": {"x": 300, "y": 0}},
-                {"id": "end", "component_id": "lga.io.end", "component_version": "1.0.0",
-                 "config": {}, "position": {"x": 600, "y": 0}},
+                {
+                    "id": "start",
+                    "component_id": "lga.io.start",
+                    "component_version": "1.0.0",
+                    "config": {},
+                    "position": {"x": 0, "y": 0},
+                },
+                {
+                    "id": "under_test",
+                    "component_id": component.component_id,
+                    "component_version": component.version,
+                    "config": node_cfg,
+                    "position": {"x": 300, "y": 0},
+                },
+                {
+                    "id": "end",
+                    "component_id": "lga.io.end",
+                    "component_version": "1.0.0",
+                    "config": {},
+                    "position": {"x": 600, "y": 0},
+                },
             ],
             "edges": [],
         }
@@ -96,17 +110,23 @@ class ComponentTestHarness:
                 continue
             if port.family.value in ("MESSAGE", "DATA"):
                 edges.append(
-                    {"id": f"e_start_{name}", "kind": "data",
-                     "source": {"node": "start", "output": "message"},
-                     "target": {"node": "under_test", "input": name}}
+                    {
+                        "id": f"e_start_{name}",
+                        "kind": "data",
+                        "source": {"node": "start", "output": "message"},
+                        "target": {"node": "under_test", "input": name},
+                    }
                 )
                 break
         outs = component.outputs_for_config(node_cfg)
         if outs:
             edges.append(
-                {"id": "e_out", "kind": "data",
-                 "source": {"node": "under_test", "output": outs[0].name},
-                 "target": {"node": "end", "input": "message"}}
+                {
+                    "id": "e_out",
+                    "kind": "data",
+                    "source": {"node": "under_test", "output": outs[0].name},
+                    "target": {"node": "end", "input": "message"},
+                }
             )
         spec["edges"] = edges
         compiled = compile_flow(spec, constants={"under_test": upstream or {}})

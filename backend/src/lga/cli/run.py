@@ -6,7 +6,7 @@ import asyncio
 import socket
 import sys
 from pathlib import Path
-from typing import Annotated, Optional
+from typing import Annotated
 
 import typer
 from rich.panel import Panel
@@ -44,22 +44,20 @@ async def _served_summary(settings) -> tuple[list[str], list[str]]:
 
 
 def run_command(
-    host: Annotated[Optional[str], typer.Option(help="Bind host [env: LGA_HOST]")] = None,
-    port: Annotated[Optional[int], typer.Option(help="Bind port [env: LGA_PORT]")] = None,
-    env_file: Annotated[Optional[Path], typer.Option(help="Extra .env file")] = None,
+    host: Annotated[str | None, typer.Option(help="Bind host [env: LGA_HOST]")] = None,
+    port: Annotated[int | None, typer.Option(help="Bind port [env: LGA_PORT]")] = None,
+    env_file: Annotated[Path | None, typer.Option(help="Extra .env file")] = None,
     database_url: Annotated[
-        Optional[str], typer.Option(help="Database URL [env: LGA_DATABASE_URL]")
+        str | None, typer.Option(help="Database URL [env: LGA_DATABASE_URL]")
     ] = None,
     backend_only: Annotated[
         bool, typer.Option("--backend-only", help="Do not serve the bundled frontend")
     ] = False,
     components_path: Annotated[
-        Optional[list[str]],
+        list[str] | None,
         typer.Option("--components-path", help="Extra component dir (repeatable)"),
     ] = None,
-    log_level: Annotated[
-        Optional[str], typer.Option(help="Log level [env: LGA_LOG_LEVEL]")
-    ] = None,
+    log_level: Annotated[str | None, typer.Option(help="Log level [env: LGA_LOG_LEVEL]")] = None,
     workers: Annotated[int, typer.Option(help="Workers (Postgres only)")] = 1,
     reload: Annotated[bool, typer.Option("--reload", help="Dev auto-reload")] = False,
     open_browser: Annotated[
@@ -100,9 +98,7 @@ def run_command(
         from lga.db.migrate import upgrade
 
         upgrade(settings)
-    a2a_slugs, mcp_tools = asyncio.new_event_loop().run_until_complete(
-        _served_summary(settings)
-    )
+    a2a_slugs, mcp_tools = asyncio.new_event_loop().run_until_complete(_served_summary(settings))
 
     url = f"http://{settings.host}:{settings.port}"
     lines = [

@@ -30,7 +30,7 @@ async def _service():
 def create(
     scopes: Annotated[list[str], typer.Option("--scopes", "-s", help="Repeatable scope")],
     name: Annotated[str, typer.Option("--name")] = "",
-    json_out: Annotated[bool, typer.Option("--json")] = False,
+    json_out: Annotated[bool, typer.Option("--json/--no-json")] = False,
 ) -> None:
     build_settings(None)
 
@@ -54,7 +54,7 @@ def create(
 
 
 @apikey_app.command("list")
-def list_keys(json_out: Annotated[bool, typer.Option("--json")] = False) -> None:
+def list_keys(json_out: Annotated[bool, typer.Option("--json/--no-json")] = False) -> None:
     build_settings(None)
 
     async def _run():
@@ -71,8 +71,12 @@ def list_keys(json_out: Annotated[bool, typer.Option("--json")] = False) -> None
     table = Table("id", "name", "prefix", "scopes", "uses", "revoked")
     for k in keys:
         table.add_row(
-            k["id"], k["name"], k["prefix"], ",".join(k["scopes"]),
-            str(k["total_uses"]), "yes" if k["revoked"] else "",
+            k["id"],
+            k["name"],
+            k["prefix"],
+            ",".join(k["scopes"]),
+            str(k["total_uses"]),
+            "yes" if k["revoked"] else "",
         )
     console.print(table)
 

@@ -57,7 +57,7 @@ class {cls}(Component):
         return node
 '''
 
-TEST_TPL = '''\
+TEST_TPL = """\
 import pytest
 
 from lga.sdk.testing import ComponentTestHarness
@@ -76,7 +76,7 @@ async def test_build_and_run():
     node = ComponentTestHarness().build({cls}, config={{}}, ports={{"input": "hi"}})
     result = await node()
     assert result["text"] == "hi"
-'''
+"""
 
 
 def component_new(

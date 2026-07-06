@@ -14,9 +14,7 @@ PROVIDERS = ("openai", "anthropic", "ollama", "fake")
 
 class ProviderNotInstalledError(RuntimeError):
     def __init__(self, provider: str, extra: str) -> None:
-        super().__init__(
-            f"model provider {provider!r} is not installed — install lga[{extra}]"
-        )
+        super().__init__(f"model provider {provider!r} is not installed — install lga[{extra}]")
 
 
 def parse_model_value(value: Any) -> dict[str, Any]:

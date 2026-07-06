@@ -59,9 +59,7 @@ class ApiKeyService:
             return False
         async with self._sessions() as session:
             row = (
-                await session.execute(
-                    select(ApiKeyRow).where(ApiKeyRow.key_hash == _hash(key))
-                )
+                await session.execute(select(ApiKeyRow).where(ApiKeyRow.key_hash == _hash(key)))
             ).scalar_one_or_none()
             if row is None or row.revoked_at is not None:
                 return False

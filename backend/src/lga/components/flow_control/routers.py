@@ -64,8 +64,14 @@ class LLMRouter(Component):
                 )
                 response = await model.ainvoke(prompt)
                 raw = (
-                    response.content if isinstance(response.content, str) else str(response.content)
-                ).strip().lower()
+                    (
+                        response.content
+                        if isinstance(response.content, str)
+                        else str(response.content)
+                    )
+                    .strip()
+                    .lower()
+                )
                 label = next((lb for lb in labels if lb.lower() in raw), None)
             else:
                 lowered = text.lower()

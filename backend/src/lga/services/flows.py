@@ -131,9 +131,7 @@ class FlowService:
             row = await session.get(FlowRow, flow_id)
             if row is None:
                 return False
-            await session.execute(
-                delete(FlowVersionRow).where(FlowVersionRow.flow_id == flow_id)
-            )
+            await session.execute(delete(FlowVersionRow).where(FlowVersionRow.flow_id == flow_id))
             await session.delete(row)
             await session.commit()
             return True
@@ -142,12 +140,16 @@ class FlowService:
     async def versions(self, flow_id: str) -> list[FlowVersionRow]:
         async with self._sessions() as session:
             rows = (
-                await session.execute(
-                    select(FlowVersionRow)
-                    .where(FlowVersionRow.flow_id == flow_id)
-                    .order_by(FlowVersionRow.published_at.desc())
+                (
+                    await session.execute(
+                        select(FlowVersionRow)
+                        .where(FlowVersionRow.flow_id == flow_id)
+                        .order_by(FlowVersionRow.published_at.desc())
+                    )
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
             return list(rows)
 
     async def get_version(self, flow_id: str, semver: str) -> FlowVersionRow | None:
@@ -183,9 +185,7 @@ class FlowService:
         async with self._sessions() as session:
             row = await session.get(FlowRow, flow_id)
         if row is None:
-            return None, [
-                Diagnostic.make(DiagnosticCode.E001, f"flow {flow_id} not found")
-            ]
+            return None, [Diagnostic.make(DiagnosticCode.E001, f"flow {flow_id} not found")]
         spec = parse_flowspec(row.spec)
         diags = list(compile_diagnostics or [])
         diags += publish_guards(spec, registry)

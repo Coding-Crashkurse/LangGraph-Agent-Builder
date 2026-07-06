@@ -118,9 +118,7 @@ class LGAAgentExecutor(AgentExecutor):
                         mime,
                         base64.b64decode(file.bytes),
                     )
-                    files.append(
-                        {"file_id": saved["file_id"], "mime": mime, "name": saved["name"]}
-                    )
+                    files.append({"file_id": saved["file_id"], "mime": mime, "name": saved["name"]})
                 elif isinstance(file, FileWithUri):
                     files.append(
                         {
@@ -193,9 +191,7 @@ class LGAAgentExecutor(AgentExecutor):
         checkpointer = await self._executor._get_checkpointer()
         graph = compiled.compile(checkpointer=checkpointer)
         snapshot = await graph.aget_state({"configurable": {"thread_id": thread_id}})
-        pending = [
-            i for t in (snapshot.tasks or ()) for i in (t.interrupts or ())
-        ]
+        pending = [i for t in (snapshot.tasks or ()) for i in (t.interrupts or ())]
 
         inbound = await self._inbound(context)
         resume_payload: Any = None
@@ -295,7 +291,9 @@ class LGAAgentExecutor(AgentExecutor):
             )
             return
         if result.status == "cancelled":
-            await updater.cancel()
+            # the canceled status event is enqueued by cancel() on the cancel
+            # queue; emitting a second, final one here would trigger the sdk
+            # consumer's immediate-close which wipes tapped child queues
             return
 
         parts: list[Part] = [Part(root=TextPart(text=result.result_text))]
@@ -308,9 +306,12 @@ class LGAAgentExecutor(AgentExecutor):
         task = context.current_task
         if task is None:
             return
-        await self._executor.cancel(task.id)
+        # enqueue the canceled status FIRST: stopping the run below closes the
+        # producer's queue, which cascades to the tapped cancel queue — a late
+        # enqueue would be dropped and the aggregator would report `working`.
         updater = TaskUpdater(event_queue, task.id, task.context_id)
         await updater.cancel()
+        await self._executor.cancel(task.id)
 
 
 class _A2ASink:
@@ -347,9 +348,7 @@ class _A2ASink:
                             data={
                                 "type": kind,
                                 "node": event.data.get("node_id", ""),
-                                "data": {
-                                    k: v for k, v in event.data.items() if k != "node_id"
-                                },
+                                "data": {k: v for k, v in event.data.items() if k != "node_id"},
                             }
                         )
                     )

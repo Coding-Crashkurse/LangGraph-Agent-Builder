@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Annotated, Optional
+from typing import Annotated
 
 import httpx
 import typer
@@ -19,12 +19,8 @@ from lga.cli._common import (
 
 flow_app = typer.Typer(help="Headless flow operations (server-based or --local).")
 
-ServerOpt = Annotated[
-    str, typer.Option(envvar="LGA_SERVER_URL", help="lga server URL")
-]
-ApiKeyOpt = Annotated[
-    Optional[str], typer.Option(envvar="LGA_API_KEY", help="API key (studio scope)")
-]
+ServerOpt = Annotated[str, typer.Option(envvar="LGA_SERVER_URL", help="lga server URL")]
+ApiKeyOpt = Annotated[str | None, typer.Option(envvar="LGA_API_KEY", help="API key (studio scope)")]
 
 
 def _client(server: str, api_key: str | None) -> httpx.Client:
@@ -148,8 +144,8 @@ def publish_flow(
 def run_flow_cmd(
     ref: Annotated[str, typer.Argument(help="FlowSpec path (with --local) or flow id/slug")],
     input: Annotated[str, typer.Option("--input", help="Input text")] = "",
-    data: Annotated[Optional[str], typer.Option(help="JSON data payload")] = None,
-    session: Annotated[Optional[str], typer.Option(help="Session/thread id")] = None,
+    data: Annotated[str | None, typer.Option(help="JSON data payload")] = None,
+    session: Annotated[str | None, typer.Option(help="Session/thread id")] = None,
     stream: Annotated[bool, typer.Option("--stream", help="Stream events (server mode)")] = False,
     local: Annotated[
         bool, typer.Option("--local", help="In-process compile+run, no server")

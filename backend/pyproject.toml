@@ -111,6 +111,7 @@ ignore = ["RUF001", "RUF002", "RUF003"]
 # subclasses without re-annotating is the component-DSL convention.
 "src/lga/components/**" = ["RUF012"]
 "src/lga/sdk/**" = ["RUF012"]
+"tests/**" = ["RUF012"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

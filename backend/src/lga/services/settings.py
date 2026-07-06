@@ -68,7 +68,7 @@ class Settings(BaseSettings):
         return v.expanduser()
 
     @model_validator(mode="after")
-    def _fill_defaults(self) -> "Settings":
+    def _fill_defaults(self) -> Settings:
         if not self.database_url:
             self.database_url = f"sqlite+aiosqlite:///{(self.home / 'lga.db').as_posix()}"
         if not self.host_url:

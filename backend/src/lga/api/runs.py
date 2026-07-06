@@ -179,8 +179,10 @@ async def _thread_flow_spec(svc: Any, thread_id: str) -> dict[str, Any]:
     run = next((r for r in runs if r.thread_id == thread_id), None)
     if run is None:
         raise HTTPException(404, "thread not found")
-    flow = await svc.flows.get(run.flow_id) if run.flow_id else await svc.flows.get_by_slug(
-        run.flow_slug
+    flow = (
+        await svc.flows.get(run.flow_id)
+        if run.flow_id
+        else await svc.flows.get_by_slug(run.flow_slug)
     )
     if flow is None:
         raise HTTPException(404, "flow for thread not found")

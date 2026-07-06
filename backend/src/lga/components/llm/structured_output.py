@@ -19,9 +19,7 @@ class StructuredOutput(Component):
 
     inputs = [
         fields.ModelInput(name="model", display_name="Model", required=True),
-        fields.NestedDictInput(
-            name="output_schema", display_name="Output Schema", required=True
-        ),
+        fields.NestedDictInput(name="output_schema", display_name="Output Schema", required=True),
         fields.HandleField(name="input", display_name="Input", as_port=ports.MESSAGE),
         fields.MultilineInput(name="instructions", display_name="Instructions", advanced=True),
     ]

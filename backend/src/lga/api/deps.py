@@ -10,7 +10,7 @@ if TYPE_CHECKING:
     from lga.app import AppServices
 
 
-def get_services(request: Request) -> "AppServices":
+def get_services(request: Request) -> AppServices:
     return request.app.state.svc
 
 

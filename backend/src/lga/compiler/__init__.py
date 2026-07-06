@@ -27,7 +27,7 @@ from lga.schema.flowspec import FlowSpec
 from lga.sdk.component import BuildContext, NodeKind, SecretsResolver
 from lga.sdk.registry import ComponentRegistry, get_registry
 
-__all__ = ["CompiledFlow", "CompileReport", "compile_flow", "clear_compile_cache"]
+__all__ = ["CompileReport", "CompiledFlow", "clear_compile_cache", "compile_flow"]
 
 
 class CompileReport(BaseModel):
@@ -99,16 +99,12 @@ def _report(ir: FlowIR, contexts: dict[str, BuildContext], fingerprint: str) -> 
             }
             for n in ir.nodes.values()
         ],
-        coercions=[
-            {"edge_id": e.id, "coercion": e.coercion} for e in ir.edges if e.coercion
-        ],
+        coercions=[{"edge_id": e.id, "coercion": e.coercion} for e in ir.edges if e.coercion],
         channels={
             e.id: wire_pass.channel_for(e.spec.source.node, e.spec.source.output)
             for e in ir.data_edges()
         },
-        interrupt_points=[
-            n.id for n in ir.nodes.values() if n.kind == NodeKind.INTERRUPT
-        ],
+        interrupt_points=[n.id for n in ir.nodes.values() if n.kind == NodeKind.INTERRUPT],
         router_tables=_router_tables(ir),
         tool_bindings={
             n.id: [t.name for t in contexts[n.id].tools if hasattr(t, "name")]
@@ -165,7 +161,9 @@ def compile_flow(
     diagnostics += validate_pass.validate(ir)
     if has_errors(diagnostics):
         return CompiledFlow(
-            spec=spec, diagnostics=diagnostics, report=CompileReport(fingerprint=fingerprint),
+            spec=spec,
+            diagnostics=diagnostics,
+            report=CompileReport(fingerprint=fingerprint),
             ir=ir,
         )
 
@@ -202,6 +200,4 @@ def validate_flow(
     variables: VariablesProvider | None = None,
 ) -> list[Diagnostic]:
     """Validation-only entry (used by /validate and `lga flow validate`)."""
-    return compile_flow(
-        source, registry=registry, variables=variables, use_cache=False
-    ).diagnostics
+    return compile_flow(source, registry=registry, variables=variables, use_cache=False).diagnostics

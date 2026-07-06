@@ -86,7 +86,7 @@ def init_command(
         directory / ".gitignore": GITIGNORE,
     }
     (directory / "flows").mkdir(parents=True, exist_ok=True)
-    for path, content in files.items():
+    for path in files:
         if path.exists() and not force:
             err_console.print(f"[red]{path} exists[/red] (use --force to overwrite)")
             raise typer.Exit(EXIT_USAGE)

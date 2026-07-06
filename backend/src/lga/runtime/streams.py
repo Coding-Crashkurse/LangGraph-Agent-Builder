@@ -11,7 +11,6 @@ import contextlib
 import logging
 from collections import defaultdict
 from collections.abc import AsyncIterator, Awaitable, Callable
-from typing import Any
 
 from lga.schema.events import RunEvent
 
@@ -114,8 +113,10 @@ class EventBus:
                 await self._persist(event)
             except Exception:  # persistence must never kill the run
                 logger.exception("failed to persist run event %s/%s", event.run_id, event.seq)
+            finally:
+                self._persist_queue.task_done()
 
     async def drain(self) -> None:
         """Flush pending persistence (used by tests and graceful shutdown)."""
-        while not self._persist_queue.empty():
-            await asyncio.sleep(0.01)
+        if self._persist_task is not None and not self._persist_task.done():
+            await self._persist_queue.join()

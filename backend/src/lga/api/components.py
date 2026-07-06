@@ -24,11 +24,7 @@ async def list_components(svc: Services, request: Request, response: Response) -
     if request.headers.get("if-none-match") == etag:
         return Response(status_code=304)
     response.headers["ETag"] = etag
-    return [
-        cls.descriptor()
-        for cls in svc.registry.all()
-        if not cls.legacy
-    ]
+    return [cls.descriptor() for cls in svc.registry.all() if not cls.legacy]
 
 
 @router.post("/{component_id:path}/config")

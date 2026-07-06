@@ -38,7 +38,9 @@ class End(Component):
             else:
                 # fall back to the last assistant message of the conversation
                 msgs = [m for m in state.get("messages") or [] if getattr(m, "type", "") == "ai"]
-                result = ports.Message(role="assistant", content=message_text(msgs[-1])) if msgs else ""
+                result = (
+                    ports.Message(role="assistant", content=message_text(msgs[-1])) if msgs else ""
+                )
             return {"result": result}
 
         return node

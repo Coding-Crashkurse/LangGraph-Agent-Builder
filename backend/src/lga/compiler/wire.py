@@ -68,9 +68,7 @@ def wire(
 
     # tools after all contexts exist (provider ctx must be available)
     for node in ir.nodes.values():
-        tool_sources = [
-            e.spec.source.node for e in ir.in_edges(node.id) if e.kind == "tool"
-        ]
+        tool_sources = [e.spec.source.node for e in ir.in_edges(node.id) if e.kind == "tool"]
         tools: list[ToolDef | Any] = []
         for src_id in tool_sources:
             tools.extend(_tool_defs_for_provider(ir, src_id, contexts[src_id]))

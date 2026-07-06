@@ -86,7 +86,7 @@ class Diagnostic(BaseModel):
         field: str | None = None,
         edge_id: str | None = None,
         fix_hint: str | None = None,
-    ) -> "Diagnostic":
+    ) -> Diagnostic:
         return cls(
             code=code,
             severity=severity_for(code),

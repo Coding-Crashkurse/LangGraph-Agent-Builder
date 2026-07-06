@@ -49,9 +49,7 @@ class LLMCall(Component):
             default=False,
             advanced=True,
         ),
-        fields.NestedDictInput(
-            name="output_schema", display_name="Output Schema", advanced=True
-        ),
+        fields.NestedDictInput(name="output_schema", display_name="Output Schema", advanced=True),
         fields.BoolInput(
             name="stream_tokens", display_name="Stream Tokens", default=True, advanced=True
         ),
@@ -96,7 +94,9 @@ class LLMCall(Component):
                         rc.stream_writer(delta)
             else:
                 response = await model.ainvoke(messages)
-                text = response.content if isinstance(response.content, str) else str(response.content)
+                text = (
+                    response.content if isinstance(response.content, str) else str(response.content)
+                )
 
             result: dict[str, Any] = {
                 "message": ports.Message(role="assistant", content=text),

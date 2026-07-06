@@ -53,9 +53,9 @@ class FilesService:
         if token is not None and token != row.token:
             return None
         path = Path(row.path)
-        if not path.exists():
+        if not path.exists():  # noqa: ASYNC240
             return None
-        return row, path.read_bytes()
+        return row, path.read_bytes()  # noqa: ASYNC240
 
     async def list(self) -> list[dict[str, Any]]:
         async with self._sessions() as session:

@@ -207,9 +207,7 @@ class Parser(Component):
             match = re.search(pattern, text)
             if match is None:
                 return {"json": {"matched": False}}
-            groups = match.groupdict() or {
-                str(i): g for i, g in enumerate(match.groups(), start=1)
-            }
+            groups = match.groupdict() or {str(i): g for i, g in enumerate(match.groups(), start=1)}
             return {"json": {"matched": True, **groups}}
 
         return node

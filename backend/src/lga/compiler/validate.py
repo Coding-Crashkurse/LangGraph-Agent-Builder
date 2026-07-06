@@ -14,6 +14,7 @@ def router_like(node: NodeIR) -> bool:
     """Routers AND interrupt nodes with ROUTE branches (e.g. Human Approval)."""
     return any(o.port.family == PortFamily.ROUTE for o in node.outputs.values())
 
+
 WARNING_BY_CODE = {
     "W201": "untyped (ANY) edge — no structural guarantees",
     "W202": "auto list-wrap coercion inserted",
@@ -124,8 +125,7 @@ def validate(ir: FlowIR) -> list[Diagnostic]:
                 diags.append(
                     D(
                         DiagnosticCode.E021,
-                        f"tool edge into non-Tools port "
-                        f"{e.spec.target.node}.{e.spec.target.input}",
+                        f"tool edge into non-Tools port {e.spec.target.node}.{e.spec.target.input}",
                         edge_id=e.id,
                     )
                 )
@@ -211,9 +211,7 @@ def validate(ir: FlowIR) -> list[Diagnostic]:
     for node in ir.nodes.values():
         if not router_like(node):
             continue
-        labels = {
-            name for name, o in node.outputs.items() if o.port.family == PortFamily.ROUTE
-        }
+        labels = {name for name, o in node.outputs.items() if o.port.family == PortFamily.ROUTE}
         seen: dict[str, int] = defaultdict(int)
         for e in ir.router_edges():
             if e.spec.source.node == node.id:
@@ -278,9 +276,7 @@ def validate(ir: FlowIR) -> list[Diagnostic]:
     if start is not None:
         reachable = _reachable(succ, "start")
         if terminals and not any(t.id in reachable for t in terminals):
-            diags.append(
-                D(DiagnosticCode.E030, "no terminal node reachable from `start`")
-            )
+            diags.append(D(DiagnosticCode.E030, "no terminal node reachable from `start`"))
         tool_only = {
             n.id
             for n in ir.nodes.values()
@@ -306,8 +302,7 @@ def validate(ir: FlowIR) -> list[Diagnostic]:
             guards = [
                 ir.nodes[nid]
                 for nid in comp
-                if nid in ir.nodes
-                and ir.nodes[nid].kind in (NodeKind.ROUTER, NodeKind.INTERRUPT)
+                if nid in ir.nodes and ir.nodes[nid].kind in (NodeKind.ROUTER, NodeKind.INTERRUPT)
             ]
             cycle_desc = " → ".join(sorted(comp))
             if not guards:
@@ -338,9 +333,7 @@ def validate(ir: FlowIR) -> list[Diagnostic]:
                 data_out = [e for e in ir.out_edges(n.id) if e.kind == "data"]
                 if len(data_out) < 2:
                     continue
-                branch_sets = [
-                    _reachable(succ, e.spec.target.node) for e in data_out
-                ]
+                branch_sets = [_reachable(succ, e.spec.target.node) for e in data_out]
                 for i, bs in enumerate(branch_sets):
                     hit = bs & interrupts
                     others = [b for j, b in enumerate(branch_sets) if j != i]

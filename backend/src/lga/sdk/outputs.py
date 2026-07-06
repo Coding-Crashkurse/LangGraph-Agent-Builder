@@ -17,7 +17,7 @@ class Output(BaseModel):
     group: str | None = None
 
     @model_validator(mode="after")
-    def _default_display(self) -> "Output":
+    def _default_display(self) -> Output:
         if not self.display_name:
             self.display_name = self.name.replace("_", " ").title()
         return self

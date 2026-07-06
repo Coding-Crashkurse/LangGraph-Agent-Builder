@@ -168,7 +168,7 @@ class Orchestrator:
         run = await self.runs.get(run_id)
         if run is None:
             raise KeyError(run_id)
-        spec, flow_row = await self._spec_for_run(run)
+        spec, _flow_row = await self._spec_for_run(run)
         compiled = await self.compiled(spec)
         kwargs: dict[str, Any] = dict(
             run_id=run_id,
@@ -198,9 +198,7 @@ class Orchestrator:
                 if flow is not None:
                     return flow.spec, flow
             row = (
-                await session.execute(
-                    select(FlowRow).where(FlowRow.slug == run.flow_slug)
-                )
+                await session.execute(select(FlowRow).where(FlowRow.slug == run.flow_slug))
             ).scalar_one_or_none()
             if row is None:
                 raise KeyError(f"flow for run {run.id} not found")
@@ -211,9 +209,7 @@ class Orchestrator:
         compiled = await self.compiled(spec)
         checkpointer = await self.executor._get_checkpointer()
         graph = compiled.compile(checkpointer=checkpointer)
-        return await graph.aget_state(
-            {"configurable": {"thread_id": thread_id}}
-        )
+        return await graph.aget_state({"configurable": {"thread_id": thread_id}})
 
     async def thread_history(
         self, spec: dict[str, Any] | FlowSpec, thread_id: str, limit: int = 50
@@ -222,9 +218,7 @@ class Orchestrator:
         checkpointer = await self.executor._get_checkpointer()
         graph = compiled.compile(checkpointer=checkpointer)
         history = []
-        async for snapshot in graph.aget_state_history(
-            {"configurable": {"thread_id": thread_id}}
-        ):
+        async for snapshot in graph.aget_state_history({"configurable": {"thread_id": thread_id}}):
             history.append(snapshot)
             if len(history) >= limit:
                 break

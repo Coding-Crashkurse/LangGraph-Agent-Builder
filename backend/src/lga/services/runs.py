@@ -74,9 +74,7 @@ class RunService:
         async with self._sessions() as session:
             return await session.get(RunRow, run_id)
 
-    async def list(
-        self, flow_id: str | None = None, limit: int = 100
-    ) -> list[RunRow]:
+    async def list(self, flow_id: str | None = None, limit: int = 100) -> list[RunRow]:
         async with self._sessions() as session:
             stmt = select(RunRow).order_by(RunRow.started_at.desc()).limit(limit)
             if flow_id:
@@ -91,8 +89,13 @@ class RunService:
                 continue
             t = threads.setdefault(
                 run.thread_id,
-                {"thread_id": run.thread_id, "flow_slug": run.flow_slug, "runs": 0,
-                 "last_run_at": run.started_at.isoformat(), "last_status": run.status},
+                {
+                    "thread_id": run.thread_id,
+                    "flow_slug": run.flow_slug,
+                    "runs": 0,
+                    "last_run_at": run.started_at.isoformat(),
+                    "last_status": run.status,
+                },
             )
             t["runs"] += 1
         return list(threads.values())
@@ -112,12 +115,16 @@ class RunService:
     async def load_events(self, run_id: str, after_seq: int = 0) -> list[RunEvent]:
         async with self._sessions() as session:
             rows = (
-                await session.execute(
-                    select(RunEventRow)
-                    .where(RunEventRow.run_id == run_id, RunEventRow.seq > after_seq)
-                    .order_by(RunEventRow.seq)
+                (
+                    await session.execute(
+                        select(RunEventRow)
+                        .where(RunEventRow.run_id == run_id, RunEventRow.seq > after_seq)
+                        .order_by(RunEventRow.seq)
+                    )
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
         return [RunEvent.model_validate(r.payload) for r in rows]
 
     async def max_seq(self, run_id: str) -> int:

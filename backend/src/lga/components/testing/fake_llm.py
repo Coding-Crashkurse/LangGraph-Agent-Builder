@@ -43,9 +43,7 @@ class FakeLLM(Component):
         async def node(state: dict[str, Any], config: Any) -> dict[str, Any]:
             rc = get_run_context(config)
             replies = list(ctx.get_field("replies") or ["ok"])
-            ai_count = sum(
-                1 for m in state.get("messages") or [] if getattr(m, "type", "") == "ai"
-            )
+            ai_count = sum(1 for m in state.get("messages") or [] if getattr(m, "type", "") == "ai")
             reply = str(replies[ai_count % len(replies)])
             rc.emit("fake.thinking", {"reply_index": ai_count % len(replies)})
             if ctx.get_field("stream_tokens"):

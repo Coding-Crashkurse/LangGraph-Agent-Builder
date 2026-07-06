@@ -42,9 +42,7 @@ class McpServersService:
 
     async def delete(self, name: str) -> bool:
         async with self._sessions() as session:
-            result = await session.execute(
-                delete(McpServerRow).where(McpServerRow.name == name)
-            )
+            result = await session.execute(delete(McpServerRow).where(McpServerRow.name == name))
             await session.commit()
             return bool(result.rowcount)
 

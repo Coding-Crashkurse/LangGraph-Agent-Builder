@@ -47,7 +47,7 @@ class FlowPatch(BaseModel):
 
 
 class PublishBody(BaseModel):
-    version: str = Field(default="patch", description='major|minor|patch or explicit semver')
+    version: str = Field(default="patch", description="major|minor|patch or explicit semver")
     changelog: str = ""
 
 
@@ -165,9 +165,7 @@ async def rollback(flow_id: str, semver: str, svc: Services) -> dict[str, Any]:
 
 
 @router.get("/{flow_id}/export")
-async def export_flow(
-    flow_id: str, svc: Services, format: str = Query(default="json")
-) -> Any:
+async def export_flow(flow_id: str, svc: Services, format: str = Query(default="json")) -> Any:
     row = await svc.flows.get(flow_id)
     if row is None:
         raise HTTPException(404, "flow not found")

@@ -68,9 +68,7 @@ class RunRow(Base):
     error_message: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
     result_preview: Mapped[str] = mapped_column(sa.Text, default="")
     started_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), default=utcnow)
-    finished_at: Mapped[datetime | None] = mapped_column(
-        sa.DateTime(timezone=True), nullable=True
-    )
+    finished_at: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True), nullable=True)
 
 
 class RunEventRow(Base):
@@ -80,8 +78,9 @@ class RunEventRow(Base):
         sa.Index("ix_run_events_run_seq", "run_id", "seq"),
     )
 
-    id: Mapped[int] = mapped_column(sa.BigInteger().with_variant(sa.Integer(), "sqlite"),
-                                    primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(
+        sa.BigInteger().with_variant(sa.Integer(), "sqlite"), primary_key=True, autoincrement=True
+    )
     run_id: Mapped[str] = mapped_column(sa.String(36))
     seq: Mapped[int] = mapped_column(sa.Integer)
     payload: Mapped[dict[str, Any]] = mapped_column(JSONVariant)
@@ -107,8 +106,9 @@ class A2ATaskRow(Base):
 class TaskTransitionRow(Base):
     __tablename__ = "task_transitions"
 
-    id: Mapped[int] = mapped_column(sa.BigInteger().with_variant(sa.Integer(), "sqlite"),
-                                    primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(
+        sa.BigInteger().with_variant(sa.Integer(), "sqlite"), primary_key=True, autoincrement=True
+    )
     task_id: Mapped[str] = mapped_column(sa.String(64), index=True)
     from_state: Mapped[str] = mapped_column(sa.String(24))
     to_state: Mapped[str] = mapped_column(sa.String(24))
@@ -151,9 +151,7 @@ class ApiKeyRow(Base):
     prefix: Mapped[str] = mapped_column(sa.String(16), default="")  # display: lga_sk_ab…
     scopes: Mapped[list[str]] = mapped_column(JSONVariant, default=list)
     created_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), default=utcnow)
-    last_used_at: Mapped[datetime | None] = mapped_column(
-        sa.DateTime(timezone=True), nullable=True
-    )
+    last_used_at: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True), nullable=True)
     total_uses: Mapped[int] = mapped_column(sa.Integer, default=0)
     revoked_at: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True), nullable=True)
 

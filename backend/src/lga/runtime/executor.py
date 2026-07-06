@@ -106,9 +106,7 @@ class Executor:
     # ---------------------------------------------------------------- events
     def _publish(self, run_id: str, thread_id: str, event: str, data: dict[str, Any]) -> None:
         if self._bus is not None:
-            self._bus.publish(
-                RunEvent(event=event, run_id=run_id, thread_id=thread_id, data=data)
-            )
+            self._bus.publish(RunEvent(event=event, run_id=run_id, thread_id=thread_id, data=data))
 
     async def _emit(
         self,
@@ -295,9 +293,7 @@ class Executor:
                 "run_finished",
                 {"status": "failed", "error_code": exc.code.value, "message": str(exc)},
             )
-            await self._status(
-                run_id, "failed", error_code=exc.code.value, error_message=str(exc)
-            )
+            await self._status(run_id, "failed", error_code=exc.code.value, error_message=str(exc))
             if self._bus is not None:
                 self._bus.close_run(run_id)
             return RunResult(
@@ -392,8 +388,7 @@ class Executor:
                 if key in writers and writers[key] != node_name:
                     raise RuntimeError_(
                         RuntimeErrorCode.RT101,
-                        f"concurrent writes to data[{key!r}] by "
-                        f"{writers[key]!r} and {node_name!r}",
+                        f"concurrent writes to data[{key!r}] by {writers[key]!r} and {node_name!r}",
                     )
                 writers[key] = node_name
 
@@ -433,16 +428,18 @@ class Executor:
         return handle
 
     async def cancel(self, run_id: str) -> bool:
+        """Request cancellation; does NOT await the run's death.
+
+        Awaiting here can deadlock the A2A cancel path: the dying producer
+        blocks on draining its event queue, which only the caller's consumer
+        (running after this returns) will drain.
+        """
         handle = self.runs.get(run_id)
         if handle is None:
             return False
         handle.run_context.cancellation.set()
         if handle.task is not None and not handle.task.done():
             handle.task.cancel()
-            try:
-                await handle.task
-            except (asyncio.CancelledError, Exception):  # noqa: BLE001
-                pass
         return True
 
 
@@ -484,8 +481,10 @@ async def arun_flow(
     """Headless execution of a FlowSpec (SPEC §2.7)."""
     from lga.compiler import compile_flow
 
-    compiled = source if isinstance(source, CompiledFlow) else compile_flow(
-        source, registry=registry, tweaks=tweaks
+    compiled = (
+        source
+        if isinstance(source, CompiledFlow)
+        else compile_flow(source, registry=registry, tweaks=tweaks)
     )
     if not compiled.ok:
         errors = [d for d in compiled.diagnostics if d.severity == "error"]

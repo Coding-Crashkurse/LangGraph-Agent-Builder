@@ -6,7 +6,6 @@ import asyncio
 import ipaddress
 import logging
 import socket
-from typing import Any
 from urllib.parse import urlparse
 
 import httpx
@@ -59,9 +58,7 @@ def validate_webhook_url(url: str, settings: Settings) -> None:
 
 
 class DbPushConfigStore(PushNotificationConfigStore):
-    def __init__(
-        self, sessions: async_sessionmaker[AsyncSession], settings: Settings
-    ) -> None:
+    def __init__(self, sessions: async_sessionmaker[AsyncSession], settings: Settings) -> None:
         self._sessions = sessions
         self._settings = settings
 
@@ -94,10 +91,14 @@ class DbPushConfigStore(PushNotificationConfigStore):
     ) -> list[PushNotificationConfig]:
         async with self._sessions() as session:
             rows = (
-                await session.execute(
-                    select(PushConfigRow).where(PushConfigRow.task_id == task_id)
+                (
+                    await session.execute(
+                        select(PushConfigRow).where(PushConfigRow.task_id == task_id)
+                    )
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
         return [PushNotificationConfig.model_validate(r.config) for r in rows]
 
     async def delete_info(

@@ -75,7 +75,7 @@ class Message(BaseModel):
                 return HumanMessage(**kwargs)
 
     @classmethod
-    def from_langchain(cls, msg: Any) -> "Message":
+    def from_langchain(cls, msg: Any) -> Message:
         from langchain_core.messages import AIMessage, SystemMessage, ToolMessage
 
         if isinstance(msg, cls):
@@ -129,7 +129,7 @@ class LazyToolset:
         self._cache = None
 
 
-async def resolve_toolsets(tools: list["ToolDef | LazyToolset"]) -> list[ToolDef]:
+async def resolve_toolsets(tools: list[ToolDef | LazyToolset]) -> list[ToolDef]:
     """Flatten a mixed ToolDef/LazyToolset list into concrete ToolDefs."""
     out: list[ToolDef] = []
     for item in tools or []:
@@ -145,7 +145,9 @@ def _schema(model: type[BaseModel]) -> dict[str, Any]:
     return model.model_json_schema()
 
 
-MESSAGE = PortSpec(schema_ref="lga:Message", json_schema=_schema(Message), family=PortFamily.MESSAGE)
+MESSAGE = PortSpec(
+    schema_ref="lga:Message", json_schema=_schema(Message), family=PortFamily.MESSAGE
+)
 MESSAGES = PortSpec(
     schema_ref="lga:Messages",
     json_schema={"type": "array", "items": _schema(Message)},
@@ -175,13 +177,27 @@ ANY = PortSpec(schema_ref="lga:Any", json_schema={}, family=PortFamily.ANY)
 
 CORE_PORTS: dict[str, PortSpec] = {
     p.schema_ref: p
-    for p in [MESSAGE, MESSAGES, TEXT, JSON, DOCUMENTS, EMBEDDING, LANGUAGE_MODEL, TOOLSET, ROUTE, FILE_REF, ANY]
+    for p in [
+        MESSAGE,
+        MESSAGES,
+        TEXT,
+        JSON,
+        DOCUMENTS,
+        EMBEDDING,
+        LANGUAGE_MODEL,
+        TOOLSET,
+        ROUTE,
+        FILE_REF,
+        ANY,
+    ]
 }
 
 
 def json_port(schema: dict[str, Any] | None = None, ref: str = "lga:Json") -> PortSpec:
     """A Json port carrying a declared payload schema → structural edge checks."""
-    return PortSpec(schema_ref=ref, json_schema=schema or {"type": "object"}, family=PortFamily.DATA)
+    return PortSpec(
+        schema_ref=ref, json_schema=schema or {"type": "object"}, family=PortFamily.DATA
+    )
 
 
 # --------------------------------------------------------------------------- compatibility
@@ -223,52 +239,51 @@ def _structural_subset(source: dict[str, Any], target: dict[str, Any]) -> bool:
 
 
 @functools.lru_cache(maxsize=4096)
-def _check_cached(
-    src_ref: str,
-    tgt_ref: str,
-    src_family: str,
-    tgt_family: str,
-    src_list: bool,
-    tgt_list: bool,
-    src_schema_key: str,
-    tgt_schema_key: str,
-) -> tuple[bool, str | None, str | None, str]:
-    raise RuntimeError("filled by check_compatibility")  # pragma: no cover
-
-
-def check_compatibility(source: PortSpec, target: PortSpec) -> Compat:
-    """Edge validation algorithm (SPEC §4.3), coercions included."""
+def _check_cached(source: PortSpec, target: PortSpec) -> Compat:
     from lga.sdk.ports import coerce
 
     # 1. ANY matches everything, with W201
     if source.family == PortFamily.ANY or target.family == PortFamily.ANY:
         return Compat(compatible=True, warning="W201", reason="ANY-typed edge")
 
-    # list mismatch handled before/with family checks
-    def list_wrap(inner: Compat) -> Compat:
-        if source.is_list == target.is_list:
+    # registered coercions win outright — their functions own the shape change
+    # (e.g. documents_to_text is list → scalar by design)
+    early = coerce.find(source, target)
+    if early is not None:
+        return Compat(compatible=True, warning="W203", coercion=early, reason=f"coercion {early}")
+
+    list_mismatch = source.is_list != target.is_list
+    wrappable = not source.is_list and target.is_list
+
+    def wrapped(inner: Compat) -> Compat:
+        if not list_mismatch:
             return inner
-        if not source.is_list and target.is_list and inner.compatible:
-            return Compat(
-                compatible=True,
-                warning="W202",
-                coercion=(inner.coercion + "+wrap_list") if inner.coercion else "wrap_list",
-                reason="auto list-wrap",
-            )
         return Compat(
-            compatible=False,
-            reason=f"list mismatch: {source.schema_ref} is_list={source.is_list} → "
-            f"{target.schema_ref} is_list={target.is_list}",
+            compatible=True,
+            warning="W202",
+            coercion=(inner.coercion + "+wrap_list") if inner.coercion else "wrap_list",
+            reason="auto list-wrap",
         )
 
+    if list_mismatch and not wrappable:
+        return Compat(
+            compatible=False,
+            reason=f"list → scalar is never implicit ({source.schema_ref} → {target.schema_ref})",
+        )
+
+    # scalar→list compares against the target's item schema
+    target_schema = target.json_schema
+    if list_mismatch and isinstance(target_schema, dict) and "items" in target_schema:
+        target_schema = target_schema["items"]
+
     # 2. same schema_ref
-    if source.schema_ref == target.schema_ref:
-        return list_wrap(Compat(compatible=True, reason="same schema_ref"))
+    if source.schema_ref == target.schema_ref and not list_mismatch:
+        return Compat(compatible=True, reason="same schema_ref")
 
     # 3. same family → structural subset check
     if source.family == target.family:
-        if _structural_subset(source.json_schema, target.json_schema):
-            return list_wrap(Compat(compatible=True, reason="structural subset"))
+        if _structural_subset(source.json_schema, target_schema):
+            return wrapped(Compat(compatible=True, reason="structural subset"))
         return Compat(
             compatible=False,
             reason=f"{source.schema_ref} does not structurally satisfy {target.schema_ref}",
@@ -277,7 +292,7 @@ def check_compatibility(source: PortSpec, target: PortSpec) -> Compat:
     # 4. cross-family → registered coercions only
     name = coerce.find(source, target)
     if name is not None:
-        return list_wrap(
+        return wrapped(
             Compat(compatible=True, warning="W203", coercion=name, reason=f"coercion {name}")
         )
     return Compat(
@@ -285,3 +300,12 @@ def check_compatibility(source: PortSpec, target: PortSpec) -> Compat:
         reason=f"incompatible families {source.family} → {target.family} "
         f"({source.schema_ref} → {target.schema_ref})",
     )
+
+
+def check_compatibility(source: PortSpec, target: PortSpec) -> Compat:
+    """Edge validation algorithm (SPEC §4.3), coercions included. Cached —
+    PortSpec is frozen/hashable."""
+    try:
+        return _check_cached(source, target)
+    except TypeError:  # unhashable json_schema dict → uncached path
+        return _check_cached.__wrapped__(source, target)

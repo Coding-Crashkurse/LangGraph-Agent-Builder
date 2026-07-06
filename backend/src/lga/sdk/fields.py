@@ -8,7 +8,8 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field as PydField, model_validator
+from pydantic import BaseModel, model_validator
+from pydantic import Field as PydField
 
 from lga.sdk.ports import PortSpec
 
@@ -26,7 +27,7 @@ class ColumnSpec(BaseModel):
     type: Literal["str", "int", "float", "bool"] = "str"
 
     @model_validator(mode="after")
-    def _default_display(self) -> "ColumnSpec":
+    def _default_display(self) -> ColumnSpec:
         if not self.display_name:
             self.display_name = self.name.replace("_", " ").title()
         return self
@@ -54,7 +55,7 @@ class Field(BaseModel):
     port_only: bool = False
 
     @model_validator(mode="after")
-    def _default_display_name(self) -> "Field":
+    def _default_display_name(self) -> Field:
         if not self.display_name:
             self.display_name = self.name.replace("_", " ").title()
         return self
@@ -165,7 +166,7 @@ class TabInput(Field):
     options: list[str] | list[Option] = PydField(default_factory=list)
 
     @model_validator(mode="after")
-    def _max_five(self) -> "TabInput":
+    def _max_five(self) -> TabInput:
         if len(self.options) > 5:
             raise ValueError("TabInput supports at most 5 options")
         return self
@@ -218,7 +219,11 @@ class TableInput(Field):
 
     def json_schema(self) -> dict[str, Any]:
         props = {
-            c.name: {"type": {"str": "string", "int": "integer", "float": "number", "bool": "boolean"}[c.type]}
+            c.name: {
+                "type": {"str": "string", "int": "integer", "float": "number", "bool": "boolean"}[
+                    c.type
+                ]
+            }
             for c in self.columns
         }
         return {"type": "array", "items": {"type": "object", "properties": props}}
@@ -295,7 +300,7 @@ class HandleField(Field):
     port_only: bool = True
 
     @model_validator(mode="after")
-    def _needs_port(self) -> "HandleField":
+    def _needs_port(self) -> HandleField:
         if self.as_port is None:
             raise ValueError("HandleField requires as_port")
         return self
@@ -307,7 +312,7 @@ class ToolsInput(Field):
     port_only: bool = True
 
     @model_validator(mode="after")
-    def _tool_port(self) -> "ToolsInput":
+    def _tool_port(self) -> ToolsInput:
         if self.as_port is None:
             from lga.sdk.ports import TOOLSET_LIST
 
