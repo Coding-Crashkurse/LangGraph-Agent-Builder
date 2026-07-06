@@ -1,67 +1,79 @@
-# GraphForge
+# lga — LangGraph-native visual agent builder
 
-Visual builder for **LangGraph** agent workflows. Compose flows on a React-Flow canvas,
-publish them as **A2A servers** (JSON-RPC + REST) and/or **MCP servers** (streamable HTTP),
-and watch every run live in a debug dashboard — tasks, SSE event tail, human-in-the-loop
-input, graph replay.
-
-> Architecture & conventions: **[CLAUDE.md](CLAUDE.md)** is the single source of truth.
-
-## Quickstart
+Langflow-class UX, LangGraph-class engine (see `SPEC.md`, the authoritative
+specification). Flows are composed on a typed react-flow canvas, **compiled**
+to real LangGraph `StateGraph`s (all errors at validate time, never mid-run),
+and every published flow is served as a spec-compliant **A2A agent** and/or
+**MCP tool** — including human-in-the-loop interrupts that surface as A2A
+`input-required` round trips.
 
 ```bash
-docker compose up -d postgres          # pgvector/pgvector:pg17 → host port 55432
+uv tool install lga        # or: pip install lga
+lga run                    # zero config: SQLite under ~/.lga, browser opens
+```
 
-# backend (Python ≥3.12, uv)
+## Highlights
+
+- **Compile-time > runtime** — ports are Pydantic schemas; edges validate
+  structurally (E020 names both schema_refs); diagnostics have stable codes.
+- **A2A** (`/a2a/{slug}`, JSON-RPC 0.3.x): agent card on both well-known paths,
+  streaming with token artifacts, tasks/cancel/resubscribe (store-backed
+  replay), push notifications with SSRF guards, API-key auth or public with
+  per-client session namespacing. Human Approval on the canvas ⇒
+  `input-required` over the protocol ⇒ resume ⇒ `completed`.
+- **MCP** (`/mcp`, streamable HTTP + `/mcp/sse` fallback): published flows are
+  tools; client config snippet at `GET /api/v1/mcp/config`.
+- **Component SDK** — one Python class per component, discovered via the
+  `lga.components` entry point or `LGA_COMPONENTS_PATH`; no string-eval, ever.
+  Scaffold with `lga component new`.
+- **Library use** — `from lga.compiler import compile_flow`;
+  `compile_flow(spec).graph` runs under vanilla LangGraph without the server.
+  Export any flow to a standalone `flow.py`.
+- **Storage tiers** — SQLite by default, Postgres (`LGA_DATABASE_URL=
+  postgresql+asyncpg://…`) for production + pgvector RAG.
+
+## Repository layout
+
+| Path | What |
+|---|---|
+| `SPEC.md` | the authoritative product/architecture spec |
+| `backend/` | the `lga` package (SDK, compiler, runtime, A2A, MCP, Studio API, CLI) |
+| `frontend/` | React Studio (bundled into the wheel at build time) |
+| `examples/01…10` | runnable examples incl. A2A HITL client, multi-agent, MCP both ways |
+
+## A2A endpoints per published agent
+
+- Card: `GET /a2a/{slug}/.well-known/agent-card.json` (legacy `agent.json`
+  alias served too; `GET /a2a/{slug}/` also returns the card). The root
+  `/.well-known/agent-card.json` lists per-agent card URLs — in v1 there is no
+  directory agent.
+- RPC: `POST /a2a/{slug}/` (JSON-RPC 2.0; `message/stream` answers as SSE
+  where each `data:` field is one complete JSON-RPC response).
+
+## Development
+
+```bash
+docker compose up -d postgres            # optional: Postgres tier on :55432
+
 cd backend
-cp .env.example .env                   # set OPENAI_API_KEY for real LLM/RAG flows
 uv sync
-uv run graphforge serve --reload       # http://localhost:8010 on this machine (see .env BASE_URL)
+uv run lga run --port 8010               # this dev box keeps 8000 occupied
+uv run pytest                            # unit + compiler goldens + A2A compliance + MCP + CLI
 
-# frontend (Node ≥20, pnpm)
-cd frontend
+cd ../frontend
 pnpm install
-pnpm dev                               # http://localhost:5173, proxies /api + /serve
+pnpm dev                                 # Vite on :5173, proxies /api /a2a /mcp → :8010
+pnpm gen:api                             # regenerate src/api/schema.gen.ts from openapi.json
 ```
 
-`uv run graphforge serve` is the blessed backend entry point — on Windows it arranges the
-selector event loop psycopg async needs (bare non-reload `uvicorn` won't). Consequence of
-that loop: `stdio` MCP toolsets are unavailable on Windows; use `streamable_http`.
-
-Non-default ports on this dev box (both env-driven, not hardcoded):
-- Postgres → **55432** (5432 is taken by another project)
-- Backend → **8010** (8000 is taken) — set via `backend/.env` `BASE_URL` + `serve --port`
-
-## What works end-to-end
-
-- Flow CRUD, compiler validation with node/edge-level issues, publish/unpublish with
-  dynamic mounting under `/serve/a2a/{slug}`, `/serve/rest/{slug}`, `/serve/mcp/{slug}`
-- A2A: agent card at `…/.well-known/agent-card.json`, `message/send`, `message/stream`
-  with custom progress events, multi-turn contexts (`contextId == thread_id`),
-  `input-required` interrupts + resume, `tasks/cancel`
-- MCP: one tool per flow (`(message, thread_id?) → str`), progress notifications,
-  agent-card resource, HITL fails fast pointing to A2A (elicitation behind
-  `ENABLE_MCP_ELICITATION`)
-- Debug UI: live task list (SSE firehose), event tail with replay (`Last-Event-ID`),
-  conversation + artifacts, mini graph replay, approve/reject & free-text input panels,
-  playground (stream/send toggle)
-- RAG: `POST /api/collections/{name}/documents` + `uv run graphforge ingest <collection> <path>`
-  (needs an embedding provider key)
-
-## Demo
-
-The seeded **Library RAG Agent** flow (`examples/flows/library_rag.json`, also in the DB)
-implements the CLAUDE.md §16 demo: retriever → agent (⟵ MCP toolset) → human approval,
-with cycle on rejection. To run it for real: set `OPENAI_API_KEY`, ingest documents into
-`library-docs`, point the `mcp_toolset` node at a reachable MCP server (or delete that
-node), then publish from the builder.
-
-For a keyless tour, start the backend with `TESTING=true` and build a flow from
-`fake_llm` + `human_approval` — the whole HITL/streaming path works without any provider.
-
-## Quality gates
+Quality gates (run before every commit):
 
 ```bash
-cd backend  && uv run ruff check --fix && uv run ruff format && uv run pytest   # 36 tests
-cd frontend && pnpm lint && pnpm test && pnpm build                             # 11 tests
+cd backend  && uv run ruff check --fix && uv run ruff format && uv run pytest
+cd frontend && pnpm lint && pnpm test && pnpm build
+cd backend  && uv run pytest ../examples          # the example matrix stays green
 ```
+
+Windows note: start the backend via `lga run` (it installs a selector event
+loop; psycopg async cannot run on the Proactor loop). Consequence: `stdio` MCP
+toolsets are unavailable on Windows — use `streamable_http`.

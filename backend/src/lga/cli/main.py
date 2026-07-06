@@ -79,7 +79,7 @@ def config(
 @app.command()
 def version(json_out: Annotated[bool, typer.Option("--json/--no-json")] = False) -> None:
     """Package version, A2A protocolVersion, LangGraph version, DB backend."""
-    import langgraph
+    import importlib.metadata
 
     import lga as lga_pkg
 
@@ -90,10 +90,14 @@ def version(json_out: Annotated[bool, typer.Option("--json/--no-json")] = False)
         protocol = AgentCard.model_fields["protocol_version"].default
     except Exception:
         protocol = "0.3.x"
+    try:
+        langgraph_version = importlib.metadata.version("langgraph")
+    except importlib.metadata.PackageNotFoundError:
+        langgraph_version = "unknown"
     info = {
         "lga": lga_pkg.__version__,
         "a2a_protocol": str(protocol),
-        "langgraph": getattr(langgraph, "__version__", "unknown"),
+        "langgraph": langgraph_version,
         "db_backend": settings.storage_tier,
     }
     if json_out:

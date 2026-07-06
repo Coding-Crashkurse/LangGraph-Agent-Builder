@@ -1,0 +1,45 @@
+name: release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write # PyPI Trusted Publishing (SPEC §2.5)
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - name: build frontend
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile && pnpm build
+      - name: build wheel + sdist
+        working-directory: backend
+        run: uv build
+      - name: publish (TestPyPI for release candidates, PyPI for finals)
+        working-directory: backend
+        run: |
+          if [[ "${GITHUB_REF_NAME}" == *rc* ]]; then
+            uv publish --index testpypi
+          else
+            uv publish
+          fi
+      - name: changelog from conventional commits
+        run: |
+          PREV=$(git describe --tags --abbrev=0 "${GITHUB_REF_NAME}^" 2>/dev/null || echo "")
+          git log ${PREV:+$PREV..}HEAD --pretty='- %s' > RELEASE_NOTES.md
+      - uses: softprops/action-gh-release@v2
+        with:
+          body_path: RELEASE_NOTES.md

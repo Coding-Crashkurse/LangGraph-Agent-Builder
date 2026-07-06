@@ -124,6 +124,7 @@ filterwarnings = [
 
 [tool.importlinter]
 root_package = "lga"
+include_external_packages = true
 
 [[tool.importlinter.contracts]]
 name = "sdk stays lightweight (no fastapi/db imports)"
