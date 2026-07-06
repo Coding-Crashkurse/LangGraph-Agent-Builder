@@ -1,0 +1,29 @@
+{
+  "schema_version": "1",
+  "flow": {
+    "name": "library rag",
+    "slug": "library-rag",
+    "description": "Answers questions about the library corpus.",
+    "a2a": { "enabled": true, "description": "Answers questions grounded in the library-docs pgvector collection.", "examples": ["Who wrote The Left Hand of Darkness?"] }
+  },
+  "nodes": [
+    { "id": "start", "component_id": "lga.io.start", "component_version": "1.0.0", "config": {}, "position": { "x": 0, "y": 120 } },
+    { "id": "retrieve", "component_id": "lga.rag.pgvector_retriever", "component_version": "1.0.0",
+      "config": { "collection": "library-docs", "k": 4, "embeddings": { "provider": "openai", "model": "text-embedding-3-small" } },
+      "position": { "x": 260, "y": 120 } },
+    { "id": "prompt", "component_id": "lga.data.prompt_template", "component_version": "1.0.0",
+      "config": { "template": "Answer using ONLY this context:\n{context}\n\nQuestion: {question}" },
+      "position": { "x": 520, "y": 120 } },
+    { "id": "answer", "component_id": "lga.llm.llm_call", "component_version": "1.0.0",
+      "config": { "prompt": "{rendered}", "model": { "provider": "openai", "model": "gpt-4o-mini" } },
+      "position": { "x": 780, "y": 120 } },
+    { "id": "end", "component_id": "lga.io.end", "component_version": "1.0.0", "config": {}, "position": { "x": 1040, "y": 120 } }
+  ],
+  "edges": [
+    { "id": "e1", "kind": "data", "source": { "node": "start", "output": "message" }, "target": { "node": "retrieve", "input": "query" } },
+    { "id": "e2", "kind": "data", "source": { "node": "retrieve", "output": "documents" }, "target": { "node": "prompt", "input": "context" } },
+    { "id": "e3", "kind": "data", "source": { "node": "start", "output": "message" }, "target": { "node": "prompt", "input": "question" } },
+    { "id": "e4", "kind": "data", "source": { "node": "prompt", "output": "text" }, "target": { "node": "answer", "input": "rendered" } },
+    { "id": "e5", "kind": "data", "source": { "node": "answer", "output": "message" }, "target": { "node": "end", "input": "message" } }
+  ]
+}

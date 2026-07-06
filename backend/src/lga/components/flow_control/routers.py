@@ -41,6 +41,7 @@ class LLMRouter(Component):
             info="Extra classification guidance for the model.",
             advanced=True,
         ),
+        fields.HandleField(name="input", display_name="Input", as_port=ports.MESSAGE),
     ]
 
     def build(self, ctx):
@@ -77,7 +78,8 @@ class LLMRouter(Component):
                 lowered = text.lower()
                 label = next((lb for lb in labels if lb.lower() in lowered), None)
             if label is None:
-                label = labels[0] if labels else ""
+                # no match → last label (catch-all by convention, e.g. "other")
+                label = labels[-1] if labels else ""
             rc.emit_status(f"routed → {label}")
             return {"route": label}
 
@@ -106,6 +108,7 @@ class RuleRouter(Component):
         fields.StrInput(
             name="default_label", display_name="Default Label", default="default", required=True
         ),
+        fields.HandleField(name="input", display_name="Input", as_port=ports.MESSAGE),
     ]
 
     @classmethod

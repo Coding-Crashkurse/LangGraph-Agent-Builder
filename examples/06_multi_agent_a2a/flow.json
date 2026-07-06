@@ -1,0 +1,20 @@
+{
+  "schema_version": "1",
+  "flow": {
+    "name": "orchestrator",
+    "slug": "orchestrator",
+    "description": "Calls the hitl-approval agent remotely; its interrupt propagates.",
+    "a2a": { "enabled": true, "description": "Multi-agent orchestrator delegating to a remote A2A agent with nested human approval.", "examples": ["handle the refund request"] }
+  },
+  "nodes": [
+    { "id": "start", "component_id": "lga.io.start", "component_version": "1.0.0", "config": {}, "position": { "x": 0, "y": 120 } },
+    { "id": "remote", "component_id": "lga.tools.a2a_remote_agent", "component_version": "1.0.0",
+      "config": { "agent_url": "http://127.0.0.1:8000/a2a/hitl-approval", "mode": "node" },
+      "position": { "x": 300, "y": 120 } },
+    { "id": "end", "component_id": "lga.io.end", "component_version": "1.0.0", "config": {}, "position": { "x": 620, "y": 120 } }
+  ],
+  "edges": [
+    { "id": "e1", "kind": "data", "source": { "node": "start", "output": "message" }, "target": { "node": "remote", "input": "input" } },
+    { "id": "e2", "kind": "data", "source": { "node": "remote", "output": "message" }, "target": { "node": "end", "input": "message" } }
+  ]
+}

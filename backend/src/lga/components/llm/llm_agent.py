@@ -56,7 +56,11 @@ class LLMAgent(Component):
             tools = as_langchain_tools(tool_defs)
             model = resolve_model(ctx.get_field("model"))
             if tools:
-                model = model.bind_tools(tools)
+                try:
+                    model = model.bind_tools(tools)
+                except NotImplementedError:
+                    rc.emit_log("warning", "model does not support tool binding; "
+                                           "tools attached but unused")
 
             system = str(ctx.get_field("system_prompt") or "")
             if ctx.get_field("use_documents"):
