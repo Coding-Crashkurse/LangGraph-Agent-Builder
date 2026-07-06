@@ -22,3 +22,6 @@ dist/
 Thumbs.db
 .idea/
 .vscode/settings.json
+
+# built frontend bundled into the wheel at build time (SPEC 2.2)
+backend/src/lga/_static/
