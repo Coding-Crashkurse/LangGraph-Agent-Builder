@@ -87,6 +87,7 @@ function Canvas() {
       store.addNode({
         id,
         type: "lga",
+        deletable: id !== "start" && id !== "end",
         position,
         data: {
           componentId,
@@ -130,6 +131,7 @@ function Canvas() {
           onConnect={onConnect}
           onNodeClick={(_, node) => store.select(node.id)}
           onPaneClick={() => store.select(null)}
+          deleteKeyCode={["Delete", "Backspace"]}
           proOptions={{ hideAttribution: true }}
           colorMode="dark"
           fitView

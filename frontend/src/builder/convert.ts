@@ -27,6 +27,8 @@ export function specToCanvas(spec: FlowSpec): { nodes: CanvasNode[]; edges: Canv
   const nodes: CanvasNode[] = spec.nodes.map((node) => ({
     id: node.id,
     type: "lga",
+    // reserved nodes are required (E030) — Delete must not remove them
+    deletable: node.id !== "start" && node.id !== "end",
     position: node.position ?? { x: 0, y: 0 },
     data: {
       componentId: node.component_id,
