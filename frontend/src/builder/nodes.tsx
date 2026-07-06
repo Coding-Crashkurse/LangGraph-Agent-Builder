@@ -1,22 +1,24 @@
-/** Canvas node + edge renderers: family-colored handles (SPEC §11.3),
- * amber router outputs, dashed sky tool edges, start/end pills. */
+/** Canvas node + edge renderers (SPEC §11.3): family-colored handles, amber
+ * router outputs, dashed sky tool edges, start/end pills. While dragging a
+ * connection, incompatible handles dim; hovering a port shows a typed tooltip. */
 
 import {
   BaseEdge,
   getBezierPath,
   Handle,
   Position,
+  useConnection,
   type EdgeProps,
   type NodeProps,
 } from "@xyflow/react";
-import { memo } from "react";
+import { memo, useState } from "react";
 
 import { PORT_FAMILY_COLORS, type PortSpec } from "@/api/types";
 import { cn } from "@/lib/utils";
 
 import type { CanvasEdge, CanvasNode } from "./convert";
 import { ROUTER_TARGET_HANDLE } from "./convert";
-import { indexPorts } from "./guards";
+import { compatSummary, indexPorts, judgeConnection } from "./guards";
 import { useBuilder } from "./store";
 
 const CATEGORY_ACCENTS: Record<string, string> = {
@@ -29,18 +31,65 @@ const CATEGORY_ACCENTS: Record<string, string> = {
   testing: "border-l-pink-500",
 };
 
+interface PortTooltip {
+  name: string;
+  port: PortSpec;
+  side: "in" | "out";
+  top: number;
+}
+
+/** Is `port` a legal partner for the connection currently being dragged? */
+function useHandleDimmer(nodeId: string) {
+  const connection = useConnection();
+  const descriptors = useBuilder((s) => s.descriptors);
+  const nodes = useBuilder((s) => s.nodes);
+
+  if (!connection.inProgress || !connection.fromHandle || !connection.fromNode) {
+    return () => false;
+  }
+  const fromNode = nodes.find((n) => n.id === connection.fromNode?.id);
+  const fromDescriptor = fromNode && descriptors.get(fromNode.data.componentId);
+  if (!fromNode || !fromDescriptor) return () => false;
+  const fromPorts = indexPorts(fromDescriptor, fromNode.data.config);
+  const fromType = connection.fromHandle.type; // "source" | "target"
+  const fromId = connection.fromHandle.id ?? "";
+  const fromPort =
+    fromType === "source" ? fromPorts.outputs.get(fromId) : fromPorts.inputs.get(fromId);
+
+  return (port: PortSpec | undefined, side: "in" | "out", handleId: string): boolean => {
+    // the handle the drag started from stays bright
+    if (connection.fromNode?.id === nodeId && fromId === handleId) return false;
+    if (fromType === "source") {
+      if (side === "out") return true; // outputs can't receive a source drag
+      const verdict = judgeConnection(fromPort, port, handleId === ROUTER_TARGET_HANDLE);
+      return !verdict.ok;
+    }
+    // drag started from an input: only outputs are candidates
+    if (side === "in") return true;
+    const targetIsRouterSink = fromId === ROUTER_TARGET_HANDLE;
+    const verdict = judgeConnection(
+      port,
+      targetIsRouterSink ? undefined : fromPort,
+      targetIsRouterSink,
+    );
+    return !verdict.ok;
+  };
+}
+
 function PortDot({
   id,
   port,
   side,
   offset,
-  label,
+  dimmed,
+  onHover,
 }: {
   id: string;
   port: PortSpec;
   side: "in" | "out";
   offset: number;
-  label?: string;
+  dimmed: boolean;
+  onHover: (tooltip: PortTooltip | null) => void;
 }) {
   const color = PORT_FAMILY_COLORS[port.family] ?? "#9ca3af";
   return (
@@ -48,15 +97,51 @@ function PortDot({
       id={id}
       type={side === "in" ? "target" : "source"}
       position={side === "in" ? Position.Left : Position.Right}
+      onMouseEnter={() => onHover({ name: id, port, side, top: offset })}
+      onMouseLeave={() => onHover(null)}
       style={{
         top: offset,
         background: port.family === "ANY" ? "transparent" : color,
         border: `2px ${port.family === "ANY" ? "dashed" : "solid"} ${color}`,
         width: 10,
         height: 10,
+        opacity: dimmed ? 0.15 : 1,
+        transition: "opacity 120ms, transform 120ms",
+        transform: dimmed ? "scale(0.8)" : "scale(1)",
       }}
-      title={`${label ?? id} · ${port.schema_ref}${port.is_list ? "[]" : ""}`}
     />
+  );
+}
+
+function PortTooltipCard({ tooltip, nodeWidth }: { tooltip: PortTooltip; nodeWidth?: number }) {
+  const color = PORT_FAMILY_COLORS[tooltip.port.family] ?? "#9ca3af";
+  return (
+    <div
+      className="pointer-events-none absolute z-50 w-56 rounded-md border border-surface-700 bg-surface-950/95 px-2.5 py-1.5 shadow-xl"
+      style={
+        tooltip.side === "in"
+          ? { right: (nodeWidth ?? 190) + 8, top: tooltip.top - 12 }
+          : { left: (nodeWidth ?? 190) + 8, top: tooltip.top - 12 }
+      }
+    >
+      <p className="flex items-center gap-1.5 text-[11px] font-semibold text-zinc-100">
+        <span
+          className="inline-block h-2 w-2 rounded-full"
+          style={{ background: color }}
+        />
+        {tooltip.name}
+        <span className="font-normal text-zinc-500">
+          {tooltip.side === "in" ? "input" : "output"}
+        </span>
+      </p>
+      <p className="mt-0.5 font-mono text-[10px]" style={{ color }}>
+        {tooltip.port.schema_ref}
+        {tooltip.port.is_list ? "[]" : ""} · {tooltip.port.family}
+      </p>
+      <p className="mt-0.5 text-[10px] text-zinc-400">
+        {compatSummary(tooltip.port, tooltip.side)}
+      </p>
+    </div>
   );
 }
 
@@ -64,6 +149,8 @@ export const LgaNode = memo(function LgaNode({ id, data, selected }: NodeProps<C
   const descriptors = useBuilder((s) => s.descriptors);
   const diagnostics = useBuilder((s) => s.diagnostics);
   const descriptor = descriptors.get(data.componentId);
+  const dimFor = useHandleDimmer(id);
+  const [tooltip, setTooltip] = useState<PortTooltip | null>(null);
 
   if (!descriptor) {
     return (
@@ -96,11 +183,28 @@ export const LgaNode = memo(function LgaNode({ id, data, selected }: NodeProps<C
       >
         {id === "start" ? "▶ start" : "■ end"}
         {inputs.map(([name, port], index) => (
-          <PortDot key={name} id={name} port={port} side="in" offset={14 + index * 12} />
+          <PortDot
+            key={name}
+            id={name}
+            port={port}
+            side="in"
+            offset={14 + index * 14}
+            dimmed={dimFor(port, "in", name)}
+            onHover={setTooltip}
+          />
         ))}
         {outputs.map(([name, port], index) => (
-          <PortDot key={name} id={name} port={port} side="out" offset={14 + index * 12} />
+          <PortDot
+            key={name}
+            id={name}
+            port={port}
+            side="out"
+            offset={14 + index * 14}
+            dimmed={dimFor(port, "out", name)}
+            onHover={setTooltip}
+          />
         ))}
+        {tooltip && <PortTooltipCard tooltip={tooltip} nodeWidth={120} />}
       </div>
     );
   }
@@ -143,17 +247,43 @@ export const LgaNode = memo(function LgaNode({ id, data, selected }: NodeProps<C
       </div>
       <div className="px-3 pt-1 text-[10px] text-zinc-500">{id}</div>
 
-      {/* implicit control-in for router edges */}
+      {/* implicit control-in for router branches */}
       <Handle
         id={ROUTER_TARGET_HANDLE}
         type="target"
         position={Position.Top}
-        style={{ background: "#f59e0b", width: 8, height: 8, opacity: 0.85 }}
-        title="control in (router branches)"
+        onMouseEnter={() =>
+          setTooltip({
+            name: "control in",
+            port: {
+              schema_ref: "lga:Route",
+              json_schema: {},
+              family: "ROUTE",
+              is_list: false,
+            },
+            side: "in",
+            top: 0,
+          })
+        }
+        onMouseLeave={() => setTooltip(null)}
+        style={{
+          background: "#f59e0b",
+          width: 8,
+          height: 8,
+          opacity: dimFor(undefined, "in", ROUTER_TARGET_HANDLE) ? 0.15 : 0.9,
+          transition: "opacity 120ms",
+        }}
       />
       {inputs.map(([name, port], index) => (
         <div key={name}>
-          <PortDot id={name} port={port} side="in" offset={HEADER + index * ROW} />
+          <PortDot
+            id={name}
+            port={port}
+            side="in"
+            offset={HEADER + index * ROW}
+            dimmed={dimFor(port, "in", name)}
+            onHover={setTooltip}
+          />
           <span
             className="absolute text-[10px] text-zinc-400"
             style={{ left: 10, top: HEADER + index * ROW - 8 }}
@@ -164,7 +294,14 @@ export const LgaNode = memo(function LgaNode({ id, data, selected }: NodeProps<C
       ))}
       {outputs.map(([name, port], index) => (
         <div key={name}>
-          <PortDot id={name} port={port} side="out" offset={HEADER + index * ROW} />
+          <PortDot
+            id={name}
+            port={port}
+            side="out"
+            offset={HEADER + index * ROW}
+            dimmed={dimFor(port, "out", name)}
+            onHover={setTooltip}
+          />
           <span
             className={cn(
               "absolute text-right text-[10px]",
@@ -176,6 +313,7 @@ export const LgaNode = memo(function LgaNode({ id, data, selected }: NodeProps<C
           </span>
         </div>
       ))}
+      {tooltip && <PortTooltipCard tooltip={tooltip} />}
     </div>
   );
 });

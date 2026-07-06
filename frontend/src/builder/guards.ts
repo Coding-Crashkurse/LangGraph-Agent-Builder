@@ -60,6 +60,38 @@ export type ConnectionVerdict =
   | { ok: true; kind: "data" | "tool" | "router" }
   | { ok: false; reason: string };
 
+const ALL_FAMILIES: PortFamily[] = [
+  "MESSAGE",
+  "DATA",
+  "DOCUMENTS",
+  "EMBEDDING",
+  "MODEL",
+  "TOOLSET",
+  "ROUTE",
+  "FILE",
+  "ANY",
+];
+
+/** Human-readable "connects to …" line for port tooltips. */
+export function compatSummary(port: PortSpec, side: "in" | "out"): string {
+  if (port.family === "ROUTE") {
+    return side === "out"
+      ? "control branch → drop on any node (amber top handle)"
+      : "accepts router branches only";
+  }
+  if (port.family === "TOOLSET") {
+    return side === "out"
+      ? "→ Tools input of an agent (dashed edge)"
+      : "← Toolset outputs (dashed edge)";
+  }
+  const partners = ALL_FAMILIES.filter((family) =>
+    side === "out"
+      ? familiesCompatible(port.family, family)
+      : familiesCompatible(family, port.family),
+  ).filter((family) => family !== "ROUTE" && family !== "TOOLSET");
+  return (side === "out" ? "→ " : "← ") + partners.join(", ");
+}
+
 export function judgeConnection(
   sourcePort: PortSpec | undefined,
   targetPort: PortSpec | undefined,

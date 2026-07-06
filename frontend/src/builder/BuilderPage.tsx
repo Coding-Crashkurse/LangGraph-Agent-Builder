@@ -34,13 +34,16 @@ function Canvas() {
   const store = useBuilder();
   const { screenToFlowPosition, fitView, setCenter, getNode } = useReactFlow();
 
-  const onConnect = useCallback(
-    (connection: Connection) => {
+  const judge = useCallback(
+    (connection: Connection | { source: string; target: string;
+      sourceHandle?: string | null; targetHandle?: string | null }) => {
       const sourceNode = store.nodes.find((n) => n.id === connection.source);
       const targetNode = store.nodes.find((n) => n.id === connection.target);
       const sourceDesc = sourceNode && store.descriptors.get(sourceNode.data.componentId);
       const targetDesc = targetNode && store.descriptors.get(targetNode.data.componentId);
-      if (!sourceNode || !targetNode || !sourceDesc || !targetDesc) return;
+      if (!sourceNode || !targetNode || !sourceDesc || !targetDesc) {
+        return { ok: false as const, reason: "unknown node" };
+      }
       const sourcePorts = indexPorts(sourceDesc, sourceNode.data.config);
       const targetPorts = indexPorts(targetDesc, targetNode.data.config);
       const sourcePort = sourcePorts.outputs.get(connection.sourceHandle ?? "");
@@ -48,11 +51,18 @@ function Canvas() {
         connection.targetHandle === ROUTER_TARGET_HANDLE
           ? undefined
           : targetPorts.inputs.get(connection.targetHandle ?? "");
-      const verdict = judgeConnection(
+      return judgeConnection(
         sourcePort,
         targetPort,
         connection.targetHandle === ROUTER_TARGET_HANDLE,
       );
+    },
+    [store],
+  );
+
+  const onConnect = useCallback(
+    (connection: Connection) => {
+      const verdict = judge(connection);
       if (!verdict.ok) {
         toast.error(verdict.reason);
         return;
@@ -68,7 +78,12 @@ function Canvas() {
       };
       store.addEdge(edge);
     },
-    [store],
+    [store, judge],
+  );
+
+  const isValidConnection = useCallback(
+    (connection: Connection | CanvasEdge) => judge(connection).ok,
+    [judge],
   );
 
   const onDrop = useCallback(
@@ -129,6 +144,7 @@ function Canvas() {
           onNodesChange={store.onNodesChange}
           onEdgesChange={store.onEdgesChange}
           onConnect={onConnect}
+          isValidConnection={isValidConnection}
           onNodeClick={(_, node) => store.select(node.id)}
           onPaneClick={() => store.select(null)}
           deleteKeyCode={["Delete", "Backspace"]}
