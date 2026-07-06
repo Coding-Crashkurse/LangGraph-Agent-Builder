@@ -283,7 +283,11 @@ class Executor:
                         raw = interrupts[0].value if interrupts else {}
                         interrupt_payload = raw if isinstance(raw, dict) else {"value": raw}
                         interrupt_node = last_started_node or None
-                        break
+                        # do NOT break: closing the generator early can cancel
+                        # langgraph's async checkpoint flush — on Postgres the
+                        # interrupt would then be missing when the resume
+                        # request inspects the thread state
+                        continue
                     self._check_data_conflicts(chunk)
         except RuntimeError_ as exc:
             await self._emit(

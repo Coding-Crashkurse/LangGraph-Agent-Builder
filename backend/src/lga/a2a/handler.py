@@ -67,7 +67,9 @@ class LGARequestHandler(DefaultRequestHandler):
 
             # the live queue can be wiped a beat before the aggregator persists
             # the final state — poll the store briefly instead of dropping it
-            for _ in range(20):
+            # (generous window: under load the run may still be finishing when
+            # the wiped live stream ends; exits immediately once terminal)
+            for _ in range(80):
                 refreshed = await self.task_store.get(params.id, context)
                 if refreshed is not None and refreshed.status.state in FINAL_STATES:
                     yield TaskStatusUpdateEvent(
@@ -77,4 +79,4 @@ class LGARequestHandler(DefaultRequestHandler):
                         final=True,
                     )
                     return
-                await asyncio.sleep(0.1)
+                await asyncio.sleep(0.25)
