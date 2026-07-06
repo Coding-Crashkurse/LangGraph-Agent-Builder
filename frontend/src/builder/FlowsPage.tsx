@@ -1,24 +1,21 @@
+/** Flow list: create / import / open / delete + run history glance. */
+
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  Activity,
-  ArrowUpRight,
-  Boxes,
-  GitCommitHorizontal,
-  Hammer,
-  Plus,
-  Trash2,
-  Workflow,
-} from "lucide-react";
-import { useState, type MouseEvent } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 
 import { api } from "@/api/client";
-import type { Flow } from "@/api/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
-import { Input, Label } from "@/components/ui/input";
+import { Input } from "@/components/ui/input";
 import { toast } from "@/components/ui/toast";
+
+import { emptyFlowSpec } from "./convert";
+
+function slugify(name: string): string {
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "flow";
+}
 
 export function FlowsPage() {
   const queryClient = useQueryClient();
@@ -27,186 +24,171 @@ export function FlowsPage() {
   const [name, setName] = useState("");
 
   const flows = useQuery({ queryKey: ["flows"], queryFn: api.flows.list });
+  const runs = useQuery({ queryKey: ["runs"], queryFn: () => api.runs.list() });
 
-  const create = useMutation({
-    mutationFn: () => api.flows.create({ name }),
+  const createFlow = useMutation({
+    mutationFn: () => api.flows.create(emptyFlowSpec(name, slugify(name))),
     onSuccess: (flow) => {
       queryClient.invalidateQueries({ queryKey: ["flows"] });
       navigate(`/flows/${flow.id}`);
     },
-    onError: (error: Error) => toast.error(error.message),
+    onError: (error) => toast.error((error as Error).message),
   });
 
-  const remove = useMutation({
+  const deleteFlow = useMutation({
     mutationFn: (id: string) => api.flows.delete(id),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["flows"] }),
-    onError: (error: Error) => toast.error(error.message),
+    onError: (error) => toast.error((error as Error).message),
   });
 
+  const importFlow = async (file: File) => {
+    try {
+      const spec = JSON.parse(await file.text());
+      const flow = await api.flows.create(spec);
+      queryClient.invalidateQueries({ queryKey: ["flows"] });
+      navigate(`/flows/${flow.id}`);
+    } catch (error) {
+      toast.error(`import failed: ${(error as Error).message}`);
+    }
+  };
+
   return (
-    <div className="mx-auto max-w-6xl px-6 py-14">
-      <header className="gf-animate-in mb-10 flex items-end justify-between">
-        <div className="flex items-center gap-3.5">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-accent-500/25 bg-gradient-to-br from-accent-500/25 via-accent-600/10 to-sky-500/15 shadow-lg shadow-accent-600/15">
-            <Workflow className="h-5.5 w-5.5 text-accent-300" />
-          </div>
-          <div>
-            <h1 className="bg-gradient-to-r from-white via-zinc-200 to-zinc-500 bg-clip-text text-2xl font-bold tracking-tight text-transparent">
-              GraphForge
-            </h1>
-            <p className="mt-0.5 text-[13px] text-zinc-500">
-              Visual LangGraph flows, published as A2A & MCP servers.
-            </p>
-          </div>
+    <div className="min-h-screen bg-surface-950 px-8 py-6 text-zinc-100">
+      <header className="mb-6 flex items-center gap-3">
+        <h1 className="text-lg font-bold">lga</h1>
+        <span className="text-xs text-zinc-500">
+          flows compile to LangGraph · publish = A2A agent + MCP tool
+        </span>
+        <div className="ml-auto flex items-center gap-2">
+          <Link to="/settings" className="text-sm text-zinc-400 hover:text-zinc-100">
+            Settings
+          </Link>
+          <label className="cursor-pointer text-sm text-zinc-400 hover:text-zinc-100">
+            Import
+            <input
+              type="file"
+              accept=".json"
+              className="hidden"
+              onChange={(e) => e.target.files?.[0] && importFlow(e.target.files[0])}
+            />
+          </label>
+          <Button onClick={() => setCreateOpen(true)}>New flow</Button>
         </div>
-        <Button onClick={() => setCreateOpen(true)}>
-          <Plus className="h-4 w-4" /> New flow
-        </Button>
       </header>
 
-      {flows.isLoading ? (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {[0, 1, 2].map((i) => (
-            <div
-              key={i}
-              className="h-44 animate-pulse rounded-xl border border-surface-800 bg-surface-900"
-            />
-          ))}
-        </div>
-      ) : flows.data?.length ? (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {flows.data.map((flow, index) => (
-            <FlowCard
-              key={flow.id}
-              flow={flow}
-              index={index}
-              onOpen={() => navigate(`/flows/${flow.id}`)}
-              onDebug={() => navigate(`/debug/${flow.id}`)}
-              onDelete={() => {
-                if (window.confirm(`Delete flow "${flow.name}"? This unpublishes it too.`)) {
-                  remove.mutate(flow.id);
-                }
-              }}
-            />
-          ))}
-        </div>
-      ) : (
-        <div className="gf-animate-in flex flex-col items-center rounded-2xl border border-dashed border-surface-700 bg-surface-900/40 py-20">
-          <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-surface-700 bg-surface-850">
-            <Workflow className="h-6 w-6 text-zinc-600" />
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+        {(flows.data ?? []).map((flow) => (
+          <div
+            key={flow.id}
+            className="group rounded-lg border border-surface-800 bg-surface-900 p-4 hover:border-accent-700"
+          >
+            <div className="flex items-center gap-2">
+              <Link
+                to={`/flows/${flow.id}`}
+                className="text-sm font-semibold text-zinc-100 hover:text-accent-300"
+              >
+                {flow.name}
+              </Link>
+              {flow.published_version ? (
+                <Badge tone="green">v{flow.published_version}</Badge>
+              ) : (
+                <Badge tone="muted">draft</Badge>
+              )}
+              {flow.spec.flow.a2a?.enabled && <Badge tone="violet">A2A</Badge>}
+              {flow.spec.flow.mcp?.enabled && <Badge tone="sky">MCP</Badge>}
+              <button
+                className="ml-auto text-xs text-zinc-600 opacity-0 hover:text-red-400 group-hover:opacity-100"
+                onClick={() => {
+                  if (window.confirm(`Delete flow "${flow.name}"?`)) deleteFlow.mutate(flow.id);
+                }}
+              >
+                delete
+              </button>
+            </div>
+            <p className="mt-1 line-clamp-2 text-xs text-zinc-500">
+              {flow.description || "no description"}
+            </p>
+            <p className="mt-2 font-mono text-[10px] text-zinc-600">
+              /{flow.slug} · {flow.spec.nodes.length} nodes
+            </p>
           </div>
-          <p className="mt-4 text-sm text-zinc-400">No flows yet.</p>
-          <p className="mt-1 text-xs text-zinc-600">
-            Compose a graph, publish it, watch it run.
-          </p>
-          <Button className="mt-5" onClick={() => setCreateOpen(true)}>
-            <Plus className="h-4 w-4" /> Create your first flow
-          </Button>
-        </div>
-      )}
+        ))}
+        {flows.data?.length === 0 && (
+          <p className="text-sm text-zinc-500">No flows yet — create or import one.</p>
+        )}
+      </div>
+
+      <h2 className="mb-2 mt-8 text-xs font-semibold uppercase tracking-widest text-zinc-500">
+        Recent runs
+      </h2>
+      <div className="overflow-hidden rounded-lg border border-surface-800">
+        <table className="w-full text-left text-xs">
+          <thead className="bg-surface-900 text-zinc-500">
+            <tr>
+              <th className="px-3 py-2">run</th>
+              <th className="px-3 py-2">flow</th>
+              <th className="px-3 py-2">mode</th>
+              <th className="px-3 py-2">status</th>
+              <th className="px-3 py-2">result</th>
+              <th className="px-3 py-2">started</th>
+            </tr>
+          </thead>
+          <tbody>
+            {(runs.data ?? []).slice(0, 25).map((run) => (
+              <tr key={run.run_id} className="border-t border-surface-800 text-zinc-300">
+                <td className="px-3 py-1.5 font-mono text-[10px]">{run.run_id.slice(0, 12)}…</td>
+                <td className="px-3 py-1.5">{run.flow_slug}</td>
+                <td className="px-3 py-1.5">{run.mode}</td>
+                <td className="px-3 py-1.5">
+                  <StatusChip status={run.status} />
+                </td>
+                <td className="max-w-[280px] truncate px-3 py-1.5 text-zinc-500">
+                  {run.error_message ?? run.result_preview}
+                </td>
+                <td className="px-3 py-1.5 text-zinc-500">
+                  {new Date(run.started_at).toLocaleTimeString()}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
 
       <Dialog open={createOpen} onClose={() => setCreateOpen(false)} title="New flow">
-        <Label>Flow name</Label>
-        <Input
-          autoFocus
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="Library RAG Agent"
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && name.trim()) create.mutate();
-          }}
-        />
-        <div className="mt-4 flex justify-end">
-          <Button disabled={!name.trim() || create.isPending} onClick={() => create.mutate()}>
-            Create
-          </Button>
+        <div className="space-y-3">
+          <Input
+            value={name}
+            placeholder="Flow name"
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && name.trim() && createFlow.mutate()}
+          />
+          <p className="text-xs text-zinc-500">slug: /{slugify(name || "flow")}</p>
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" onClick={() => setCreateOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={() => createFlow.mutate()} disabled={!name.trim()}>
+              Create
+            </Button>
+          </div>
         </div>
       </Dialog>
     </div>
   );
 }
 
-function FlowCard({
-  flow,
-  index,
-  onOpen,
-  onDebug,
-  onDelete,
-}: {
-  flow: Flow;
-  index: number;
-  onOpen: () => void;
-  onDebug: () => void;
-  onDelete: () => void;
-}) {
-  const stop = (event: MouseEvent, action: () => void) => {
-    event.stopPropagation();
-    action();
+export function StatusChip({ status }: { status: string }) {
+  const tones: Record<string, string> = {
+    completed: "bg-emerald-900/60 text-emerald-300",
+    running: "bg-sky-900/60 text-sky-300",
+    pending: "bg-zinc-800 text-zinc-400",
+    input_required: "bg-amber-900/60 text-amber-300",
+    failed: "bg-red-900/60 text-red-300",
+    cancelled: "bg-zinc-800 text-zinc-500",
   };
-
   return (
-    <div
-      onClick={onOpen}
-      className="gf-card gf-animate-in group cursor-pointer p-5"
-      style={{ animationDelay: `${Math.min(index, 8) * 45}ms` }}
-    >
-      <div className="flex items-start gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-accent-500/20 bg-gradient-to-br from-accent-500/20 to-sky-500/10 text-accent-300 transition-all duration-200 group-hover:border-accent-500/45 group-hover:text-accent-200 group-hover:shadow-md group-hover:shadow-accent-600/20">
-          <Workflow className="h-4 w-4" />
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1.5">
-            <span className="truncate text-sm font-semibold text-zinc-100 transition-colors group-hover:text-white">
-              {flow.name}
-            </span>
-            <ArrowUpRight className="h-3.5 w-3.5 shrink-0 -translate-x-1 text-accent-300 opacity-0 transition-all duration-200 group-hover:translate-x-0 group-hover:opacity-100" />
-          </div>
-          <div className="mt-0.5 truncate font-mono text-[10px] text-zinc-600">{flow.slug}</div>
-        </div>
-        {flow.is_published ? <LiveBadge /> : <Badge color="zinc">draft</Badge>}
-      </div>
-
-      <p className="mt-3 line-clamp-2 min-h-8 text-xs leading-relaxed text-zinc-500">
-        {flow.description || "No description yet."}
-      </p>
-
-      <div className="mt-4 flex items-center gap-3 border-t border-surface-800/80 pt-3.5">
-        <span className="inline-flex items-center gap-1 font-mono text-[10px] text-zinc-500">
-          <Boxes className="h-3 w-3" /> {flow.nodes.length} nodes
-        </span>
-        <span className="inline-flex items-center gap-1 font-mono text-[10px] text-zinc-500">
-          <GitCommitHorizontal className="h-3 w-3" /> v{flow.version}
-        </span>
-        <div className="ml-auto flex items-center gap-1 opacity-70 transition-opacity duration-200 group-hover:opacity-100">
-          <Button variant="secondary" size="sm" onClick={(e) => stop(e, onOpen)}>
-            <Hammer className="h-3 w-3" /> Builder
-          </Button>
-          <Button variant="secondary" size="sm" onClick={(e) => stop(e, onDebug)}>
-            <Activity className="h-3 w-3" /> Debug
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label={`delete ${flow.name}`}
-            className="text-zinc-600 opacity-0 transition-all duration-200 hover:text-red-400 group-hover:opacity-100"
-            onClick={(e) => stop(e, onDelete)}
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-          </Button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function LiveBadge() {
-  return (
-    <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-800/50 bg-emerald-950/60 px-2 py-0.5 text-[11px] font-medium text-emerald-300">
-      <span className="relative flex h-1.5 w-1.5">
-        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60" />
-        <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-400" />
-      </span>
-      live
+    <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${tones[status] ?? ""}`}>
+      {status}
     </span>
   );
 }

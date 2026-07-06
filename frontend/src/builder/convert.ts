@@ -1,134 +1,129 @@
-/** FlowSpec <-> React Flow canvas mapping.
- * __start__/__end__ are canvas-only terminal nodes (never persisted in
- * FlowSpec.nodes); their positions are derived from the graph bounds. */
+/** FlowSpec ⇄ React-Flow conversion. Canvas mental model: output → input. */
 
 import type { Edge, Node } from "@xyflow/react";
 
-import {
-  END_NODE,
-  START_NODE,
-  type ComponentInfo,
-  type EdgeSpec,
-  type Flow,
-  type NodeSpec,
-  type ValidationIssue,
+import type {
+  ComponentDescriptor,
+  EdgeKind,
+  EdgeSpec,
+  FlowSpec,
+  NodeSpec,
 } from "@/api/types";
 
-export interface ComponentNodeData extends Record<string, unknown> {
-  component: string;
-  componentVersion: number;
+export interface CanvasNodeData extends Record<string, unknown> {
+  componentId: string;
+  componentVersion: string;
+  label: string;
   config: Record<string, unknown>;
-  info?: ComponentInfo;
-  issues: ValidationIssue[];
+  notes: string;
 }
 
-export interface TerminalNodeData extends Record<string, unknown> {
-  terminal: "start" | "end";
-}
+export type CanvasNode = Node<CanvasNodeData>;
+export type CanvasEdge = Edge<{ kind: EdgeKind }>;
 
-export type ComponentCanvasNode = Node<ComponentNodeData, "component">;
-export type TerminalCanvasNode = Node<TerminalNodeData, "terminal">;
-export type CanvasNode = ComponentCanvasNode | TerminalCanvasNode;
+export const ROUTER_TARGET_HANDLE = "__in__";
 
-export const ATTACH_SOURCE_HANDLE = "attach-out";
-export const ATTACH_TARGET_HANDLE = "attach";
-export const CONTROL_IN_HANDLE = "in";
-export const CONTROL_OUT_HANDLE = "out";
-
-export function routerOutputs(
-  info: ComponentInfo | undefined,
-  config: Record<string, unknown>,
-): string[] {
-  if (!info || info.kind !== "router") return [];
-  if (info.outputs_static?.length) return info.outputs_static;
-  if (info.outputs_from_config) {
-    const value = config[info.outputs_from_config];
-    if (Array.isArray(value)) return value.map(String);
-  }
-  return [];
-}
-
-export function specToCanvas(
-  flow: Flow,
-  components: Record<string, ComponentInfo>,
-): { nodes: CanvasNode[]; edges: Edge[] } {
-  const componentNodes: ComponentCanvasNode[] = flow.nodes.map((node) => ({
+export function specToCanvas(spec: FlowSpec): { nodes: CanvasNode[]; edges: CanvasEdge[] } {
+  const nodes: CanvasNode[] = spec.nodes.map((node) => ({
     id: node.id,
-    type: "component",
+    type: "lga",
     position: node.position ?? { x: 0, y: 0 },
     data: {
-      component: node.component,
+      componentId: node.component_id,
       componentVersion: node.component_version,
+      label: node.label ?? "",
       config: node.config ?? {},
-      info: components[node.component],
-      issues: [],
+      notes: node.notes ?? "",
     },
   }));
-
-  const xs = componentNodes.map((n) => n.position.x);
-  const ys = componentNodes.map((n) => n.position.y);
-  const midY = ys.length ? ys.reduce((a, b) => a + b, 0) / ys.length : 140;
-  const minX = xs.length ? Math.min(...xs) : 300;
-  const maxX = xs.length ? Math.max(...xs) : 300;
-
-  const terminals: TerminalCanvasNode[] = [
-    {
-      id: START_NODE,
-      type: "terminal",
-      position: { x: minX - 190, y: midY },
-      data: { terminal: "start" },
-      deletable: false,
-    },
-    {
-      id: END_NODE,
-      type: "terminal",
-      position: { x: maxX + 260, y: midY },
-      data: { terminal: "end" },
-      deletable: false,
-    },
-  ];
-
-  const edges: Edge[] = flow.edges.map((edge, index) => canvasEdge(edge, index));
-  return { nodes: [...terminals, ...componentNodes], edges };
-}
-
-export function canvasEdge(edge: EdgeSpec, index: number | string): Edge {
-  const isAttach = edge.kind === "attach";
-  return {
-    id: `e-${index}-${edge.source}-${edge.source_handle ?? ""}-${edge.target}`,
-    source: edge.source,
-    target: edge.target,
-    sourceHandle: isAttach ? ATTACH_SOURCE_HANDLE : (edge.source_handle ?? CONTROL_OUT_HANDLE),
-    targetHandle: isAttach ? ATTACH_TARGET_HANDLE : CONTROL_IN_HANDLE,
-    type: isAttach ? "attach" : "default",
-    animated: !isAttach,
-    label: !isAttach && edge.source_handle ? edge.source_handle : undefined,
-  };
+  const edges: CanvasEdge[] = spec.edges.map((edge) => ({
+    id: edge.id,
+    source: edge.source.node,
+    sourceHandle: edge.source.output,
+    target: edge.target.node,
+    targetHandle: edge.kind === "router" ? ROUTER_TARGET_HANDLE : edge.target.input,
+    data: { kind: edge.kind },
+    type: "lga",
+  }));
+  return { nodes, edges };
 }
 
 export function canvasToSpec(
+  base: FlowSpec,
   nodes: CanvasNode[],
-  edges: Edge[],
-): { nodes: NodeSpec[]; edges: EdgeSpec[] } {
-  const specNodes: NodeSpec[] = nodes
-    .filter((node): node is ComponentCanvasNode => node.type === "component")
-    .map((node) => ({
-      id: node.id,
-      component: node.data.component,
-      component_version: node.data.componentVersion,
-      config: node.data.config,
-      position: { x: Math.round(node.position.x), y: Math.round(node.position.y) },
-    }));
+  edges: CanvasEdge[],
+): FlowSpec {
+  const nodeSpecs: NodeSpec[] = nodes.map((node) => ({
+    id: node.id,
+    component_id: node.data.componentId,
+    component_version: node.data.componentVersion,
+    label: node.data.label,
+    config: node.data.config,
+    position: { x: Math.round(node.position.x), y: Math.round(node.position.y) },
+    notes: node.data.notes,
+  }));
+  const edgeSpecs: EdgeSpec[] = edges.map((edge) => ({
+    id: edge.id,
+    kind: edge.data?.kind ?? "data",
+    source: { node: edge.source, output: edge.sourceHandle ?? "" },
+    target: {
+      node: edge.target,
+      input: edge.targetHandle === ROUTER_TARGET_HANDLE ? "" : (edge.targetHandle ?? ""),
+    },
+  }));
+  return { ...base, nodes: nodeSpecs, edges: edgeSpecs };
+}
 
-  const specEdges: EdgeSpec[] = edges.map((edge) => {
-    const isAttach = edge.targetHandle === ATTACH_TARGET_HANDLE;
-    if (isAttach) {
-      return { kind: "attach", source: edge.source, target: edge.target };
+let edgeCounter = 0;
+
+export function newEdgeId(): string {
+  edgeCounter += 1;
+  return `e${Date.now().toString(36)}${edgeCounter}`;
+}
+
+export function newNodeId(descriptor: ComponentDescriptor, taken: Set<string>): string {
+  if (descriptor.component_id === "lga.io.start") return "start";
+  if (descriptor.component_id === "lga.io.end") return "end";
+  const base = descriptor.component_id.split(".").pop() ?? "node";
+  let index = 1;
+  let candidate = `${base}_${index}`;
+  while (taken.has(candidate)) {
+    index += 1;
+    candidate = `${base}_${index}`;
+  }
+  return candidate;
+}
+
+export function defaultConfig(descriptor: ComponentDescriptor): Record<string, unknown> {
+  const config: Record<string, unknown> = {};
+  for (const field of descriptor.fields) {
+    if (field.default !== null && field.default !== undefined && !field.port_only) {
+      config[field.name] = field.default;
     }
-    const handle =
-      edge.sourceHandle && edge.sourceHandle !== CONTROL_OUT_HANDLE ? edge.sourceHandle : null;
-    return { kind: "control", source: edge.source, source_handle: handle, target: edge.target };
-  });
+  }
+  return config;
+}
 
-  return { nodes: specNodes, edges: specEdges };
+export function emptyFlowSpec(name: string, slug: string): FlowSpec {
+  return {
+    schema_version: "1",
+    flow: { name, slug, description: "", a2a: { enabled: false }, mcp: { enabled: false } },
+    nodes: [
+      {
+        id: "start",
+        component_id: "lga.io.start",
+        component_version: "1.0.0",
+        config: {},
+        position: { x: 80, y: 200 },
+      },
+      {
+        id: "end",
+        component_id: "lga.io.end",
+        component_version: "1.0.0",
+        config: {},
+        position: { x: 640, y: 200 },
+      },
+    ],
+    edges: [],
+  };
 }

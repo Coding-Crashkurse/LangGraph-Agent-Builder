@@ -1,188 +1,90 @@
-import { useMutation } from "@tanstack/react-query";
-import { Check, Copy, Globe, Server } from "lucide-react";
-import { useMemo, useState } from "react";
+/** Publish (semver bump + changelog + blocking diagnostics) and Share dialog
+ * with A2A / MCP / API tabs incl. live card preview + snippets (SPEC §11.6). */
+
+import { useQueryClient } from "@tanstack/react-query";
+import { useEffect, useMemo, useState } from "react";
 
 import { api } from "@/api/client";
-import type { Flow, PublishResult, PublishSpec } from "@/api/types";
-import { Badge } from "@/components/ui/badge";
+import type { Diagnostic, FlowInfo } from "@/api/types";
 import { Button } from "@/components/ui/button";
-import { Switch } from "@/components/ui/controls";
 import { Dialog } from "@/components/ui/dialog";
-import { Input, Label } from "@/components/ui/input";
+import { Input } from "@/components/ui/input";
+import { Select, Switch, Tabs } from "@/components/ui/controls";
 import { toast } from "@/components/ui/toast";
-import { copyToClipboard } from "@/lib/utils";
-import { AgentCardEditor } from "./AgentCardEditor";
+
+import { useBuilder } from "./store";
 
 export function PublishDialog({
-  flow,
   open,
   onClose,
-  onBeforePublish,
-  onPublished,
+  flow,
+  beforePublish,
 }: {
-  flow: Flow;
   open: boolean;
   onClose: () => void;
-  onBeforePublish: () => Promise<void>; // save the canvas first
-  onPublished: () => void;
+  flow: FlowInfo;
+  beforePublish: () => Promise<void>;
 }) {
-  const [spec, setSpec] = useState<PublishSpec>(() => structuredClone(flow.publish));
-  const [result, setResult] = useState<PublishResult | null>(null);
+  const [bump, setBump] = useState("patch");
+  const [changelog, setChangelog] = useState("");
+  const [blocking, setBlocking] = useState<Diagnostic[]>([]);
+  const [busy, setBusy] = useState(false);
+  const queryClient = useQueryClient();
 
-  const cardPreview = useMemo(
-    () =>
-      JSON.stringify(
-        {
-          name: spec.agent_card.name || flow.name,
-          description: spec.agent_card.description || flow.description || flow.name,
-          url: `${window.location.origin}/serve/a2a/${flow.slug}/`,
-          version: String(flow.version),
-          capabilities: { streaming: true, pushNotifications: false },
-          defaultInputModes: spec.agent_card.default_input_modes,
-          defaultOutputModes: spec.agent_card.default_output_modes,
-          skills: spec.agent_card.skills,
-        },
-        null,
-        2,
-      ),
-    [spec, flow],
-  );
-
-  const publish = useMutation({
-    mutationFn: async () => {
-      await onBeforePublish();
-      return api.flows.publish(flow.id, spec);
-    },
-    onSuccess: (data) => {
-      setResult(data);
-      if (data.published) {
-        toast.success("Flow published");
-        onPublished();
+  const publish = async () => {
+    setBusy(true);
+    try {
+      await beforePublish();
+      const result = await api.flows.publish(flow.id, { version: bump, changelog });
+      if (result.published) {
+        toast.success(`published v${result.version?.semver}`);
+        queryClient.invalidateQueries({ queryKey: ["flow", flow.id] });
+        onClose();
       } else {
-        toast.error("Publish failed — fix the validation issues");
+        setBlocking(result.diagnostics.filter((d) => d.severity !== "info"));
       }
-    },
-    onError: (error: Error) => toast.error(error.message),
-  });
-
-  const unpublish = useMutation({
-    mutationFn: () => api.flows.unpublish(flow.id),
-    onSuccess: () => {
-      toast.info("Flow unpublished");
-      setResult(null);
-      onPublished();
-    },
-  });
+    } catch (error) {
+      toast.error((error as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
 
   return (
-    <Dialog open={open} onClose={onClose} title={`Publish “${flow.name}”`} className="w-[760px]">
-      <div className="grid grid-cols-[1fr_280px] gap-5">
-        <div className="space-y-4">
-          <div className="flex items-center gap-6 rounded-lg border border-surface-700 bg-surface-850 px-4 py-3">
-            <label className="flex items-center gap-2.5 text-sm text-zinc-200">
-              <Switch
-                checked={spec.a2a}
-                onCheckedChange={(a2a) => setSpec({ ...spec, a2a })}
-                label="A2A"
-              />
-              <Globe className="h-4 w-4 text-violet-400" /> A2A server
-            </label>
-            <label className="flex items-center gap-2.5 text-sm text-zinc-200">
-              <Switch
-                checked={spec.mcp}
-                onCheckedChange={(mcp) => setSpec({ ...spec, mcp })}
-                label="MCP"
-              />
-              <Server className="h-4 w-4 text-sky-400" /> MCP server
-            </label>
-          </div>
-
-          {spec.mcp && (
-            <div className="grid grid-cols-2 gap-3 rounded-lg border border-surface-700 bg-surface-850 px-4 py-3">
-              <div>
-                <Label>MCP tool name</Label>
-                <Input
-                  value={spec.mcp_tool.name}
-                  className="font-mono text-xs"
-                  onChange={(e) =>
-                    setSpec({ ...spec, mcp_tool: { ...spec.mcp_tool, name: e.target.value } })
-                  }
-                />
-              </div>
-              <div>
-                <Label>Tool description</Label>
-                <Input
-                  value={spec.mcp_tool.description}
-                  onChange={(e) =>
-                    setSpec({
-                      ...spec,
-                      mcp_tool: { ...spec.mcp_tool, description: e.target.value },
-                    })
-                  }
-                />
-              </div>
-            </div>
-          )}
-
-          <AgentCardEditor
-            value={spec.agent_card}
-            onChange={(agent_card) => setSpec({ ...spec, agent_card })}
-            flowName={flow.name}
+    <Dialog open={open} onClose={onClose} title="Publish version">
+      <div className="space-y-3">
+        <label className="block text-xs text-zinc-400">
+          Version bump
+          <Select value={bump} onChange={(e) => setBump(e.target.value)} className="mt-1">
+            <option value="patch">patch</option>
+            <option value="minor">minor</option>
+            <option value="major">major</option>
+          </Select>
+        </label>
+        <label className="block text-xs text-zinc-400">
+          Changelog
+          <textarea
+            className="mt-1 min-h-[64px] w-full rounded-md border border-surface-700 bg-surface-900 px-2 py-1.5 text-sm text-zinc-100 focus:border-accent-500 focus:outline-none"
+            value={changelog}
+            onChange={(e) => setChangelog(e.target.value)}
+            placeholder="What changed?"
           />
-        </div>
-
-        <div className="space-y-3">
-          <div>
-            <Label>Agent card preview</Label>
-            <pre className="max-h-72 overflow-auto rounded-lg border border-surface-700 bg-surface-950 p-3 font-mono text-[10px] leading-relaxed text-zinc-400">
-              {cardPreview}
-            </pre>
+        </label>
+        {blocking.length > 0 && (
+          <div className="space-y-1 rounded border border-red-900/60 bg-red-950/30 p-2">
+            {blocking.map((d, i) => (
+              <p key={i} className="text-xs text-red-300">
+                <span className="font-mono">{d.code}</span> {d.message}
+              </p>
+            ))}
           </div>
-
-          {result?.issues?.length ? (
-            <div className="space-y-1">
-              {result.issues.map((issue, index) => (
-                <div
-                  key={index}
-                  className="rounded-md border border-red-900/50 bg-red-950/30 px-2 py-1.5 text-[11px] text-red-300"
-                >
-                  {issue.message}
-                </div>
-              ))}
-            </div>
-          ) : null}
-
-          {result?.published && result.endpoints ? (
-            <div className="space-y-1.5">
-              <Label>Endpoints</Label>
-              {Object.entries(result.endpoints).map(([key, url]) => (
-                <EndpointRow key={key} label={key.replace("_url", "")} url={url} />
-              ))}
-            </div>
-          ) : null}
-        </div>
-      </div>
-
-      <div className="mt-5 flex items-center justify-between border-t border-surface-800 pt-4">
-        {flow.is_published ? (
-          <Button
-            variant="destructive"
-            size="sm"
-            disabled={unpublish.isPending}
-            onClick={() => unpublish.mutate()}
-          >
-            Unpublish
-          </Button>
-        ) : (
-          <span />
         )}
-        <div className="flex items-center gap-2">
-          {flow.is_published && <Badge color="emerald">currently live</Badge>}
-          <Button
-            disabled={publish.isPending || (!spec.a2a && !spec.mcp)}
-            onClick={() => publish.mutate()}
-          >
-            {publish.isPending ? "Publishing…" : flow.is_published ? "Republish" : "Publish"}
+        <div className="flex justify-end gap-2">
+          <Button variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button onClick={publish} disabled={busy}>
+            {busy ? "publishing…" : "Publish"}
           </Button>
         </div>
       </div>
@@ -190,26 +92,211 @@ export function PublishDialog({
   );
 }
 
-export function EndpointRow({ label, url }: { label: string; url: string }) {
-  const [copied, setCopied] = useState(false);
+type ShareTab = "a2a" | "mcp" | "api";
+
+export function ShareDialog({
+  open,
+  onClose,
+  flow,
+}: {
+  open: boolean;
+  onClose: () => void;
+  flow: FlowInfo;
+}) {
+  const [tab, setTab] = useState<ShareTab>("a2a");
+  const baseSpec = useBuilder((s) => s.baseSpec);
+  const updateFlowMeta = useBuilder((s) => s.updateFlowMeta);
+  const [card, setCard] = useState<Record<string, unknown> | null>(null);
+
+  const origin = window.location.origin;
+  const a2a = baseSpec?.flow.a2a ?? { enabled: false };
+  const mcp = baseSpec?.flow.mcp ?? { enabled: false };
+  const endpoint = `${origin}/a2a/${flow.slug}/`;
+
+  useEffect(() => {
+    if (!open || !a2a.enabled) return;
+    fetch(`/a2a/${flow.slug}/.well-known/agent-card.json`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then(setCard)
+      .catch(() => setCard(null));
+  }, [open, flow.slug, a2a.enabled]);
+
+  const curl = useMemo(
+    () =>
+      `curl -X POST ${endpoint} \\\n  -H 'Content-Type: application/json' \\\n  -d '{"jsonrpc":"2.0","id":1,"method":"message/send","params":{"message":{"role":"user","messageId":"m1","parts":[{"kind":"text","text":"hello"}]}}}'`,
+    [endpoint],
+  );
+  const python = useMemo(
+    () =>
+      `import httpx\n\nresp = httpx.post("${endpoint}", json={\n    "jsonrpc": "2.0", "id": 1, "method": "message/send",\n    "params": {"message": {"role": "user", "messageId": "m1",\n               "parts": [{"kind": "text", "text": "hello"}]}},\n})\nprint(resp.json()["result"]["status"]["state"])`,
+    [endpoint],
+  );
+  const apiCurl = useMemo(
+    () =>
+      `curl -X POST ${origin}/api/v1/flows/${flow.id}/run \\\n  -H 'Content-Type: application/json' \\\n  -d '{"input_text": "hello", "tweaks": {"<node_id>": {"<field>": "value"}}}'`,
+    [origin, flow.id],
+  );
+
   return (
-    <div className="flex items-center gap-1.5 rounded-md border border-surface-700 bg-surface-950 px-2 py-1.5">
-      <span className="w-16 shrink-0 font-mono text-[9px] uppercase tracking-wider text-zinc-500">
-        {label}
-      </span>
-      <span className="flex-1 truncate font-mono text-[10px] text-zinc-300">{url}</span>
-      <button
-        type="button"
-        aria-label={`copy ${label} url`}
-        className="text-zinc-500 hover:text-zinc-100"
-        onClick={async () => {
-          await copyToClipboard(url);
-          setCopied(true);
-          setTimeout(() => setCopied(false), 1200);
-        }}
-      >
-        {copied ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
-      </button>
+    <Dialog open={open} onClose={onClose} title={`Share · ${flow.name}`} className="w-[760px]">
+      <div className="space-y-3">
+        <Tabs
+          value={tab}
+          onChange={setTab}
+          items={[
+            { value: "a2a", label: "A2A" },
+            { value: "mcp", label: "MCP" },
+            { value: "api", label: "API" },
+          ]}
+        />
+        {tab === "a2a" && (
+          <div className="space-y-3">
+            <Row label="Serve as A2A agent">
+              <Switch
+                checked={Boolean(a2a.enabled)}
+                onCheckedChange={(v) => updateFlowMeta({ a2a: { ...a2a, enabled: v } })}
+              />
+            </Row>
+            <Row label="Agent name">
+              <Input
+                value={a2a.agent_name ?? ""}
+                placeholder={flow.name}
+                onChange={(e) => updateFlowMeta({ a2a: { ...a2a, agent_name: e.target.value } })}
+              />
+            </Row>
+            <Row label="Skill description (E060: required)">
+              <Input
+                value={a2a.description ?? ""}
+                onChange={(e) => updateFlowMeta({ a2a: { ...a2a, description: e.target.value } })}
+              />
+            </Row>
+            <Row label="Examples (comma-separated)">
+              <Input
+                value={(a2a.examples ?? []).join(", ")}
+                onChange={(e) =>
+                  updateFlowMeta({
+                    a2a: {
+                      ...a2a,
+                      examples: e.target.value.split(",").map((s) => s.trim()).filter(Boolean),
+                    },
+                  })
+                }
+              />
+            </Row>
+            <Row label="Auth">
+              <Select
+                value={a2a.auth ?? "public"}
+                onChange={(e) =>
+                  updateFlowMeta({ a2a: { ...a2a, auth: e.target.value as "public" | "api-key" } })
+                }
+              >
+                <option value="public">public (session-namespaced)</option>
+                <option value="api-key">api-key (X-API-Key, scope a2a:invoke)</option>
+              </Select>
+            </Row>
+            <Snippet label={`Endpoint · ${endpoint}`} text={curl} />
+            <Snippet label="Python (JSON-RPC)" text={python} />
+            <div>
+              <p className="mb-1 text-xs font-medium text-zinc-400">Live Agent Card</p>
+              <pre className="max-h-52 overflow-auto rounded bg-surface-900 p-2 text-[10px] text-emerald-300">
+                {card ? JSON.stringify(card, null, 2) : "publish with A2A enabled to see the card"}
+              </pre>
+            </div>
+          </div>
+        )}
+        {tab === "mcp" && (
+          <div className="space-y-3">
+            <Row label="Serve as MCP tool">
+              <Switch
+                checked={Boolean(mcp.enabled)}
+                onCheckedChange={(v) => updateFlowMeta({ mcp: { ...mcp, enabled: v } })}
+              />
+            </Row>
+            <Row label="Tool name">
+              <Input
+                value={mcp.tool_name ?? ""}
+                placeholder={flow.slug.replace(/-/g, "_")}
+                onChange={(e) => updateFlowMeta({ mcp: { ...mcp, tool_name: e.target.value } })}
+              />
+            </Row>
+            <Row label="Tool description (E062: required)">
+              <Input
+                value={mcp.description ?? ""}
+                onChange={(e) => updateFlowMeta({ mcp: { ...mcp, description: e.target.value } })}
+              />
+            </Row>
+            <Row label="Interrupt policy (E063)">
+              <Select
+                value={mcp.auto_resolve_interrupts ?? ""}
+                onChange={(e) =>
+                  updateFlowMeta({
+                    mcp: {
+                      ...mcp,
+                      auto_resolve_interrupts: (e.target.value || null) as never,
+                    },
+                  })
+                }
+              >
+                <option value="">reject flows with interrupts</option>
+                <option value="approve">auto-approve interrupts</option>
+                <option value="reject">auto-reject interrupts</option>
+              </Select>
+            </Row>
+            <Snippet
+              label="Client config (Claude Code / Cursor)"
+              text={JSON.stringify(
+                { mcpServers: { lga: { type: "http", url: `${origin}/mcp` } } },
+                null,
+                2,
+              )}
+            />
+          </div>
+        )}
+        {tab === "api" && (
+          <div className="space-y-3">
+            <Snippet label="Run (blocking; tweaks are one-time overrides)" text={apiCurl} />
+            <Snippet
+              label="Webhook (fire-and-forget; body → data.webhook_payload)"
+              text={`curl -X POST ${origin}/api/v1/webhook/${flow.slug} \\\n  -H 'X-API-Key: <key with webhook:invoke>' \\\n  -d '{"event": "ticket.created"}'`}
+            />
+          </div>
+        )}
+        <p className="text-[10px] text-zinc-600">
+          Settings live in the FlowSpec — hit Save, then Publish to serve the new version.
+        </p>
+      </div>
+    </Dialog>
+  );
+}
+
+function Row({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label className="block">
+      <span className="mb-1 block text-xs font-medium text-zinc-400">{label}</span>
+      {children}
+    </label>
+  );
+}
+
+function Snippet({ label, text }: { label: string; text: string }) {
+  return (
+    <div>
+      <div className="mb-1 flex items-center justify-between">
+        <p className="text-xs font-medium text-zinc-400">{label}</p>
+        <button
+          type="button"
+          className="text-[10px] text-accent-400 hover:text-accent-300"
+          onClick={() => {
+            navigator.clipboard.writeText(text);
+            toast.success("copied");
+          }}
+        >
+          copy
+        </button>
+      </div>
+      <pre className="overflow-x-auto rounded bg-surface-900 p-2 text-[10px] text-zinc-300">
+        {text}
+      </pre>
     </div>
   );
 }

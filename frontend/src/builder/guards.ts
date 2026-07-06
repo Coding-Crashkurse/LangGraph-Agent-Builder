@@ -1,87 +1,90 @@
-/** Client-side edge guards mirroring the compiler rules (CLAUDE.md §14.1). */
+/** Client-side edge guards (SPEC §11.3): family-level compat while dragging;
+ * the exact structural verdict comes from /validate on drop. */
 
-import type { Connection, Edge } from "@xyflow/react";
+import type { ComponentDescriptor, PortFamily, PortSpec } from "@/api/types";
 
-import { END_NODE, START_NODE } from "@/api/types";
-import {
-  ATTACH_SOURCE_HANDLE,
-  ATTACH_TARGET_HANDLE,
-  type CanvasNode,
-  routerOutputs,
-} from "./convert";
+const COERCIBLE: ReadonlySet<string> = new Set([
+  "MESSAGE>DATA", // message_to_text
+  "DATA>MESSAGE", // text_to_message
+  "DOCUMENTS>DATA", // documents_to_text
+]);
 
-export interface GuardResult {
-  ok: boolean;
-  reason?: string;
+export function familiesCompatible(source: PortFamily, target: PortFamily): boolean {
+  if (source === "ANY" || target === "ANY") return true;
+  if (source === target) return source !== "ROUTE"; // ROUTE is control-only
+  return COERCIBLE.has(`${source}>${target}`);
 }
 
-export function checkConnection(
-  connection: Connection,
-  nodes: CanvasNode[],
-  edges: Edge[],
-): GuardResult {
-  const source = nodes.find((n) => n.id === connection.source);
-  const target = nodes.find((n) => n.id === connection.target);
-  if (!source || !target) return { ok: false, reason: "unknown node" };
+export interface PortIndex {
+  outputs: Map<string, PortSpec>; // handle id → port
+  inputs: Map<string, PortSpec>;
+  routeLabels: Set<string>;
+}
 
-  const wantsAttach =
-    connection.sourceHandle === ATTACH_SOURCE_HANDLE ||
-    connection.targetHandle === ATTACH_TARGET_HANDLE;
-
-  const sourceInfo = source.type === "component" ? source.data.info : undefined;
-  const targetInfo = target.type === "component" ? target.data.info : undefined;
-
-  if (wantsAttach) {
-    if (
-      connection.sourceHandle !== ATTACH_SOURCE_HANDLE ||
-      connection.targetHandle !== ATTACH_TARGET_HANDLE
-    ) {
-      return { ok: false, reason: "tool providers connect to the attachment port only" };
-    }
-    if (sourceInfo?.kind !== "tool_provider") {
-      return { ok: false, reason: "attach edges must start at a tool provider" };
-    }
-    const kind = sourceInfo.attachment_kind ?? "tools";
-    if (!targetInfo?.accepts_attachments.includes(kind)) {
-      return { ok: false, reason: `${target.id} does not accept ${kind} attachments` };
-    }
-    const duplicate = edges.some(
-      (e) => e.source === source.id && e.target === target.id && e.targetHandle === ATTACH_TARGET_HANDLE,
-    );
-    if (duplicate) return { ok: false, reason: "already attached" };
-    return { ok: true };
+export function indexPorts(
+  descriptor: ComponentDescriptor,
+  config: Record<string, unknown>,
+): PortIndex {
+  const outputs = new Map<string, PortSpec>();
+  const routeLabels = new Set<string>();
+  for (const output of descriptor.outputs) {
+    outputs.set(output.name, output.port);
+    if (output.port.family === "ROUTE") routeLabels.add(output.name);
   }
-
-  // control edge rules -------------------------------------------------------
-  if (sourceInfo?.kind === "tool_provider" || targetInfo?.kind === "tool_provider") {
-    return { ok: false, reason: "tool providers are not control-flow nodes" };
-  }
-  if (source.id === END_NODE) return { ok: false, reason: "__end__ has no outputs" };
-  if (target.id === START_NODE) return { ok: false, reason: "__start__ has no inputs" };
-
-  const controlOut = edges.filter(
-    (e) => e.source === source.id && e.targetHandle !== ATTACH_TARGET_HANDLE,
-  );
-
-  if (source.id === START_NODE) {
-    if (controlOut.length > 0) return { ok: false, reason: "__start__ already has an edge" };
-    return { ok: true };
-  }
-
-  if (sourceInfo?.kind === "router") {
-    const outputs = routerOutputs(sourceInfo, source.type === "component" ? source.data.config : {});
-    const handle = connection.sourceHandle ?? "";
-    if (!outputs.includes(handle)) {
-      return { ok: false, reason: `router output '${handle}' is not one of: ${outputs.join(", ")}` };
+  // dynamic router labels regenerate outputs client-side
+  if (descriptor.dynamic_outputs_from) {
+    const labels = config[descriptor.dynamic_outputs_from];
+    if (Array.isArray(labels) && labels.length > 0) {
+      outputs.clear();
+      routeLabels.clear();
+      for (const label of labels as string[]) {
+        outputs.set(label, {
+          schema_ref: "lga:Route",
+          json_schema: { type: "string" },
+          family: "ROUTE",
+          is_list: false,
+        });
+        routeLabels.add(label);
+      }
+      // keep non-route outputs (e.g. implicit toolset)
+      for (const output of descriptor.outputs) {
+        if (output.port.family !== "ROUTE") outputs.set(output.name, output.port);
+      }
     }
-    if (controlOut.some((e) => e.sourceHandle === handle)) {
-      return { ok: false, reason: `output '${handle}' is already wired` };
-    }
-    return { ok: true };
   }
+  const inputs = new Map<string, PortSpec>(Object.entries(descriptor.input_ports));
+  return { outputs, inputs, routeLabels };
+}
 
-  if (controlOut.length > 0) {
-    return { ok: false, reason: "only one outgoing control edge per node" };
+export type ConnectionVerdict =
+  | { ok: true; kind: "data" | "tool" | "router" }
+  | { ok: false; reason: string };
+
+export function judgeConnection(
+  sourcePort: PortSpec | undefined,
+  targetPort: PortSpec | undefined,
+  targetIsRouterSink: boolean,
+): ConnectionVerdict {
+  if (!sourcePort) return { ok: false, reason: "unknown output port" };
+  if (sourcePort.family === "ROUTE") {
+    // router branches connect to any node's control-in (the amber top handle)
+    return { ok: true, kind: "router" };
   }
-  return { ok: true };
+  if (targetIsRouterSink) {
+    return { ok: false, reason: "the control-in handle only accepts router branches" };
+  }
+  if (!targetPort) return { ok: false, reason: "unknown input port" };
+  if (sourcePort.family === "TOOLSET" || targetPort.family === "TOOLSET") {
+    if (sourcePort.family === "TOOLSET" && targetPort.family === "TOOLSET") {
+      return { ok: true, kind: "tool" };
+    }
+    return { ok: false, reason: "toolset edges connect Toolset → Tools only" };
+  }
+  if (!familiesCompatible(sourcePort.family, targetPort.family)) {
+    return {
+      ok: false,
+      reason: `${sourcePort.schema_ref} → ${targetPort.schema_ref} is incompatible`,
+    };
+  }
+  return { ok: true, kind: "data" };
 }

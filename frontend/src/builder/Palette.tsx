@@ -1,93 +1,93 @@
-import { Search } from "lucide-react";
+/** Component sidebar: grouped by category, searchable, drag to canvas. */
+
 import { useMemo, useState } from "react";
 
-import type { ComponentInfo } from "@/api/types";
-import { CategoryDot } from "@/components/ui/badge";
+import type { ComponentDescriptor } from "@/api/types";
 import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
 
-const CATEGORY_ORDER = ["llm", "rag", "flow", "tools", "io"] as const;
+const CATEGORY_ORDER = ["llm", "rag", "flow_control", "tools", "io", "data", "testing"];
 const CATEGORY_LABELS: Record<string, string> = {
   llm: "LLM",
   rag: "RAG",
-  flow: "Flow control",
+  flow_control: "Flow Control",
   tools: "Tools",
-  io: "I/O & glue",
+  io: "IO & Glue",
+  data: "Data",
+  testing: "Testing",
+};
+const CATEGORY_DOTS: Record<string, string> = {
+  llm: "bg-violet-500",
+  rag: "bg-emerald-500",
+  flow_control: "bg-amber-500",
+  tools: "bg-sky-500",
+  io: "bg-zinc-400",
+  data: "bg-slate-400",
+  testing: "bg-pink-500",
 };
 
-export function Palette({
-  components,
-  onAdd,
-}: {
-  components: ComponentInfo[];
-  onAdd: (info: ComponentInfo) => void;
-}) {
+export function Palette({ components }: { components: ComponentDescriptor[] }) {
   const [query, setQuery] = useState("");
-
-  const grouped = useMemo(() => {
-    const filtered = components.filter((c) => {
-      const haystack = `${c.name} ${c.display_name} ${c.description}`.toLowerCase();
-      return haystack.includes(query.toLowerCase());
-    });
-    return CATEGORY_ORDER.map((category) => ({
-      category,
-      items: filtered.filter((c) => c.category === category),
-    })).filter((group) => group.items.length);
+  const groups = useMemo(() => {
+    const filtered = components.filter(
+      (c) =>
+        !c.legacy &&
+        (query === "" ||
+          c.display_name.toLowerCase().includes(query.toLowerCase()) ||
+          c.component_id.includes(query.toLowerCase())),
+    );
+    const map = new Map<string, ComponentDescriptor[]>();
+    for (const c of filtered) {
+      map.set(c.category, [...(map.get(c.category) ?? []), c]);
+    }
+    return [...map.entries()].sort(
+      (a, b) => CATEGORY_ORDER.indexOf(a[0]) - CATEGORY_ORDER.indexOf(b[0]),
+    );
   }, [components, query]);
 
   return (
-    <aside className="flex w-60 shrink-0 flex-col border-r border-surface-800 bg-surface-900">
-      <div className="border-b border-surface-800 p-2.5">
-        <div className="relative">
-          <Search className="pointer-events-none absolute left-2 top-2 h-4 w-4 text-zinc-600" />
-          <Input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search components…"
-            className="pl-7.5"
-          />
-        </div>
+    <div className="flex h-full w-60 flex-col border-r border-surface-800 bg-surface-950">
+      <div className="p-3">
+        <Input
+          value={query}
+          placeholder="Search components…"
+          onChange={(e) => setQuery(e.target.value)}
+        />
       </div>
-      <div className="flex-1 overflow-y-auto p-2.5">
-        {grouped.map(({ category, items }) => (
+      <div className="flex-1 overflow-y-auto px-3 pb-4">
+        {groups.map(([category, items]) => (
           <div key={category} className="mb-4">
-            <div className="mb-1.5 px-1 text-[10px] font-semibold uppercase tracking-widest text-zinc-600">
-              {CATEGORY_LABELS[category]}
-            </div>
+            <h3 className="mb-1.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-widest text-zinc-500">
+              <span className={cn("h-1.5 w-1.5 rounded-full", CATEGORY_DOTS[category])} />
+              {CATEGORY_LABELS[category] ?? category}
+            </h3>
             <div className="space-y-1">
-              {items.map((info) => (
+              {items.map((component) => (
                 <div
-                  key={info.name}
+                  key={component.component_id}
                   draggable
-                  title={info.description}
+                  title={component.description}
                   onDragStart={(event) => {
-                    event.dataTransfer.setData("application/graphforge-component", info.name);
+                    event.dataTransfer.setData("application/lga-component",
+                                               component.component_id);
                     event.dataTransfer.effectAllowed = "move";
                   }}
-                  onDoubleClick={() => onAdd(info)}
-                  className="group cursor-grab rounded-md border border-transparent bg-surface-850 px-2.5 py-2 transition-all duration-150 hover:translate-x-0.5 hover:border-surface-600 hover:bg-surface-800 hover:shadow-md hover:shadow-black/40 active:cursor-grabbing active:scale-[0.99]"
+                  className="cursor-grab rounded-md border border-surface-800 bg-surface-900 px-2.5 py-1.5 text-xs text-zinc-200 hover:border-accent-600 hover:bg-surface-800 active:cursor-grabbing"
                 >
-                  <div className="flex items-center gap-2">
-                    <CategoryDot category={info.category} />
-                    <span className="text-xs font-medium text-zinc-200">{info.display_name}</span>
-                    {info.kind !== "node" && (
-                      <span className="ml-auto rounded bg-surface-700 px-1 py-px font-mono text-[9px] uppercase text-zinc-400">
-                        {info.kind === "tool_provider" ? "tools" : "router"}
+                  <span className="flex items-center gap-1">
+                    {component.display_name}
+                    {component.beta && (
+                      <span className="rounded bg-violet-900/60 px-1 text-[8px] font-bold text-violet-300">
+                        BETA
                       </span>
                     )}
-                  </div>
-                  <p className="mt-0.5 line-clamp-2 text-[10px] leading-snug text-zinc-500">
-                    {info.description}
-                  </p>
+                  </span>
                 </div>
               ))}
             </div>
           </div>
         ))}
-        <p className="px-1 pb-2 text-[10px] leading-relaxed text-zinc-700">
-          Drag onto the canvas (or double-click). Dashed sky edges attach tool providers to
-          agents; amber handles are router outputs.
-        </p>
       </div>
-    </aside>
+    </div>
   );
 }

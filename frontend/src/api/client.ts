@@ -1,105 +1,224 @@
+/** Typed client over the generated OpenAPI paths (SPEC §11.2: no hand-written
+ * fetch paths — `openapi-fetch` derives them from `schema.gen.ts`). */
+
+import createClient from "openapi-fetch";
+
+import type { paths } from "./schema.gen";
 import type {
-  CollectionInfo,
-  ComponentInfo,
-  EdgeSpec,
-  Flow,
-  NodeSpec,
-  PublishResult,
-  PublishSpec,
-  Run,
-  SendMessageResult,
-  TaskDetail,
-  ValidationReport,
+  ApiKeyInfo,
+  ComponentDescriptor,
+  Diagnostic,
+  FieldDescriptor,
+  FlowInfo,
+  FlowSpec,
+  McpServerInfo,
+  OutputDescriptor,
+  PortSpec,
+  RunInfo,
+  RunResult,
+  ThreadInfo,
+  ValidateResponse,
+  VariableInfo,
+  VersionInfo,
 } from "./types";
+
+export const raw = createClient<paths>({ baseUrl: "" });
 
 export class ApiError extends Error {
   constructor(
     public status: number,
     message: string,
+    public diagnostics?: Diagnostic[],
   ) {
     super(message);
   }
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(path, {
-    headers: { "Content-Type": "application/json" },
-    ...init,
-  });
-  if (!response.ok) {
-    let detail = response.statusText;
-    try {
-      const body = await response.json();
-      detail = typeof body.detail === "string" ? body.detail : JSON.stringify(body);
-    } catch {
-      /* keep statusText */
+function unwrap<T>(result: { data?: unknown; error?: unknown; response: Response }): T {
+  if (result.error !== undefined || !result.response.ok) {
+    const err = result.error as { detail?: unknown } | undefined;
+    let message = result.response.statusText;
+    let diagnostics: Diagnostic[] | undefined;
+    if (err && typeof err.detail === "string") message = err.detail;
+    else if (err && typeof err.detail === "object" && err.detail !== null) {
+      const detail = err.detail as { message?: string; diagnostics?: Diagnostic[] };
+      message = detail.message ?? JSON.stringify(err.detail);
+      diagnostics = detail.diagnostics;
     }
-    throw new ApiError(response.status, detail);
+    throw new ApiError(result.response.status, message, diagnostics);
   }
-  if (response.status === 204) return undefined as T;
-  return (await response.json()) as T;
+  return result.data as T;
 }
 
 export const api = {
-  components: () => request<ComponentInfo[]>("/api/components"),
+  components: {
+    list: async () =>
+      unwrap<ComponentDescriptor[]>(await raw.GET("/api/v1/components")),
+    configChange: async (
+      componentId: string,
+      body: { config: Record<string, unknown>; changed_field: string; value: unknown },
+    ) =>
+      unwrap<{
+        config: Record<string, unknown>;
+        fields: FieldDescriptor[];
+        outputs: OutputDescriptor[];
+        input_ports: Record<string, PortSpec>;
+      }>(
+        await raw.POST("/api/v1/components/{component_id}/config", {
+          params: { path: { component_id: componentId } },
+          body: body as never,
+        }),
+      ),
+  },
 
   flows: {
-    list: () => request<Flow[]>("/api/flows"),
-    get: (id: string) => request<Flow>(`/api/flows/${id}`),
-    create: (body: { name: string; slug?: string; description?: string }) =>
-      request<Flow>("/api/flows", { method: "POST", body: JSON.stringify(body) }),
-    save: (
+    list: async () => unwrap<FlowInfo[]>(await raw.GET("/api/v1/flows")),
+    get: async (id: string) =>
+      unwrap<FlowInfo>(
+        await raw.GET("/api/v1/flows/{flow_id}", { params: { path: { flow_id: id } } }),
+      ),
+    create: async (spec: FlowSpec) =>
+      unwrap<FlowInfo>(await raw.POST("/api/v1/flows", { body: { spec } as never })),
+    update: async (id: string, spec: FlowSpec) =>
+      unwrap<FlowInfo>(
+        await raw.PATCH("/api/v1/flows/{flow_id}", {
+          params: { path: { flow_id: id } },
+          body: { spec } as never,
+        }),
+      ),
+    delete: async (id: string) =>
+      unwrap<void>(
+        await raw.DELETE("/api/v1/flows/{flow_id}", { params: { path: { flow_id: id } } }),
+      ),
+    validate: async (id: string, deep = false) =>
+      unwrap<ValidateResponse>(
+        await raw.POST("/api/v1/flows/{flow_id}/validate", {
+          params: { path: { flow_id: id }, query: { deep } },
+        }),
+      ),
+    publish: async (id: string, body: { version: string; changelog: string }) =>
+      unwrap<{ published: boolean; version?: VersionInfo; diagnostics: Diagnostic[] }>(
+        await raw.POST("/api/v1/flows/{flow_id}/publish", {
+          params: { path: { flow_id: id } },
+          body: body as never,
+        }),
+      ),
+    versions: async (id: string) =>
+      unwrap<VersionInfo[]>(
+        await raw.GET("/api/v1/flows/{flow_id}/versions", {
+          params: { path: { flow_id: id } },
+        }),
+      ),
+    run: async (
       id: string,
-      body: { name?: string; description?: string; nodes?: NodeSpec[]; edges?: EdgeSpec[] },
+      body: {
+        input_text?: string;
+        data?: Record<string, unknown> | null;
+        session_id?: string | null;
+        tweaks?: Record<string, Record<string, unknown>> | null;
+        stream?: boolean;
+        mode?: string;
+      },
     ) =>
-      request<Flow & { issues: ValidationReport["issues"] }>(`/api/flows/${id}`, {
-        method: "PUT",
-        body: JSON.stringify(body),
-      }),
-    delete: (id: string) => request<void>(`/api/flows/${id}`, { method: "DELETE" }),
-    validate: (id: string, body?: { nodes?: NodeSpec[]; edges?: EdgeSpec[] }) =>
-      request<ValidationReport>(`/api/flows/${id}/validate`, {
-        method: "POST",
-        body: JSON.stringify(body ?? {}),
-      }),
-    publish: (id: string, body: Partial<PublishSpec>) =>
-      request<PublishResult>(`/api/flows/${id}/publish`, {
-        method: "POST",
-        body: JSON.stringify(body),
-      }),
-    unpublish: (id: string) =>
-      request<{ published: boolean }>(`/api/flows/${id}/unpublish`, { method: "POST" }),
+      unwrap<RunResult & { run_id: string; thread_id: string }>(
+        await raw.POST("/api/v1/flows/{flow_id}/run", {
+          params: { path: { flow_id: id } },
+          body: body as never,
+        }),
+      ),
   },
 
-  debug: {
-    tasks: (flowId: string, filters?: { state?: string; source?: string }) => {
-      const params = new URLSearchParams();
-      if (filters?.state) params.set("state", filters.state);
-      if (filters?.source) params.set("source", filters.source);
-      const qs = params.toString();
-      return request<Run[]>(`/api/debug/flows/${flowId}/tasks${qs ? `?${qs}` : ""}`);
-    },
-    task: (taskId: string) => request<TaskDetail>(`/api/debug/tasks/${taskId}`),
-    sendMessage: (flowId: string, body: { message: string; context_id?: string; stream: boolean }) =>
-      request<SendMessageResult>(`/api/debug/flows/${flowId}/messages`, {
-        method: "POST",
-        body: JSON.stringify(body),
-      }),
-    sendInput: (taskId: string, body: { text?: string; data?: Record<string, unknown> }) =>
-      request<SendMessageResult>(`/api/debug/tasks/${taskId}/input`, {
-        method: "POST",
-        body: JSON.stringify(body),
-      }),
-    cancel: (taskId: string) =>
-      request<{ state: string }>(`/api/debug/tasks/${taskId}/cancel`, { method: "POST" }),
+  runs: {
+    list: async (flowId?: string) =>
+      unwrap<RunInfo[]>(
+        await raw.GET("/api/v1/runs", {
+          params: { query: flowId ? { flow_id: flowId } : {} },
+        }),
+      ),
+    get: async (runId: string) =>
+      unwrap<RunInfo>(
+        await raw.GET("/api/v1/runs/{run_id}", { params: { path: { run_id: runId } } }),
+      ),
+    cancel: async (runId: string) =>
+      unwrap<{ cancelled: boolean }>(
+        await raw.POST("/api/v1/runs/{run_id}/cancel", {
+          params: { path: { run_id: runId } },
+        }),
+      ),
+    resume: async (runId: string, payload: unknown, debugAction?: "step" | "continue") =>
+      unwrap<RunResult>(
+        await raw.POST("/api/v1/runs/{run_id}/resume", {
+          params: { path: { run_id: runId } },
+          body: { payload, debug_action: debugAction ?? null } as never,
+        }),
+      ),
   },
 
-  collections: {
-    list: () => request<CollectionInfo[]>("/api/collections"),
-    ingestText: (name: string, body: { text: string; source?: string }) =>
-      request<{ collection: string; chunks: number }>(`/api/collections/${name}/documents`, {
-        method: "POST",
-        body: JSON.stringify(body),
-      }),
+  threads: {
+    list: async (flowSlug?: string) =>
+      unwrap<ThreadInfo[]>(
+        await raw.GET("/api/v1/threads", {
+          params: { query: flowSlug ? { flow_slug: flowSlug } : {} },
+        }),
+      ),
+    state: async (threadId: string) =>
+      unwrap<Record<string, unknown>>(
+        await raw.GET("/api/v1/threads/{thread_id}/state", {
+          params: { path: { thread_id: threadId } },
+        }),
+      ),
+    updateState: async (threadId: string, values: Record<string, unknown>) =>
+      unwrap<Record<string, unknown>>(
+        await raw.POST("/api/v1/threads/{thread_id}/state", {
+          params: { path: { thread_id: threadId } },
+          body: { values } as never,
+        }),
+      ),
+    delete: async (threadId: string) =>
+      unwrap<void>(
+        await raw.DELETE("/api/v1/threads/{thread_id}", {
+          params: { path: { thread_id: threadId } },
+        }),
+      ),
+  },
+
+  variables: {
+    list: async () => unwrap<VariableInfo[]>(await raw.GET("/api/v1/variables")),
+    set: async (body: { name: string; value: string; kind: "generic" | "credential" }) =>
+      unwrap<{ name: string }>(await raw.POST("/api/v1/variables", { body: body as never })),
+    delete: async (name: string) =>
+      unwrap<void>(
+        await raw.DELETE("/api/v1/variables/{name}", { params: { path: { name } } }),
+      ),
+  },
+
+  apikeys: {
+    list: async () => unwrap<ApiKeyInfo[]>(await raw.GET("/api/v1/apikeys")),
+    create: async (body: { name: string; scopes: string[] }) =>
+      unwrap<ApiKeyInfo>(await raw.POST("/api/v1/apikeys", { body: body as never })),
+    revoke: async (id: string) =>
+      unwrap<void>(
+        await raw.DELETE("/api/v1/apikeys/{key_id}", { params: { path: { key_id: id } } }),
+      ),
+  },
+
+  mcpServers: {
+    list: async () => unwrap<McpServerInfo[]>(await raw.GET("/api/v1/mcp-servers")),
+    upsert: async (body: {
+      name: string;
+      transport: string;
+      config: Record<string, unknown>;
+    }) => unwrap<McpServerInfo>(await raw.POST("/api/v1/mcp-servers", { body: body as never })),
+    delete: async (name: string) =>
+      unwrap<void>(
+        await raw.DELETE("/api/v1/mcp-servers/{name}", { params: { path: { name } } }),
+      ),
+  },
+
+  misc: {
+    version: async () =>
+      unwrap<Record<string, string>>(await raw.GET("/api/v1/version")),
+    mcpConfig: async () =>
+      unwrap<Record<string, unknown>>(await raw.GET("/api/v1/mcp/config")),
   },
 };

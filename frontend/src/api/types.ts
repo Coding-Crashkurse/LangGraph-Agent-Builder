@@ -1,9 +1,12 @@
-/** TS mirror of backend/src/graphforge/compiler/spec.py and API payloads.
- * The pydantic models are the source of truth (CLAUDE.md §7). */
+/** Domain types for the /api/v1 contracts.
+ *
+ * Path/method safety comes from the generated `schema.gen.ts` (npm run gen:api,
+ * SPEC §11.2); these interfaces mirror the backend's *pydantic-exported JSON
+ * schemas* (FlowSpec, Diagnostic, RunEvent, component descriptors) and are
+ * structurally checked against fixtures in vitest.
+ */
 
-export const START_NODE = "__start__";
-export const END_NODE = "__end__";
-
+// ------------------------------------------------------------------ FlowSpec (§5.2)
 export interface Position {
   x: number;
   y: number;
@@ -11,207 +14,281 @@ export interface Position {
 
 export interface NodeSpec {
   id: string;
-  component: string;
-  component_version: number;
+  component_id: string;
+  component_version: string;
+  label?: string;
   config: Record<string, unknown>;
   position: Position;
+  notes?: string;
 }
 
-export type EdgeKind = "control" | "attach";
+export type EdgeKind = "data" | "tool" | "router";
 
 export interface EdgeSpec {
-  kind: EdgeKind;
-  source: string;
-  source_handle?: string | null;
-  target: string;
-}
-
-export interface AgentSkillSpec {
   id: string;
+  kind: EdgeKind;
+  source: { node: string; output: string };
+  target: { node: string; input: string };
+}
+
+export interface A2ASettings {
+  enabled: boolean;
+  agent_name?: string;
+  description?: string;
+  tags?: string[];
+  examples?: string[];
+  input_modes?: string[];
+  output_modes?: string[];
+  auth?: "public" | "api-key";
+  stream_tokens?: boolean;
+  push_notifications?: boolean;
+}
+
+export interface McpSettings {
+  enabled: boolean;
+  tool_name?: string;
+  description?: string;
+  auto_resolve_interrupts?: "approve" | "reject" | null;
+}
+
+export interface FlowMeta {
   name: string;
-  description: string;
-  tags: string[];
-  examples: string[];
+  slug: string;
+  description?: string;
+  icon?: string;
+  tags?: string[];
+  a2a?: A2ASettings;
+  mcp?: McpSettings;
+  settings?: { recursion_limit?: number };
 }
 
-export interface AgentCardSpec {
-  name: string;
-  description: string;
-  skills: AgentSkillSpec[];
-  default_input_modes: string[];
-  default_output_modes: string[];
-  provider_organization: string;
-  provider_url: string;
+export interface FlowSpec {
+  schema_version: string;
+  flow: FlowMeta;
+  nodes: NodeSpec[];
+  edges: EdgeSpec[];
+  ui?: { viewport?: Record<string, unknown>; sticky_notes?: unknown[] };
+  meta?: Record<string, unknown>;
 }
 
-export interface MCPToolSpec {
-  name: string;
-  description: string;
-}
-
-export interface PublishSpec {
-  a2a: boolean;
-  mcp: boolean;
-  agent_card: AgentCardSpec;
-  mcp_tool: MCPToolSpec;
-}
-
-export interface FlowEndpoints {
-  a2a_url?: string;
-  agent_card_url?: string;
-  rest_url?: string;
-  mcp_url?: string;
-}
-
-export interface Flow {
+export interface FlowInfo {
   id: string;
   slug: string;
   name: string;
   description: string;
-  version: number;
-  nodes: NodeSpec[];
-  edges: EdgeSpec[];
-  publish: PublishSpec;
-  is_published: boolean;
-  endpoints: FlowEndpoints;
+  spec: FlowSpec;
+  serve_version: string;
+  published_version: string | null;
   created_at: string;
   updated_at: string;
 }
 
-export interface ValidationIssue {
-  severity: "error" | "warning";
+export interface VersionInfo {
+  id: string;
+  flow_id: string;
+  semver: string;
+  changelog: string;
+  published_at: string;
+}
+
+// ------------------------------------------------------------------ diagnostics (§5.4)
+export type Severity = "error" | "warning" | "info";
+
+export interface Diagnostic {
   code: string;
-  message: string;
+  severity: Severity;
   node_id?: string | null;
-  edge_index?: number | null;
+  field?: string | null;
+  edge_id?: string | null;
+  message: string;
+  fix_hint?: string | null;
 }
 
-export interface ValidationReport {
-  valid: boolean;
-  issues: ValidationIssue[];
+export interface ValidateResponse {
+  diagnostics: Diagnostic[];
+  compile_report: CompileReport | null;
 }
 
-export type ComponentKind = "node" | "router" | "tool_provider";
+export interface CompileReport {
+  nodes: { id: string; component_id: string; kind: string; graph_node: boolean }[];
+  coercions: { edge_id: string; coercion: string }[];
+  channels: Record<string, string>;
+  interrupt_points: string[];
+  router_tables: Record<string, Record<string, string>>;
+  tool_bindings: Record<string, string[]>;
+  recursion_limit: number;
+  fingerprint: string;
+}
 
-export interface ComponentInfo {
+// ------------------------------------------------------------------ components (§4.2)
+export type PortFamily =
+  | "MESSAGE"
+  | "DATA"
+  | "DOCUMENTS"
+  | "EMBEDDING"
+  | "MODEL"
+  | "TOOLSET"
+  | "ROUTE"
+  | "FILE"
+  | "ANY";
+
+export interface PortSpec {
+  schema_ref: string;
+  json_schema: Record<string, unknown>;
+  family: PortFamily;
+  is_list: boolean;
+  display_name?: string | null;
+}
+
+export interface FieldDescriptor {
+  type: string; // widget key for the FieldWidgetRegistry
   name: string;
   display_name: string;
-  description: string;
-  category: "llm" | "rag" | "flow" | "tools" | "io";
-  version: number;
-  kind: ComponentKind;
-  accepts_attachments: string[];
-  state_reads: string[];
-  state_writes: string[];
-  config_json_schema: JsonSchema;
-  outputs_static?: string[] | null;
-  outputs_from_config?: string | null;
-  attachment_kind?: string;
-}
-
-export interface JsonSchema {
-  type?: string;
-  title?: string;
-  description?: string;
-  default?: unknown;
-  enum?: unknown[];
-  const?: unknown;
-  format?: string;
-  properties?: Record<string, JsonSchema>;
-  required?: string[];
-  items?: JsonSchema;
-  additionalProperties?: JsonSchema | boolean;
-  anyOf?: JsonSchema[];
-  allOf?: JsonSchema[];
-  $ref?: string;
-  $defs?: Record<string, JsonSchema>;
-  minimum?: number;
-  maximum?: number;
-  minLength?: number;
+  info: string;
+  required: boolean;
+  default: unknown;
+  advanced: boolean;
+  show: boolean;
+  dynamic: boolean;
+  real_time_refresh: boolean;
+  refresh_button: boolean;
+  placeholder: string;
+  tool_mode: boolean;
+  accepts_global_variable: boolean;
+  deprecated: boolean;
+  as_port: PortSpec | null;
+  port_only: boolean;
+  // widget extras (options, min/max/step, columns, schema, …)
   [key: string]: unknown;
 }
 
-/** Debug envelope — mirror of runtime/events.py TaskEvent. */
-export interface TaskEvent {
-  id: string;
-  task_id: string;
-  flow_id: string;
-  source: "a2a" | "mcp" | "system";
-  type: string;
-  node?: string | null;
-  data: Record<string, unknown>;
-  ts: string;
+export interface OutputDescriptor {
+  name: string;
+  display_name: string;
+  port: PortSpec;
+  method: string | null;
+  group: string | null;
 }
 
-export type RunState =
-  | "submitted"
-  | "working"
-  | "input-required"
+export type NodeKind = "task" | "router" | "interrupt" | "terminal";
+
+export interface ComponentDescriptor {
+  component_id: string;
+  version: string;
+  display_name: string;
+  description: string;
+  icon: string;
+  category: string;
+  tags: string[];
+  beta: boolean;
+  legacy: boolean;
+  node_kind: NodeKind;
+  tool_mode_supported: boolean;
+  dynamic_outputs_from: string | null;
+  fields: FieldDescriptor[];
+  outputs: OutputDescriptor[];
+  input_ports: Record<string, PortSpec>;
+  config_schema: Record<string, unknown>;
+}
+
+// ------------------------------------------------------------------ runs & events (§6.2)
+export type RunStatus =
+  | "pending"
+  | "running"
+  | "input_required"
   | "completed"
   | "failed"
-  | "canceled"
-  | "rejected"
-  | "unknown";
+  | "cancelled";
 
-export interface Run {
-  id: string;
-  flow_id: string;
-  context_id: string;
-  source: "a2a" | "mcp";
-  state: RunState;
-  input_preview: string;
-  error?: string | null;
+export interface RunInfo {
+  run_id: string;
+  flow_id: string | null;
+  flow_slug: string;
+  thread_id: string;
+  mode: string;
+  status: RunStatus;
+  error_code: string | null;
+  error_message: string | null;
+  result_preview: string;
+  started_at: string;
+  finished_at: string | null;
+}
+
+export interface RunEvent {
+  event: string;
+  run_id: string;
+  thread_id: string;
+  seq: number;
+  ts: string;
+  data: Record<string, unknown>;
+}
+
+export interface RunResult {
+  run_id: string;
+  thread_id: string;
+  status: RunStatus;
+  result_text: string;
+  result_json: Record<string, unknown> | null;
+  interrupt: InterruptPayload | null;
+  interrupt_node: string | null;
+  error_code: string | null;
+  error_message: string | null;
+}
+
+/** Normative interrupt payloads (§5.5) — single source for modals AND A2A. */
+export interface InterruptPayload {
+  kind?: "approval" | "free_text" | "debug_step" | string;
+  prompt?: string;
+  options?: string[];
+  schema?: Record<string, unknown> | null;
+  context?: Record<string, unknown>;
+  [key: string]: unknown;
+}
+
+// ------------------------------------------------------------------ settings surfaces
+export interface VariableInfo {
+  name: string;
+  kind: "generic" | "credential";
   created_at: string;
   updated_at: string;
 }
 
-/** A2A protocol shapes (camelCase wire format, subset we render). */
-export interface A2APart {
-  kind: "text" | "data" | "file";
-  text?: string;
-  data?: Record<string, unknown>;
-}
-
-export interface A2AMessage {
-  role: "user" | "agent";
-  parts: A2APart[];
-  messageId?: string;
-  taskId?: string;
-  contextId?: string;
-}
-
-export interface A2AArtifact {
-  artifactId?: string;
-  name?: string;
-  parts: A2APart[];
-}
-
-export interface A2ATask {
+export interface ApiKeyInfo {
   id: string;
-  contextId: string;
-  status: { state: RunState; message?: A2AMessage; timestamp?: string };
-  history?: A2AMessage[];
-  artifacts?: A2AArtifact[];
-}
-
-export interface TaskDetail {
-  run: Run;
-  task: A2ATask | null;
-}
-
-export interface SendMessageResult {
-  task: A2ATask | null;
-  events: number;
-}
-
-export interface PublishResult {
-  published: boolean;
-  issues: ValidationIssue[];
-  endpoints?: FlowEndpoints;
-  agent_card?: Record<string, unknown> | null;
-}
-
-export interface CollectionInfo {
   name: string;
-  documents: number;
+  prefix: string;
+  scopes: string[];
+  created_at: string;
+  last_used_at: string | null;
+  total_uses: number;
+  revoked: boolean;
+  key?: string; // present exactly once, on create
 }
+
+export interface McpServerInfo {
+  id: string;
+  name: string;
+  transport: "stdio" | "streamable_http" | "sse";
+  config: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface ThreadInfo {
+  thread_id: string;
+  flow_slug: string;
+  runs: number;
+  last_run_at: string;
+  last_status: string;
+}
+
+export const PORT_FAMILY_COLORS: Record<PortFamily, string> = {
+  MESSAGE: "#6366f1", // indigo
+  DATA: "#64748b", // slate
+  DOCUMENTS: "#10b981", // emerald
+  EMBEDDING: "#8b5cf6", // violet
+  MODEL: "#06b6d4", // cyan
+  TOOLSET: "#0ea5e9", // sky
+  ROUTE: "#f59e0b", // amber
+  FILE: "#f97316", // orange
+  ANY: "#9ca3af", // gray (dashed)
+};
