@@ -197,6 +197,7 @@ function Canvas() {
           onNodeClick={(_, node) => store.select(node.id)}
           onPaneClick={() => store.select(null)}
           deleteKeyCode={["Delete", "Backspace"]}
+          connectionRadius={36}
           snapToGrid
           snapGrid={[16, 16]}
           proOptions={{ hideAttribution: true }}

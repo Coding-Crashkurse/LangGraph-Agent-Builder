@@ -272,6 +272,29 @@ def validate(ir: FlowIR) -> list[Diagnostic]:
     if not terminals:
         diags.append(D(DiagnosticCode.E030, "flow has no terminal node (e.g. `end`)"))
 
+    # explicit endpoint rules: `start` must lead somewhere, terminals must be fed
+    if start is not None and not any(
+        e.kind in ("data", "router") for e in ir.out_edges("start")
+    ):
+        diags.append(
+            D(
+                DiagnosticCode.E030,
+                "`start` has no outgoing connection — the flow never leaves it",
+                node_id="start",
+                fix_hint="Connect start.message (or data/files) to your first node.",
+            )
+        )
+    for terminal in terminals:
+        if not any(e.kind in ("data", "router") for e in ir.in_edges(terminal.id)):
+            diags.append(
+                D(
+                    DiagnosticCode.E030,
+                    f"terminal node {terminal.id!r} has no inbound connection",
+                    node_id=terminal.id,
+                    fix_hint="Route a result (message/text/json) into it.",
+                )
+            )
+
     succ = _control_successors(ir)
     if start is not None:
         reachable = _reachable(succ, "start")

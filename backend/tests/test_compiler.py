@@ -187,6 +187,25 @@ def test_e030_no_start():
     assert DiagnosticCode.E030 in [d.code for d in compiled.diagnostics]
 
 
+def test_e030_start_must_lead_somewhere():
+    """start dangling + island feeding end → hard error, never 'valid'."""
+    spec = hello_spec()
+    spec["edges"] = [e for e in spec["edges"] if e["id"] != "e1"]  # cut start → fake
+    compiled = compile_flow(spec, use_cache=False)
+    messages = [d.message for d in compiled.diagnostics if d.code == DiagnosticCode.E030]
+    assert any("no outgoing connection" in m for m in messages)
+    assert not compiled.ok
+
+
+def test_e030_terminal_needs_inbound():
+    spec = hello_spec()
+    spec["edges"] = [e for e in spec["edges"] if e["id"] != "e2"]  # cut fake → end
+    compiled = compile_flow(spec, use_cache=False)
+    messages = [d.message for d in compiled.diagnostics if d.code == DiagnosticCode.E030]
+    assert any("no inbound connection" in m for m in messages)
+    assert not compiled.ok
+
+
 def test_e031_required_port_unconnected():
     spec = hello_spec()
     spec["nodes"].append(

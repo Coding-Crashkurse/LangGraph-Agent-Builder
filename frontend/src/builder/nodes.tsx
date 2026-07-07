@@ -111,8 +111,8 @@ function PortDot({
         ...(vertical ? { left: `${crossOffset ?? 50}%` } : { top: offset }),
         background: port.family === "ANY" ? "transparent" : color,
         border: `2px ${port.family === "ANY" ? "dashed" : "solid"} ${color}`,
-        width: 10,
-        height: 10,
+        width: 12,
+        height: 12,
         opacity: dimmed ? 0.15 : 1,
         transition: "opacity 120ms, transform 120ms",
         transform: dimmed ? "scale(0.8)" : "scale(1)",
@@ -181,7 +181,7 @@ export const LgaNode = memo(function LgaNode({ id, data, selected }: NodeProps<C
   const errorCount = nodeDiags.filter((d) => d.severity === "error").length;
   const warnCount = nodeDiags.filter((d) => d.severity === "warning").length;
 
-  const HEADER = 34;
+  const PORTS_TOP = 58; // header (title) + id line — ports get their own rows below
   const ROW = 20;
   const rows = Math.max(inputs.length, outputs.length, 1);
 
@@ -229,7 +229,10 @@ export const LgaNode = memo(function LgaNode({ id, data, selected }: NodeProps<C
         CATEGORY_ACCENTS[descriptor.category] ?? "border-l-zinc-500",
         selected && "ring-2 ring-accent-500",
       )}
-      style={{ paddingBottom: toolInputs.length ? 16 : 6, minHeight: HEADER + rows * ROW }}
+      style={{
+        paddingBottom: toolInputs.length ? 16 : 8,
+        minHeight: PORTS_TOP + rows * ROW + 6,
+      }}
     >
       <div className="flex items-center gap-2 border-b border-surface-800 px-3 py-1.5">
         <span className="truncate text-[13px] font-medium text-zinc-100">
@@ -293,13 +296,13 @@ export const LgaNode = memo(function LgaNode({ id, data, selected }: NodeProps<C
             id={name}
             port={port}
             side="in"
-            offset={HEADER + index * ROW}
+            offset={PORTS_TOP + index * ROW}
             dimmed={dimFor(port, "in", name)}
             onHover={setTooltip}
           />
           <span
             className="absolute text-[10px] text-zinc-400"
-            style={{ left: 10, top: HEADER + index * ROW - 8 }}
+            style={{ left: 12, top: PORTS_TOP + index * ROW - 8 }}
           >
             {name}
           </span>
@@ -311,7 +314,7 @@ export const LgaNode = memo(function LgaNode({ id, data, selected }: NodeProps<C
             id={name}
             port={port}
             side="out"
-            offset={HEADER + index * ROW}
+            offset={PORTS_TOP + index * ROW}
             dimmed={dimFor(port, "out", name)}
             onHover={setTooltip}
           />
@@ -320,7 +323,7 @@ export const LgaNode = memo(function LgaNode({ id, data, selected }: NodeProps<C
               "absolute text-right text-[10px]",
               port.family === "ROUTE" ? "font-semibold text-amber-400" : "text-zinc-400",
             )}
-            style={{ right: 10, top: HEADER + index * ROW - 8 }}
+            style={{ right: 12, top: PORTS_TOP + index * ROW - 8 }}
           >
             {name}
           </span>
