@@ -19,8 +19,10 @@ import {
   newEdgeId,
   newNodeId,
   NOTE_COMPONENT,
+  ROUTER_TARGET_HANDLE,
   specToCanvas,
 } from "./convert";
+import { indexPorts } from "./guards";
 
 interface Snapshot {
   nodes: CanvasNode[];
@@ -147,12 +149,25 @@ export const useBuilder = create<BuilderState>((set, get) => {
     select: (nodeId) => set({ selectedNodeId: nodeId }),
     updateNodeConfig: (nodeId, config) => {
       checkpoint();
-      set((state) => ({
-        dirty: true,
-        nodes: state.nodes.map((node) =>
+      set((state) => {
+        const nodes = state.nodes.map((node) =>
           node.id === nodeId ? { ...node, data: { ...node.data, config } } : node,
-        ),
-      }));
+        );
+        // prune edges whose target port vanished (e.g. renamed {prompt_var})
+        const node = nodes.find((n) => n.id === nodeId);
+        const descriptor = node && state.descriptors.get(node.data.componentId);
+        let edges = state.edges;
+        if (descriptor) {
+          const ports = indexPorts(descriptor, config);
+          edges = state.edges.filter(
+            (edge) =>
+              edge.target !== nodeId ||
+              edge.targetHandle === ROUTER_TARGET_HANDLE ||
+              ports.inputs.has(edge.targetHandle ?? ""),
+          );
+        }
+        return { dirty: true, nodes, edges };
+      });
     },
     updateNoteText: (nodeId, text) => {
       checkpoint();

@@ -53,7 +53,34 @@ export function indexPorts(
     }
   }
   const inputs = new Map<string, PortSpec>(Object.entries(descriptor.input_ports));
+  // PromptInput {vars} spawn input ports LIVE while typing — mirror of the
+  // backend's Component.input_ports_for_config (SPEC §4.2 PromptInput)
+  for (const field of descriptor.fields) {
+    if (field.type !== "PromptInput") continue;
+    const template = String(config[field.name] ?? field.default ?? "");
+    for (const variable of extractPromptVars(template)) {
+      if (!inputs.has(variable)) {
+        inputs.set(variable, {
+          schema_ref: "lga:Text",
+          json_schema: { type: "string" },
+          family: "DATA",
+          is_list: false,
+        });
+      }
+    }
+  }
   return { outputs, inputs, routeLabels };
+}
+
+// same rule as the backend PROMPT_VAR_RE: {var}, but not {{escaped}}
+const PROMPT_VAR_RE = /(?<!\{)\{([a-zA-Z_][a-zA-Z0-9_]*)\}(?!\})/g;
+
+export function extractPromptVars(template: string): string[] {
+  const seen = new Set<string>();
+  for (const match of template.matchAll(PROMPT_VAR_RE)) {
+    seen.add(match[1]);
+  }
+  return [...seen];
 }
 
 export type ConnectionVerdict =
