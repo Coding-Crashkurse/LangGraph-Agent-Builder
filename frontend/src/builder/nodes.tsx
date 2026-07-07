@@ -367,6 +367,59 @@ export const LgaNode = memo(function LgaNode({ id, data, selected }: NodeProps<C
   );
 });
 
+const NOTE_COLORS: Record<string, string> = {
+  amber: "bg-amber-200/95 border-amber-400 text-amber-950",
+  sky: "bg-sky-200/95 border-sky-400 text-sky-950",
+  emerald: "bg-emerald-200/95 border-emerald-400 text-emerald-950",
+};
+
+export const NoteNode = memo(function NoteNode({ id, data, selected }: NodeProps<CanvasNode>) {
+  const updateNoteText = useBuilder((s) => s.updateNoteText);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(String(data.notes ?? ""));
+
+  const commit = () => {
+    setEditing(false);
+    if (draft !== data.notes) updateNoteText(id, draft);
+  };
+
+  return (
+    <div
+      className={cn(
+        "w-52 rounded-md border p-2 text-[11px] leading-snug shadow-md",
+        NOTE_COLORS[String(data.config?.color ?? "amber")] ?? NOTE_COLORS.amber,
+        selected && "ring-2 ring-accent-500",
+      )}
+      onDoubleClick={() => {
+        setDraft(String(data.notes ?? ""));
+        setEditing(true);
+      }}
+    >
+      {editing ? (
+        <textarea
+          autoFocus
+          value={draft}
+          rows={Math.max(3, draft.split("\n").length)}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") commit();
+            e.stopPropagation(); // keep Delete/Backspace inside the textarea
+          }}
+          className="nodrag w-full resize-none bg-transparent outline-none"
+          placeholder="Type a note…"
+        />
+      ) : (
+        <p className="min-h-[2.5rem] whitespace-pre-wrap">
+          {String(data.notes ?? "") || (
+            <span className="opacity-50">Double-click to edit…</span>
+          )}
+        </p>
+      )}
+    </div>
+  );
+});
+
 export function LgaEdge(props: EdgeProps<CanvasEdge>) {
   const [path] = getBezierPath(props);
   const kind = props.data?.kind ?? "data";
@@ -379,5 +432,5 @@ export function LgaEdge(props: EdgeProps<CanvasEdge>) {
   return <BaseEdge id={props.id} path={path} style={style} />;
 }
 
-export const nodeTypes = { lga: LgaNode };
+export const nodeTypes = { lga: LgaNode, note: NoteNode };
 export const edgeTypes = { lga: LgaEdge };

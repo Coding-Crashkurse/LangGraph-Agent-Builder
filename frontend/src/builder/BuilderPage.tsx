@@ -4,6 +4,7 @@ import {
   Background,
   Controls,
   MiniMap,
+  Panel,
   ReactFlow,
   ReactFlowProvider,
   useReactFlow,
@@ -133,6 +134,54 @@ function Canvas() {
     return () => window.clearTimeout(t);
   }, [store.flow?.id, fitView]);
 
+  // §11.8 keyboard: undo/redo, copy/paste/duplicate, "/" = palette search
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (
+        target.tagName === "INPUT" ||
+        target.tagName === "TEXTAREA" ||
+        target.isContentEditable
+      ) {
+        return;
+      }
+      const mod = e.ctrlKey || e.metaKey;
+      const key = e.key.toLowerCase();
+      if (mod && key === "z" && !e.shiftKey) {
+        e.preventDefault();
+        store.undo();
+      } else if ((mod && key === "y") || (mod && e.shiftKey && key === "z")) {
+        e.preventDefault();
+        store.redo();
+      } else if (mod && key === "c") {
+        const count = store.copySelection();
+        if (count) toast.success(`${count} node(s) copied`);
+      } else if (mod && key === "v") {
+        const count = store.paste();
+        if (count) toast.success(`${count} node(s) pasted`);
+      } else if (mod && key === "d") {
+        e.preventDefault();
+        if (store.copySelection()) store.paste();
+      } else if (e.key === "/") {
+        e.preventDefault();
+        document.getElementById("palette-search")?.focus();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [store]);
+
+  const addNoteAtCenter = () => {
+    const position = screenToFlowPosition({
+      x: window.innerWidth / 2,
+      y: window.innerHeight / 2,
+    });
+    store.addNote(position);
+  };
+
+  const isEmpty =
+    store.nodes.filter((n) => n.type !== "note").length <= 2 && store.edges.length === 0;
+
   return (
     <div className="flex min-h-0 flex-1">
       <div className="min-w-0 flex-1" onDrop={onDrop} onDragOver={(e) => e.preventDefault()}>
@@ -148,6 +197,8 @@ function Canvas() {
           onNodeClick={(_, node) => store.select(node.id)}
           onPaneClick={() => store.select(null)}
           deleteKeyCode={["Delete", "Backspace"]}
+          snapToGrid
+          snapGrid={[16, 16]}
           proOptions={{ hideAttribution: true }}
           colorMode="dark"
           fitView
@@ -155,6 +206,61 @@ function Canvas() {
           <Background gap={18} size={1} />
           <MiniMap pannable zoomable className="!bg-surface-900" />
           <Controls showInteractive={false} />
+          <Panel position="top-left" className="flex gap-1">
+            <button
+              type="button"
+              title="Undo (Ctrl+Z)"
+              disabled={store.past.length === 0}
+              onClick={store.undo}
+              className="rounded border border-surface-700 bg-surface-900/90 px-2 py-1 text-xs text-zinc-300 hover:bg-surface-800 disabled:opacity-30"
+            >
+              ↩
+            </button>
+            <button
+              type="button"
+              title="Redo (Ctrl+Shift+Z)"
+              disabled={store.future.length === 0}
+              onClick={store.redo}
+              className="rounded border border-surface-700 bg-surface-900/90 px-2 py-1 text-xs text-zinc-300 hover:bg-surface-800 disabled:opacity-30"
+            >
+              ↪
+            </button>
+            <button
+              type="button"
+              title="Add sticky note"
+              onClick={addNoteAtCenter}
+              className="rounded border border-surface-700 bg-surface-900/90 px-2 py-1 text-xs text-amber-300 hover:bg-surface-800"
+            >
+              🗒 Note
+            </button>
+            <button
+              type="button"
+              title="Auto-layout (left → right)"
+              onClick={() => {
+                store.autoLayout();
+                window.setTimeout(() => fitView({ padding: 0.2, duration: 300 }), 50);
+              }}
+              className="rounded border border-surface-700 bg-surface-900/90 px-2 py-1 text-xs text-zinc-300 hover:bg-surface-800"
+            >
+              ⌗ Layout
+            </button>
+          </Panel>
+          {isEmpty && (
+            <Panel position="top-center" className="!pointer-events-none mt-24">
+              <div className="rounded-lg border border-dashed border-surface-700 bg-surface-950/80 px-6 py-4 text-center text-xs text-zinc-500">
+                <p className="text-sm text-zinc-400">Build your flow</p>
+                <p className="mt-1">
+                  Drag components from the left · ports connect by matching colors
+                </p>
+                <p className="mt-0.5">
+                  <kbd className="rounded bg-surface-800 px-1">/</kbd> search ·{" "}
+                  <kbd className="rounded bg-surface-800 px-1">Ctrl+Z</kbd> undo ·{" "}
+                  <kbd className="rounded bg-surface-800 px-1">Ctrl+D</kbd> duplicate ·{" "}
+                  <kbd className="rounded bg-surface-800 px-1">Entf</kbd> delete
+                </p>
+              </div>
+            </Panel>
+          )}
         </ReactFlow>
       </div>
       <div className="flex w-80 flex-col border-l border-surface-800 bg-surface-950">
@@ -227,6 +333,15 @@ export function BuilderPage() {
     }, autosave.ms);
     return () => window.clearTimeout(timer);
   }, [autosave, store.dirty, store.nodes, store.edges]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // warn on tab close with unsaved changes (autosave usually beats this)
+  useEffect(() => {
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (useBuilder.getState().dirty) e.preventDefault();
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, []);
 
   const validate = async (deep = false) => {
     if (!store.flow) return;

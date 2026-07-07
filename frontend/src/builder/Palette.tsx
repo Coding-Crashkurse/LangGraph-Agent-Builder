@@ -110,8 +110,9 @@ export function Palette({ components }: { components: ComponentDescriptor[] }) {
     <div className="relative flex h-full w-60 flex-col border-r border-surface-800 bg-surface-950">
       <div className="p-3">
         <Input
+          id="palette-search"
           value={query}
-          placeholder="Search components…"
+          placeholder="Search components…  ( / )"
           onChange={(e) => setQuery(e.target.value)}
         />
       </div>

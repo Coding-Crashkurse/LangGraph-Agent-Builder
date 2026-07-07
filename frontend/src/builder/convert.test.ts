@@ -84,4 +84,22 @@ describe("FlowSpec ⇄ canvas mapping (SPEC §5.2)", () => {
     const { edges } = specToCanvas(FIXTURE);
     expect(edges[2].targetHandle).toBe("__in__");
   });
+
+  it("round-trips sticky notes through ui.sticky_notes (§11.8)", () => {
+    const withNote: FlowSpec = {
+      ...FIXTURE,
+      ui: {
+        sticky_notes: [
+          { id: "note_1", text: "remember the SSRF guard", position: { x: 10, y: 20 }, color: "sky" },
+        ],
+      },
+    };
+    const { nodes, edges } = specToCanvas(withNote);
+    const note = nodes.find((n) => n.type === "note");
+    expect(note?.data.notes).toBe("remember the SSRF guard");
+    // notes are canvas-only: they never leak into spec.nodes
+    const back = canvasToSpec(withNote, nodes, edges);
+    expect(back.nodes.map((n) => n.id)).toEqual(FIXTURE.nodes.map((n) => n.id));
+    expect(back.ui?.sticky_notes).toEqual(withNote.ui?.sticky_notes);
+  });
 });

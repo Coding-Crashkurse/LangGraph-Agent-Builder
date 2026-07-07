@@ -8,6 +8,7 @@ import type {
   EdgeSpec,
   FlowSpec,
   NodeSpec,
+  StickyNote,
 } from "@/api/types";
 
 export interface CanvasNodeData extends Record<string, unknown> {
@@ -22,6 +23,28 @@ export type CanvasNode = Node<CanvasNodeData>;
 export type CanvasEdge = Edge<{ kind: EdgeKind }>;
 
 export const ROUTER_TARGET_HANDLE = "__in__";
+/** sticky notes ride along as canvas nodes with this marker componentId (§11.8) */
+export const NOTE_COMPONENT = "__note__";
+
+export function isNoteNode(node: CanvasNode): boolean {
+  return node.type === "note";
+}
+
+export function noteToNode(note: StickyNote): CanvasNode {
+  return {
+    id: note.id,
+    type: "note",
+    deletable: true,
+    position: note.position ?? { x: 0, y: 0 },
+    data: {
+      componentId: NOTE_COMPONENT,
+      componentVersion: "",
+      label: "",
+      config: { color: note.color ?? "amber" },
+      notes: note.text ?? "",
+    },
+  };
+}
 
 export function specToCanvas(spec: FlowSpec): { nodes: CanvasNode[]; edges: CanvasEdge[] } {
   const nodes: CanvasNode[] = spec.nodes.map((node) => ({
@@ -47,6 +70,9 @@ export function specToCanvas(spec: FlowSpec): { nodes: CanvasNode[]; edges: Canv
     data: { kind: edge.kind },
     type: "lga",
   }));
+  for (const note of spec.ui?.sticky_notes ?? []) {
+    nodes.push(noteToNode(note));
+  }
   return { nodes, edges };
 }
 
@@ -55,15 +81,23 @@ export function canvasToSpec(
   nodes: CanvasNode[],
   edges: CanvasEdge[],
 ): FlowSpec {
-  const nodeSpecs: NodeSpec[] = nodes.map((node) => ({
+  const stickyNotes: StickyNote[] = nodes.filter(isNoteNode).map((node) => ({
     id: node.id,
-    component_id: node.data.componentId,
-    component_version: node.data.componentVersion,
-    label: node.data.label,
-    config: node.data.config,
+    text: node.data.notes,
     position: { x: Math.round(node.position.x), y: Math.round(node.position.y) },
-    notes: node.data.notes,
+    color: String(node.data.config.color ?? "amber"),
   }));
+  const nodeSpecs: NodeSpec[] = nodes
+    .filter((node) => !isNoteNode(node))
+    .map((node) => ({
+      id: node.id,
+      component_id: node.data.componentId,
+      component_version: node.data.componentVersion,
+      label: node.data.label,
+      config: node.data.config,
+      position: { x: Math.round(node.position.x), y: Math.round(node.position.y) },
+      notes: node.data.notes,
+    }));
   const edgeSpecs: EdgeSpec[] = edges.map((edge) => ({
     id: edge.id,
     kind: edge.data?.kind ?? "data",
@@ -73,7 +107,12 @@ export function canvasToSpec(
       input: edge.targetHandle === ROUTER_TARGET_HANDLE ? "" : (edge.targetHandle ?? ""),
     },
   }));
-  return { ...base, nodes: nodeSpecs, edges: edgeSpecs };
+  return {
+    ...base,
+    nodes: nodeSpecs,
+    edges: edgeSpecs,
+    ui: { ...(base.ui ?? {}), sticky_notes: stickyNotes },
+  };
 }
 
 let edgeCounter = 0;

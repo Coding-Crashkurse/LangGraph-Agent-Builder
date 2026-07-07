@@ -62,12 +62,19 @@ export interface FlowMeta {
   settings?: { recursion_limit?: number };
 }
 
+export interface StickyNote {
+  id: string;
+  text: string;
+  position: { x: number; y: number };
+  color: string;
+}
+
 export interface FlowSpec {
   schema_version: string;
   flow: FlowMeta;
   nodes: NodeSpec[];
   edges: EdgeSpec[];
-  ui?: { viewport?: Record<string, unknown>; sticky_notes?: unknown[] };
+  ui?: { viewport?: Record<string, unknown>; sticky_notes?: StickyNote[] };
   meta?: Record<string, unknown>;
 }
 
