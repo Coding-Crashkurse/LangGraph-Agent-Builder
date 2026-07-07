@@ -133,7 +133,8 @@ function RowHandle({
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
         style={{
-          [side === "in" ? "left" : "right"]: -19,
+          // centered ON the card border (row spans to the card edge)
+          [side === "in" ? "left" : "right"]: -7,
           top: "50%",
           background: port.family === "ANY" ? "#18181b" : color,
           border: `2px ${port.family === "ANY" ? "dashed" : "solid"} ${color}`,
