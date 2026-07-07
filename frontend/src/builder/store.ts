@@ -30,6 +30,7 @@ interface Snapshot {
 }
 
 const HISTORY_LIMIT = 50;
+let lastConfigCheckpoint = 0;
 
 function cloneGraph(nodes: CanvasNode[], edges: CanvasEdge[]): Snapshot {
   return structuredClone({ nodes, edges });
@@ -148,7 +149,10 @@ export const useBuilder = create<BuilderState>((set, get) => {
     },
     select: (nodeId) => set({ selectedNodeId: nodeId }),
     updateNodeConfig: (nodeId, config) => {
-      checkpoint();
+      // inline editing fires per keystroke — coalesce history to 1 step/800ms
+      const now = Date.now();
+      if (now - lastConfigCheckpoint > 800) checkpoint();
+      lastConfigCheckpoint = now;
       set((state) => {
         const nodes = state.nodes.map((node) =>
           node.id === nodeId ? { ...node, data: { ...node.data, config } } : node,
