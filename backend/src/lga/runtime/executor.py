@@ -292,6 +292,9 @@ class Executor:
                         continue
                     self._check_data_conflicts(chunk)
         except RuntimeError_ as exc:
+            # status BEFORE the event: SSE consumers re-read the run row on
+            # run_finished and must see the terminal state (no race)
+            await self._status(run_id, "failed", error_code=exc.code.value, error_message=str(exc))
             await self._emit(
                 event_sink,
                 run_id,
@@ -299,7 +302,6 @@ class Executor:
                 "run_finished",
                 {"status": "failed", "error_code": exc.code.value, "message": str(exc)},
             )
-            await self._status(run_id, "failed", error_code=exc.code.value, error_message=str(exc))
             if self._bus is not None:
                 self._bus.close_run(run_id)
             return RunResult(
@@ -311,6 +313,7 @@ class Executor:
             )
         except GraphRecursionError as exc:
             code = RuntimeErrorCode.RT105.value
+            await self._status(run_id, "failed", error_code=code, error_message=str(exc))
             await self._emit(
                 event_sink,
                 run_id,
@@ -318,7 +321,6 @@ class Executor:
                 "run_finished",
                 {"status": "failed", "error_code": code, "message": str(exc)},
             )
-            await self._status(run_id, "failed", error_code=code, error_message=str(exc))
             if self._bus is not None:
                 self._bus.close_run(run_id)
             return RunResult(
@@ -330,6 +332,7 @@ class Executor:
             )
 
         if interrupt_payload is not None:
+            await self._status(run_id, "input_required")
             await self._emit(
                 event_sink,
                 run_id,
@@ -337,7 +340,6 @@ class Executor:
                 "interrupt_raised",
                 {"node_id": interrupt_node or "", "payload": interrupt_payload},
             )
-            await self._status(run_id, "input_required")
             return RunResult(
                 run_id=run_id,
                 thread_id=thread_id,
@@ -349,6 +351,7 @@ class Executor:
         snapshot = await graph.aget_state(config)
         # debug mode pauses before every node — surface as paused interrupt
         if debug and snapshot.next:
+            await self._status(run_id, "input_required")
             await self._emit(
                 event_sink,
                 run_id,
@@ -356,7 +359,6 @@ class Executor:
                 "interrupt_raised",
                 {"node_id": snapshot.next[0], "payload": {"kind": "debug_step"}},
             )
-            await self._status(run_id, "input_required")
             return RunResult(
                 run_id=run_id,
                 thread_id=thread_id,
@@ -365,6 +367,7 @@ class Executor:
                 interrupt_node=snapshot.next[0],
             )
         text, structured = extract_result(compiled, snapshot.values or {})
+        await self._status(run_id, "completed", result_preview=text[: self._preview_length])
         await self._emit(
             event_sink,
             run_id,
@@ -372,7 +375,6 @@ class Executor:
             "run_finished",
             {"status": "completed", "result_preview": text[: self._preview_length]},
         )
-        await self._status(run_id, "completed", result_preview=text[: self._preview_length])
         if self._bus is not None:
             self._bus.close_run(run_id)
         return RunResult(
