@@ -192,6 +192,7 @@ export interface ComponentDescriptor {
   legacy: boolean;
   node_kind: NodeKind;
   tool_mode_supported: boolean;
+  tool_mode_default?: boolean;
   dynamic_outputs_from: string | null;
   fields: FieldDescriptor[];
   outputs: OutputDescriptor[];

@@ -1,4 +1,4 @@
-"""Structured Output — force Json per schema from a model (SPEC §12.2)."""
+"""Structured Output â€” force Json per schema from a model (SPEC Â§12.2)."""
 
 from __future__ import annotations
 
@@ -18,7 +18,9 @@ class StructuredOutput(Component):
     category = "llm"
 
     inputs = [
-        fields.ModelInput(name="model", display_name="Model", required=True),
+        fields.ModelInput(
+            name="model", display_name="Model", required=True, as_port=ports.LANGUAGE_MODEL
+        ),
         fields.NestedDictInput(name="output_schema", display_name="Output Schema", required=True),
         fields.HandleField(name="input", display_name="Input", as_port=ports.MESSAGE),
         fields.MultilineInput(name="instructions", display_name="Instructions", advanced=True),
@@ -31,7 +33,7 @@ class StructuredOutput(Component):
 
         async def node(state: dict[str, Any], config: Any) -> dict[str, Any]:
             schema = ctx.get_field("output_schema") or {"type": "object"}
-            model = resolve_model(ctx.get_field("model"))
+            model = resolve_model(ctx.get_input(state, "model"))
             inbound = ctx.get_input(state, "input")
             text = message_text(inbound) if inbound is not None else ""
             response = await model.ainvoke(

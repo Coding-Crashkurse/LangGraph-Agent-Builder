@@ -21,7 +21,7 @@ def _tool_defs_for_provider(ir: FlowIR, provider_id: str, ctx: BuildContext) -> 
     if callable(provide):
         provided = provide(ctx)
         return provided if isinstance(provided, list) else [provided]
-    if node.component.tool_mode_supported:
+    if node.component.tool_mode_supported and node.component.tool_mode_enabled(node.config):
         from lga.runtime.tools import node_as_tool
 
         return [node_as_tool(node, ctx)]

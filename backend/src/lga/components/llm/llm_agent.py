@@ -1,4 +1,4 @@
-"""LLM Agent — explicit tool-calling loop (SPEC §12.2).
+"""LLM Agent â€” explicit tool-calling loop (SPEC Â§12.2).
 
 Deliberately not `create_react_agent`: we control tool-call event emission and
 stay robust against prebuilt API drift.
@@ -25,7 +25,9 @@ class LLMAgent(Component):
     priority = 1
 
     inputs = [
-        fields.ModelInput(name="model", display_name="Model", required=True),
+        fields.ModelInput(
+            name="model", display_name="Model", required=True, as_port=ports.LANGUAGE_MODEL
+        ),
         fields.MultilineInput(
             name="system_prompt",
             display_name="System Prompt",
@@ -55,7 +57,7 @@ class LLMAgent(Component):
             rc = get_run_context(config)
             tool_defs = await resolve_toolsets(ctx.tools)
             tools = as_langchain_tools(tool_defs)
-            model = resolve_model(ctx.get_field("model"))
+            model = resolve_model(ctx.get_input(state, "model"))
             if tools:
                 try:
                     model = model.bind_tools(tools)

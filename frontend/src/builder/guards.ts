@@ -60,16 +60,104 @@ export function indexPorts(
     const template = String(config[field.name] ?? field.default ?? "");
     for (const variable of extractPromptVars(template)) {
       if (!inputs.has(variable)) {
-        inputs.set(variable, {
-          schema_ref: "lga:Text",
-          json_schema: { type: "string" },
-          family: "DATA",
-          is_list: false,
-        });
+        inputs.set(variable, TEXT_PORT);
       }
     }
   }
+  applyDynamicPortMirrors(descriptor, config, outputs, inputs, routeLabels);
   return { outputs, inputs, routeLabels };
+}
+
+const TEXT_PORT: PortSpec = {
+  schema_ref: "lga:Text",
+  json_schema: { type: "string" },
+  family: "DATA",
+  is_list: false,
+};
+const ROUTE_PORT: PortSpec = {
+  schema_ref: "lga:Route",
+  json_schema: { type: "string" },
+  family: "ROUTE",
+  is_list: false,
+};
+const TOOLSET_PORT: PortSpec = {
+  schema_ref: "lga:Toolset",
+  json_schema: {},
+  family: "TOOLSET",
+  is_list: true,
+};
+const MESSAGE_PORT: PortSpec = {
+  schema_ref: "lga:Message",
+  json_schema: {},
+  family: "MESSAGE",
+  is_list: false,
+};
+const JSON_PORT: PortSpec = {
+  schema_ref: "lga:Json",
+  json_schema: { type: "object" },
+  family: "DATA",
+  is_list: false,
+};
+const DOCUMENTS_PORT: PortSpec = {
+  schema_ref: "lga:Documents",
+  json_schema: {},
+  family: "DOCUMENTS",
+  is_list: true,
+};
+
+/** Live mirrors of server-side `outputs_for_config`/`input_ports_for_config`
+ * overrides so ports update while typing. Built-ins only — custom components
+ * fall back to the on_field_change round-trip (SPEC §4.6). */
+function applyDynamicPortMirrors(
+  descriptor: ComponentDescriptor,
+  config: Record<string, unknown>,
+  outputs: Map<string, PortSpec>,
+  inputs: Map<string, PortSpec>,
+  routeLabels: Set<string>,
+): void {
+  // Tool Mode toggle (§4.7/§18): toolset output only while enabled
+  if (descriptor.tool_mode_supported) {
+    const enabled = Boolean(config.tool_mode ?? descriptor.tool_mode_default);
+    if (enabled) outputs.set("toolset", TOOLSET_PORT);
+    else outputs.delete("toolset");
+  }
+
+  if (descriptor.component_id === "lga.flow.rule_router") {
+    outputs.clear();
+    routeLabels.clear();
+    const rows = Array.isArray(config.rules) ? (config.rules as { label?: string }[]) : [];
+    const labels = rows.map((r) => String(r.label ?? "").trim()).filter(Boolean);
+    const fallback = String(config.default_label ?? "default");
+    if (!labels.includes(fallback)) labels.push(fallback);
+    for (const label of labels) {
+      outputs.set(label, ROUTE_PORT);
+      routeLabels.add(label);
+    }
+  }
+
+  if (descriptor.component_id === "lga.data.type_convert") {
+    const conversions: Record<string, [PortSpec, PortSpec]> = {
+      message_to_text: [MESSAGE_PORT, TEXT_PORT],
+      text_to_message: [TEXT_PORT, MESSAGE_PORT],
+      documents_to_text: [DOCUMENTS_PORT, TEXT_PORT],
+      json_to_text: [JSON_PORT, TEXT_PORT],
+      text_to_json: [TEXT_PORT, JSON_PORT],
+    };
+    const pair = conversions[String(config.conversion ?? "message_to_text")];
+    if (pair) {
+      inputs.set("input", pair[0]);
+      outputs.set("output", pair[1]);
+    }
+  }
+
+  if (descriptor.component_id === "lga.tools.a2a_remote_agent") {
+    if (String(config.mode ?? "node") === "tool") {
+      outputs.clear();
+      outputs.set("toolset", TOOLSET_PORT);
+    } else {
+      outputs.delete("toolset");
+    }
+  }
 }
 
 // same rule as the backend PROMPT_VAR_RE: {var}, but not {{escaped}}

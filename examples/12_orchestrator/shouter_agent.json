@@ -1,0 +1,27 @@
+{
+  "schema_version": "1",
+  "flow": {
+    "name": "Shouter Agent",
+    "slug": "shouter-agent",
+    "description": "Specialist #2: echoes the request IN CAPS.",
+    "a2a": {
+      "enabled": true,
+      "description": "Shouts whatever you send.",
+      "examples": ["shout: hello"]
+    }
+  },
+  "nodes": [
+    { "id": "start", "component_id": "lga.io.start", "component_version": "1.0.0",
+      "config": {}, "position": { "x": 0, "y": 120 } },
+    { "id": "shout", "component_id": "lga.testing.echo_llm", "component_version": "1.0.0",
+      "config": { "uppercase": true }, "position": { "x": 300, "y": 120 } },
+    { "id": "end", "component_id": "lga.io.end", "component_version": "1.0.0",
+      "config": {}, "position": { "x": 600, "y": 120 } }
+  ],
+  "edges": [
+    { "id": "e1", "kind": "data", "source": { "node": "start", "output": "message" },
+      "target": { "node": "shout", "input": "input" } },
+    { "id": "e2", "kind": "data", "source": { "node": "shout", "output": "message" },
+      "target": { "node": "end", "input": "message" } }
+  ]
+}

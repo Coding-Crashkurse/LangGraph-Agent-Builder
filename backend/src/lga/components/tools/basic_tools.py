@@ -1,4 +1,4 @@
-"""Calculator (safe AST) + HTTP Request tools (SPEC §12.5)."""
+"""Calculator (safe AST) + HTTP Request tools (SPEC Â§12.5)."""
 
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ _OPS = {
 
 
 def safe_eval(expression: str) -> float:
-    """Arithmetic-only AST evaluation — no names, no calls, no eval (SPEC §10.5)."""
+    """Arithmetic-only AST evaluation â€” no names, no calls, no eval (SPEC Â§10.5)."""
 
     def _eval(node: ast.AST) -> float:
         match node:
@@ -43,10 +43,11 @@ def safe_eval(expression: str) -> float:
 class Calculator(Component):
     component_id = "lga.tools.calculator"
     display_name = "Calculator"
-    description = "Evaluate an arithmetic expression (safe AST — demo tool)."
+    description = "Evaluate an arithmetic expression (safe AST â€” demo tool)."
     icon = "calculator"
     category = "tools"
     tool_mode_supported = True
+    tool_mode_default = True  # pure tools: the toolset port is the point
 
     inputs = [
         fields.StrInput(
@@ -80,6 +81,7 @@ class HttpRequest(Component):
     icon = "globe"
     category = "tools"
     tool_mode_supported = True
+    tool_mode_default = True  # pure tools: the toolset port is the point
 
     inputs = [
         fields.StrInput(name="url", display_name="URL", required=True, tool_mode=True),

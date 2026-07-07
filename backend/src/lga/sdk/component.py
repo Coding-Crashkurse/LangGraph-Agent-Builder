@@ -138,6 +138,9 @@ class Component(ABC):
     # ---- behavior flags ----
     node_kind: ClassVar[NodeKind] = NodeKind.TASK
     tool_mode_supported: ClassVar[bool] = False
+    # Langflow parity: the toolset port only shows when Tool Mode is on.
+    # Pure tool components (calculator, http_request, …) default it to True.
+    tool_mode_default: ClassVar[bool] = False
 
     # ------------------------------------------------------------------ lifecycle
     @abstractmethod
@@ -162,11 +165,16 @@ class Component(ABC):
         return {f.name: f for f in cls.inputs}
 
     @classmethod
+    def tool_mode_enabled(cls, config: NodeConfig) -> bool:
+        return bool(config.get("tool_mode", cls.tool_mode_default))
+
+    @classmethod
     def outputs_for_config(cls, config: NodeConfig) -> list[Output]:
         """Effective outputs; routers with dynamic labels regenerate here.
 
-        tool_mode_supported components implicitly gain a `toolset` output so
-        they can be attached to agents via tool edges (SPEC §4.7).
+        tool_mode_supported components gain a `toolset` output while Tool Mode
+        is enabled (config `tool_mode`, default `tool_mode_default`) so they
+        can be attached to agents via tool edges (SPEC §4.7, §18 parity).
         """
         if cls.dynamic_outputs_from:
             labels = config.get(cls.dynamic_outputs_from) or []
@@ -177,7 +185,11 @@ class Component(ABC):
             outs = [Output(name=str(lb), port=ROUTE) for lb in labels]
         else:
             outs = list(cls.outputs)
-        if cls.tool_mode_supported and not any(o.name == "toolset" for o in outs):
+        if (
+            cls.tool_mode_supported
+            and cls.tool_mode_enabled(config)
+            and not any(o.name == "toolset" for o in outs)
+        ):
             from lga.sdk.ports import TOOLSET
 
             outs = [*outs, Output(name="toolset", display_name="Toolset", port=TOOLSET)]
@@ -245,8 +257,9 @@ class Component(ABC):
             "legacy": cls.legacy,
             "node_kind": cls.node_kind.value,
             "tool_mode_supported": cls.tool_mode_supported,
+            "tool_mode_default": cls.tool_mode_default,
             "dynamic_outputs_from": cls.dynamic_outputs_from,
-            "fields": [f.descriptor() for f in cls.inputs],
+            "fields": [f.descriptor() for f in cls.inputs] + cls._implicit_fields(),
             "outputs": [o.descriptor() for o in cls.outputs_for_config(config)],
             "input_ports": {
                 name: spec.model_dump(mode="json")
@@ -254,6 +267,36 @@ class Component(ABC):
             },
             "config_schema": cls.config_schema(),
         }
+
+    @classmethod
+    def _implicit_fields(cls) -> list[dict[str, Any]]:
+        """Synthetic form fields every tool-capable component gets (§4.7):
+        the Tool Mode toggle plus editable tool name/description — Langflow
+        lesson: names/descriptions drive agent tool selection."""
+        if not cls.tool_mode_supported:
+            return []
+        from lga.sdk.fields import BoolInput, MultilineInput, StrInput
+
+        return [
+            BoolInput(
+                name="tool_mode",
+                display_name="Tool Mode",
+                info="Expose this node as a tool (adds the Toolset port on top).",
+                default=cls.tool_mode_default,
+            ).descriptor(),
+            StrInput(
+                name="tool_name",
+                display_name="Tool Name",
+                info="Agents pick tools by name — keep it verb-like.",
+                advanced=True,
+            ).descriptor(),
+            MultilineInput(
+                name="tool_description",
+                display_name="Tool Description",
+                info="Shown to the agent; decisive for tool selection.",
+                advanced=True,
+            ).descriptor(),
+        ]
 
     # ------------------------------------------------------------------ tool mode (§4.7)
     @classmethod

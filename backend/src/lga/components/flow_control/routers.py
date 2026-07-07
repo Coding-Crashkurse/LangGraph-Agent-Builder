@@ -1,4 +1,4 @@
-"""Routers (SPEC §5.5, §12.3): LLM Router + Rule Router."""
+"""Routers (SPEC Â§5.5, Â§12.3): LLM Router + Rule Router."""
 
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ class LLMRouter(Component):
         fields.MultiselectInput(
             name="labels",
             display_name="Labels",
-            info="Branch labels — one amber output handle per label.",
+            info="Branch labels â€” one amber output handle per label.",
             required=True,
         ),
         fields.ModelInput(
@@ -50,7 +50,7 @@ class LLMRouter(Component):
         async def node(state: dict[str, Any], config: Any) -> dict[str, Any]:
             rc = get_run_context(config)
             text = last_message_text(state)
-            model_cfg = ctx.get_field("model")
+            model_cfg = ctx.get_input(state, "model")
             label: str | None = None
             if model_cfg:
                 from lga.components.llm._models import resolve_model
@@ -78,9 +78,9 @@ class LLMRouter(Component):
                 lowered = text.lower()
                 label = next((lb for lb in labels if lb.lower() in lowered), None)
             if label is None:
-                # no match → last label (catch-all by convention, e.g. "other")
+                # no match â†’ last label (catch-all by convention, e.g. "other")
                 label = labels[-1] if labels else ""
-            rc.emit_status(f"routed → {label}")
+            rc.emit_status(f"routed â†’ {label}")
             return {"route": label}
 
         return node

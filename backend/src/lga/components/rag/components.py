@@ -1,4 +1,4 @@
-"""RAG catalog (SPEC §12.4): retriever, embeddings, splitter, loader, writer."""
+"""RAG catalog (SPEC Â§12.4): retriever, embeddings, splitter, loader, writer."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from lga.sdk.templating import last_message_text
 class PgvectorRetriever(Component):
     component_id = "lga.rag.pgvector_retriever"
     display_name = "pgvector Retriever"
-    description = "Similarity search over a pgvector collection → Documents."
+    description = "Similarity search over a pgvector collection â†’ Documents."
     icon = "database-zap"
     category = "rag"
 
@@ -30,6 +30,7 @@ class PgvectorRetriever(Component):
             name="embeddings",
             display_name="Embeddings",
             info="Embedding provider; must match the one used at ingestion.",
+            as_port=ports.EMBEDDING,
         ),
         fields.NestedDictInput(name="filter", display_name="Metadata Filter", advanced=True),
         fields.FloatInput(
@@ -56,7 +57,7 @@ class PgvectorRetriever(Component):
                 or last_message_text(state)
             )
             store = get_vector_store(
-                settings, str(ctx.get_field("collection")), ctx.get_field("embeddings")
+                settings, str(ctx.get_field("collection")), ctx.get_input(state, "embeddings")
             )
             kwargs: dict[str, Any] = {"k": int(ctx.get_field("k") or 4)}
             if ctx.get_field("filter"):
@@ -97,14 +98,19 @@ class Embeddings(Component):
     icon = "binary"
     category = "rag"
 
-    inputs = [fields.ModelInput(name="model", display_name="Model", required=True)]
+    inputs = [
+        fields.ModelInput(name="model", display_name="Model", required=True),
+        fields.HandleField(name="input", display_name="Input", as_port=ports.MESSAGE),
+    ]
     outputs = [Output(name="embedding", display_name="Embedding", port=ports.EMBEDDING)]
 
     def build(self, ctx):
         async def node(state: dict[str, Any], config: Any) -> dict[str, Any]:
-            from lga.components.llm._models import resolve_embeddings
+            from lga.components.llm._models import parse_model_value
 
-            return {"embedding": resolve_embeddings(ctx.get_field("model"))}
+            # the EMBEDDING port carries the provider config (serializable);
+            # consumers resolve the client lazily â€” never instances in state
+            return {"embedding": parse_model_value(ctx.get_field("model") or {})}
 
         return node
 
@@ -112,7 +118,7 @@ class Embeddings(Component):
 class TextSplitter(Component):
     component_id = "lga.rag.text_splitter"
     display_name = "Text Splitter"
-    description = "Recursive character splitting: Text/Documents → Documents."
+    description = "Recursive character splitting: Text/Documents â†’ Documents."
     icon = "scissors-line-dashed"
     category = "rag"
 
@@ -214,7 +220,7 @@ class PgvectorWriter(Component):
 
     inputs = [
         fields.StrInput(name="collection", display_name="Collection", required=True),
-        fields.ModelInput(name="embeddings", display_name="Embeddings"),
+        fields.ModelInput(name="embeddings", display_name="Embeddings", as_port=ports.EMBEDDING),
         fields.HandleField(name="documents", display_name="Documents", as_port=ports.DOCUMENTS),
     ]
     outputs = [Output(name="json", display_name="Result", port=ports.JSON)]
@@ -229,7 +235,7 @@ class PgvectorWriter(Component):
 
             docs = ctx.get_input(state, "documents") or []
             store = get_vector_store(
-                settings, str(ctx.get_field("collection")), ctx.get_field("embeddings")
+                settings, str(ctx.get_field("collection")), ctx.get_input(state, "embeddings")
             )
             lc_docs = [
                 LCDocument(

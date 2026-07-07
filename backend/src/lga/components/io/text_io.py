@@ -69,6 +69,8 @@ class WebhookInput(Component):
             info="Optional JSON Schema describing the webhook body.",
             advanced=True,
         ),
+        # trigger port: webhook flows still start at `start`
+        fields.HandleField(name="input", display_name="Input", as_port=ports.MESSAGE),
     ]
     outputs = [Output(name="payload", display_name="Payload", port=ports.JSON)]
 

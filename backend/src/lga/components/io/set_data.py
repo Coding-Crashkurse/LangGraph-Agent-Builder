@@ -27,6 +27,8 @@ class SetData(Component):
             ],
             required=True,
         ),
+        # trigger port so Set Data can be chained anywhere in the control flow
+        fields.HandleField(name="input", display_name="Input", as_port=ports.ANY),
     ]
     outputs = [Output(name="data", display_name="Data", port=ports.JSON)]
 

@@ -1,4 +1,4 @@
-"""LLM Call — one-shot completion with dynamic {var} prompt ports (SPEC §12.2)."""
+"""LLM Call â€” one-shot completion with dynamic {var} prompt ports (SPEC Â§12.2)."""
 
 from __future__ import annotations
 
@@ -41,7 +41,9 @@ class LLMCall(Component):
             tool_mode=True,
             info="{variables} spawn input ports and resolve from ports or data.",
         ),
-        fields.ModelInput(name="model", display_name="Model", required=True),
+        fields.ModelInput(
+            name="model", display_name="Model", required=True, as_port=ports.LANGUAGE_MODEL
+        ),
         fields.MultilineInput(name="system", display_name="System Prompt", advanced=True),
         fields.BoolInput(
             name="structured_output",
@@ -68,7 +70,7 @@ class LLMCall(Component):
             rc = get_run_context(config)
             template = str(ctx.get_field("prompt") or "")
             prompt = render_prompt(template, collect_prompt_values(ctx, state, template))
-            model = resolve_model(ctx.get_field("model"))
+            model = resolve_model(ctx.get_input(state, "model"))
             structured = bool(ctx.get_field("structured_output"))
             schema = ctx.get_field("output_schema") or None
             messages: list[Any] = []

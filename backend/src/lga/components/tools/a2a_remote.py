@@ -99,6 +99,15 @@ class A2ARemoteAgent(Component):
     ]
     outputs = [Output(name="message", display_name="Message", port=ports.MESSAGE)]
 
+    @classmethod
+    def outputs_for_config(cls, config):
+        """mode=node → Message output; mode=tool → Toolset output (SPEC §7.12)."""
+        if str(config.get("mode") or "node") == "tool":
+            from lga.sdk.ports import TOOLSET
+
+            return [Output(name="toolset", display_name="Toolset", port=TOOLSET)]
+        return list(cls.outputs)
+
     # ---------------------------------------------------------------- helpers
     def _client(self, ctx) -> httpx.AsyncClient:
         headers = {}
