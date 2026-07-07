@@ -222,7 +222,11 @@ export interface paths {
         get: operations["list_runs_api_v1_runs_get"];
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * Delete Finished Runs
+         * @description Clear all finished run traces (completed/failed/cancelled).
+         */
+        delete: operations["delete_finished_runs_api_v1_runs_delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -239,7 +243,11 @@ export interface paths {
         get: operations["get_run_api_v1_runs__run_id__get"];
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * Delete Run
+         * @description Delete a run trace. Active runs must be cancelled first (409).
+         */
+        delete: operations["delete_run_api_v1_runs__run_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1370,6 +1378,41 @@ export interface operations {
             };
         };
     };
+    delete_finished_runs_api_v1_runs_delete: {
+        parameters: {
+            query?: {
+                flow_id?: string | null;
+            };
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_run_api_v1_runs__run_id__get: {
         parameters: {
             query?: never;
@@ -1393,6 +1436,37 @@ export interface operations {
                         [key: string]: unknown;
                     };
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_run_api_v1_runs__run_id__delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

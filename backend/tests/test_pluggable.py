@@ -86,3 +86,30 @@ async def test_run_by_slug_base_url(client):
     body = response.json()
     assert body["status"] == "completed"
     assert body["result_text"] == "Hello from LGA!"
+
+
+# ---------------------------------------------------------------- run trace deletion
+async def test_delete_single_run_trace(client):
+    await create_and_publish(client, hello_spec("trace-flow"))
+    run = (
+        await client.post(
+            "/api/v1/flows/trace-flow/run", json={"input_text": "hi", "stream": False}
+        )
+    ).json()
+    run_id = run["run_id"]
+    assert (await client.get(f"/api/v1/runs/{run_id}")).status_code == 200
+    assert (await client.delete(f"/api/v1/runs/{run_id}")).status_code == 204
+    assert (await client.get(f"/api/v1/runs/{run_id}")).status_code == 404
+    # events are gone with the trace
+    assert (await client.delete(f"/api/v1/runs/{run_id}")).status_code == 404
+
+
+async def test_clear_finished_runs(client):
+    await create_and_publish(client, hello_spec("clear-flow"))
+    for _ in range(3):
+        await client.post(
+            "/api/v1/flows/clear-flow/run", json={"input_text": "hi", "stream": False}
+        )
+    response = await client.delete("/api/v1/runs")
+    assert response.json()["deleted"] >= 3
+    assert (await client.get("/api/v1/runs")).json() == []

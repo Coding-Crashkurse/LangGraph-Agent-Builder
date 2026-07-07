@@ -139,6 +139,16 @@ export const api = {
       unwrap<RunInfo>(
         await raw.GET("/api/v1/runs/{run_id}", { params: { path: { run_id: runId } } }),
       ),
+    delete: async (runId: string) =>
+      unwrap<unknown>(
+        await raw.DELETE("/api/v1/runs/{run_id}", { params: { path: { run_id: runId } } }),
+      ),
+    clearFinished: async (flowId?: string) =>
+      unwrap<{ deleted: number }>(
+        await raw.DELETE("/api/v1/runs", {
+          params: { query: flowId ? { flow_id: flowId } : {} },
+        }),
+      ),
     cancel: async (runId: string) =>
       unwrap<{ cancelled: boolean }>(
         await raw.POST("/api/v1/runs/{run_id}/cancel", {

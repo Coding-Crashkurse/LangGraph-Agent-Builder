@@ -42,6 +42,21 @@ export function FlowsPage() {
     onError: (error) => toast.error((error as Error).message),
   });
 
+  const deleteRun = useMutation({
+    mutationFn: (runId: string) => api.runs.delete(runId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["runs"] }),
+    onError: (error) => toast.error((error as Error).message),
+  });
+
+  const clearRuns = useMutation({
+    mutationFn: () => api.runs.clearFinished(),
+    onSuccess: ({ deleted }) => {
+      queryClient.invalidateQueries({ queryKey: ["runs"] });
+      toast.success(`${deleted} trace(s) deleted`);
+    },
+    onError: (error) => toast.error((error as Error).message),
+  });
+
   const importFlow = async (file: File) => {
     try {
       const spec = JSON.parse(await file.text());
@@ -117,9 +132,21 @@ export function FlowsPage() {
         )}
       </div>
 
-      <h2 className="mb-2 mt-8 text-xs font-semibold uppercase tracking-widest text-zinc-500">
-        Recent runs
-      </h2>
+      <div className="mb-2 mt-8 flex items-center">
+        <h2 className="text-xs font-semibold uppercase tracking-widest text-zinc-500">
+          Recent runs
+        </h2>
+        {(runs.data ?? []).length > 0 && (
+          <button
+            type="button"
+            className="ml-auto text-[11px] text-zinc-600 hover:text-red-400"
+            onClick={() => clearRuns.mutate()}
+            title="Delete all finished traces (running ones stay)"
+          >
+            clear finished
+          </button>
+        )}
+      </div>
       <div className="overflow-hidden rounded-lg border border-surface-800">
         <table className="w-full text-left text-xs">
           <thead className="bg-surface-900 text-zinc-500">
@@ -130,11 +157,15 @@ export function FlowsPage() {
               <th className="px-3 py-2">status</th>
               <th className="px-3 py-2">result</th>
               <th className="px-3 py-2">started</th>
+              <th className="w-8 px-2 py-2" />
             </tr>
           </thead>
           <tbody>
             {(runs.data ?? []).slice(0, 25).map((run) => (
-              <tr key={run.run_id} className="border-t border-surface-800 text-zinc-300">
+              <tr
+                key={run.run_id}
+                className="group border-t border-surface-800 text-zinc-300"
+              >
                 <td className="px-3 py-1.5 font-mono text-[10px]">{run.run_id.slice(0, 12)}…</td>
                 <td className="px-3 py-1.5">{run.flow_slug}</td>
                 <td className="px-3 py-1.5">{run.mode}</td>
@@ -146,6 +177,18 @@ export function FlowsPage() {
                 </td>
                 <td className="px-3 py-1.5 text-zinc-500">
                   {new Date(run.started_at).toLocaleTimeString()}
+                </td>
+                <td className="px-2 py-1.5 text-right">
+                  {run.status !== "running" && run.status !== "pending" && (
+                    <button
+                      type="button"
+                      title="Delete this trace"
+                      className="text-zinc-700 opacity-0 hover:text-red-400 group-hover:opacity-100"
+                      onClick={() => deleteRun.mutate(run.run_id)}
+                    >
+                      ✕
+                    </button>
+                  )}
                 </td>
               </tr>
             ))}

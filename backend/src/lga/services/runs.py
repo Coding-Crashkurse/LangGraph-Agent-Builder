@@ -131,6 +131,35 @@ class RunService:
         events = await self.load_events(run_id)
         return events[-1].seq if events else 0
 
+    async def delete(self, run_id: str) -> bool:
+        """Delete one run trace (row + events). Caller guards active runs."""
+        async with self._sessions() as session:
+            row = await session.get(RunRow, run_id)
+            if row is None:
+                return False
+            await session.execute(delete(RunEventRow).where(RunEventRow.run_id == run_id))
+            await session.delete(row)
+            await session.commit()
+            return True
+
+    async def delete_finished(self, flow_id: str | None = None) -> int:
+        """Bulk-delete non-active run traces (optionally scoped to one flow).
+
+        input_required counts as clearable: the trace goes away, the underlying
+        thread checkpoint stays intact (A2A tasks are unaffected).
+        """
+        clearable = (*TERMINAL_STATUSES, "input_required")
+        async with self._sessions() as session:
+            stmt = select(RunRow).where(RunRow.status.in_(clearable))
+            if flow_id:
+                stmt = stmt.where(RunRow.flow_id == flow_id)
+            rows = (await session.execute(stmt)).scalars().all()
+            for row in rows:
+                await session.execute(delete(RunEventRow).where(RunEventRow.run_id == row.id))
+                await session.delete(row)
+            await session.commit()
+            return len(rows)
+
     async def sweep_expired(self) -> int:
         """7d event retention (SPEC §6.2) — called by the lifespan sweeper."""
         cutoff = datetime.now(UTC) - timedelta(days=EVENT_TTL_DAYS)

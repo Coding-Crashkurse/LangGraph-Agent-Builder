@@ -141,6 +141,24 @@ async def run_events(
     return _event_source(svc, run_id, after)
 
 
+@router.delete("/runs/{run_id}", status_code=204)
+async def delete_run(run_id: str, svc: Services) -> None:
+    """Delete a run trace. Active runs must be cancelled first (409)."""
+    row = await svc.runs.get(run_id)
+    if row is None:
+        raise HTTPException(404, "run not found")
+    if row.status in ("pending", "running"):
+        raise HTTPException(409, f"run is {row.status} — cancel it first")
+    await svc.runs.delete(run_id)
+
+
+@router.delete("/runs")
+async def delete_finished_runs(svc: Services, flow_id: str | None = None) -> dict[str, Any]:
+    """Clear all finished run traces (completed/failed/cancelled)."""
+    removed = await svc.runs.delete_finished(flow_id=flow_id)
+    return {"deleted": removed}
+
+
 @router.post("/runs/{run_id}/cancel")
 async def cancel_run(run_id: str, svc: Services) -> dict[str, Any]:
     row = await svc.runs.get(run_id)
