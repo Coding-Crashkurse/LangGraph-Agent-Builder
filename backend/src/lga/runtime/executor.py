@@ -96,11 +96,13 @@ class Executor:
         bus: Any = None,  # EventBus | None
         on_status: StatusHook | None = None,
         recursion_limit_default: int = 50,
+        preview_length: int = 300,  # LGA_MAX_TEXT_LENGTH
     ) -> None:
         self._get_checkpointer = checkpointer_getter
         self._bus = bus
         self._on_status = on_status
         self._recursion_default = recursion_limit_default
+        self._preview_length = preview_length
         self.runs: dict[str, RunHandle] = {}
 
     # ---------------------------------------------------------------- events
@@ -368,9 +370,9 @@ class Executor:
             run_id,
             thread_id,
             "run_finished",
-            {"status": "completed", "result_preview": text[:300]},
+            {"status": "completed", "result_preview": text[: self._preview_length]},
         )
-        await self._status(run_id, "completed", result_preview=text[:300])
+        await self._status(run_id, "completed", result_preview=text[: self._preview_length])
         if self._bus is not None:
             self._bus.close_run(run_id)
         return RunResult(

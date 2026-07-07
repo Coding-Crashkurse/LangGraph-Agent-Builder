@@ -12,8 +12,6 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from lga.db.models import FileRow
 from lga.services.settings import Settings
 
-MAX_FILE_SIZE = 50 * 1024 * 1024  # 50 MiB
-
 
 class FileTooLargeError(ValueError):
     pass
@@ -31,8 +29,11 @@ class FilesService:
         return self._settings.files_dir
 
     async def save(self, name: str, mime: str, content: bytes) -> dict[str, Any]:
-        if len(content) > MAX_FILE_SIZE:
-            raise FileTooLargeError(f"file exceeds {MAX_FILE_SIZE} bytes")
+        limit = self._settings.max_file_size_mb * 1024 * 1024  # LGA_MAX_FILE_SIZE_MB
+        if len(content) > limit:
+            raise FileTooLargeError(
+                f"file exceeds {self._settings.max_file_size_mb} MB upload limit"
+            )
         token = secrets.token_urlsafe(24)
         row = FileRow(name=name or "upload", mime=mime, size=len(content), path="", token=token)
         async with self._sessions() as session:

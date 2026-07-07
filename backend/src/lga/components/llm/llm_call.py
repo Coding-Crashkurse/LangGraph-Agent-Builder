@@ -31,6 +31,7 @@ class LLMCall(Component):
     icon = "sparkles"
     category = "llm"
     tool_mode_supported = True
+    priority = 0
 
     inputs = [
         fields.PromptInput(

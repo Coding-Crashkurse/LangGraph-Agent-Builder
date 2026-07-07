@@ -75,6 +75,7 @@ async def build_services(settings: Settings) -> AppServices:
         bus=bus,
         on_status=runs.update_status,
         recursion_limit_default=settings.recursion_limit_default,
+        preview_length=settings.max_text_length,
     )
     registry = get_registry()
     for directory in settings.component_dirs():
@@ -128,6 +129,12 @@ def create_app(settings: Settings | None = None, *, backend_only: bool = False) 
         svc.a2a = A2AManager(svc)
         svc.mcp = McpManager(svc)
         app.state.svc = svc
+
+        # boot provisioning (SPEC §18.1) before mounting: published imports serve
+        from lga.services import bootstrap
+
+        await bootstrap.seed_starter_flows(svc)
+        await bootstrap.load_flows_from_path(svc)
         await svc.remount()
 
         # dynamic protocol mounts — inserted at the front so the SPA catch-all
@@ -144,6 +151,10 @@ def create_app(settings: Settings | None = None, *, backend_only: bool = False) 
                         logger.info("swept %d expired run events", removed)
 
         svc._tasks.append(asyncio.get_running_loop().create_task(sweeper()))
+        if settings.env == "dev" and settings.component_dirs():
+            svc._tasks.append(
+                asyncio.get_running_loop().create_task(bootstrap.watch_component_dirs(svc))
+            )
 
         async with svc.mcp.mcp.session_manager.run():
             try:

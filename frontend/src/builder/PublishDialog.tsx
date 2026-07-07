@@ -131,11 +131,34 @@ export function ShareDialog({
       `import httpx\n\nresp = httpx.post("${endpoint}", json={\n    "jsonrpc": "2.0", "id": 1, "method": "message/send",\n    "params": {"message": {"role": "user", "messageId": "m1",\n               "parts": [{"kind": "text", "text": "hello"}]}},\n})\nprint(resp.json()["result"]["status"]["state"])`,
     [endpoint],
   );
+  const runUrl = `${origin}/api/v1/flows/${flow.slug}/run`;
   const apiCurl = useMemo(
     () =>
-      `curl -X POST ${origin}/api/v1/flows/${flow.id}/run \\\n  -H 'Content-Type: application/json' \\\n  -d '{"input_text": "hello", "tweaks": {"<node_id>": {"<field>": "value"}}}'`,
-    [origin, flow.id],
+      `curl -X POST ${runUrl} \\\n  -H 'Content-Type: application/json' \\\n  -d '{"input_text": "hello", "tweaks": {"<node_id>": {"<field>": "value"}}}'`,
+    [runUrl],
   );
+  const headlessSnippet = useMemo(
+    () =>
+      `import json\n\nfrom lga.compiler import compile_flow   # json -> LangGraph\nfrom lga.runtime import arun_flow\n\nspec = json.load(open("${flow.slug}.flow.json"))\ngraph = compile_flow(spec).graph        # vanilla StateGraph, no server needed\nresult = await arun_flow(spec, input_text="hello")\nprint(result.result_text)`,
+    [flow.slug],
+  );
+
+  const download = async (format: "json" | "python") => {
+    const response = await fetch(`/api/v1/flows/${flow.id}/export?format=${format}`);
+    if (!response.ok) {
+      toast.error(`export failed: ${response.status}`);
+      return;
+    }
+    const content = format === "json"
+      ? JSON.stringify(await response.json(), null, 2)
+      : await response.text();
+    const blob = new Blob([content], { type: "text/plain" });
+    const anchor = document.createElement("a");
+    anchor.href = URL.createObjectURL(blob);
+    anchor.download = format === "json" ? `${flow.slug}.flow.json` : `${flow.slug}_flow.py`;
+    anchor.click();
+    URL.revokeObjectURL(anchor.href);
+  };
 
   return (
     <Dialog open={open} onClose={onClose} title={`Share · ${flow.name}`} className="w-[760px]">
@@ -254,11 +277,43 @@ export function ShareDialog({
         )}
         {tab === "api" && (
           <div className="space-y-3">
+            <div className="flex items-center gap-2 rounded border border-surface-800 bg-surface-900 px-2.5 py-1.5">
+              <span className="text-[10px] uppercase tracking-widest text-zinc-500">
+                base url
+              </span>
+              <code className="text-xs text-emerald-300">{runUrl}</code>
+              <button
+                type="button"
+                className="ml-auto text-[10px] text-accent-400 hover:text-accent-300"
+                onClick={() => {
+                  navigator.clipboard.writeText(runUrl);
+                  toast.success("copied");
+                }}
+              >
+                copy
+              </button>
+            </div>
             <Snippet label="Run (blocking; tweaks are one-time overrides)" text={apiCurl} />
             <Snippet
               label="Webhook (fire-and-forget; body → data.webhook_payload)"
               text={`curl -X POST ${origin}/api/v1/webhook/${flow.slug} \\\n  -H 'X-API-Key: <key with webhook:invoke>' \\\n  -d '{"event": "ticket.created"}'`}
             />
+            <Snippet
+              label="Headless Python (compile_flow = json → LangGraph)"
+              text={headlessSnippet}
+            />
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-medium text-zinc-400">Export:</span>
+              <Button variant="ghost" className="!h-7 !text-xs" onClick={() => download("json")}>
+                ⬇ flow.json
+              </Button>
+              <Button variant="ghost" className="!h-7 !text-xs" onClick={() => download("python")}>
+                ⬇ standalone flow.py
+              </Button>
+              <span className="text-[10px] text-zinc-600">
+                flow.py runs under vanilla LangGraph
+              </span>
+            </div>
           </div>
         )}
         <p className="text-[10px] text-zinc-600">

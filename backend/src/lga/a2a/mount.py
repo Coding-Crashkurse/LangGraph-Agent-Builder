@@ -19,7 +19,7 @@ from lga.a2a.executor import LGAAgentExecutor
 from lga.a2a.handler import LGARequestHandler
 from lga.a2a.push import DbPushConfigStore, GuardedPushSender
 from lga.a2a.scope import current_client_scope, scope_for_api_key, scope_for_ip
-from lga.a2a.tasks import DbTaskStore
+from lga.a2a.tasks import resolve_task_store
 
 if TYPE_CHECKING:
     from lga.app import AppServices
@@ -119,7 +119,12 @@ class A2AManager:
                 push_store = DbPushConfigStore(svc.sessions, svc.settings)
                 handler = LGARequestHandler(
                     agent_executor=agent_executor,
-                    task_store=DbTaskStore(svc.sessions, slug),
+                    task_store=resolve_task_store(
+                        svc.settings.a2a_task_store,
+                        sessions=svc.sessions,
+                        flow_slug=slug,
+                        settings=svc.settings,
+                    ),
                     push_config_store=push_store,
                     push_sender=GuardedPushSender(self._http, push_store, svc.settings),
                 )

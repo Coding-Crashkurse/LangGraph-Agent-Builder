@@ -14,6 +14,7 @@ class Start(Component):
     description = "Flow entry: exposes the inbound chat message and structured input."
     icon = "play"
     category = "io"
+    priority = 0
 
     inputs = [
         fields.NestedDictInput(

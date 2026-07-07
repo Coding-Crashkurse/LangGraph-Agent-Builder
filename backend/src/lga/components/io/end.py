@@ -15,6 +15,7 @@ class End(Component):
     icon = "flag"
     category = "io"
     node_kind = NodeKind.TERMINAL
+    priority = 1
 
     inputs = [
         fields.HandleField(name="message", display_name="Message", as_port=ports.MESSAGE),

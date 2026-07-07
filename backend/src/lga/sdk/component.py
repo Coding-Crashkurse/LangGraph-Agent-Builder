@@ -126,6 +126,7 @@ class Component(ABC):
     category: ClassVar[str] = "data"
     tags: ClassVar[list[str]] = []
     documentation_url: ClassVar[str | None] = None
+    priority: ClassVar[int | None] = None  # palette sort within category (§18.2)
     beta: ClassVar[bool] = False
     legacy: ClassVar[bool] = False
 
@@ -239,6 +240,7 @@ class Component(ABC):
             "category": cls.category,
             "tags": list(cls.tags),
             "documentation_url": cls.documentation_url,
+            "priority": cls.priority,
             "beta": cls.beta,
             "legacy": cls.legacy,
             "node_kind": cls.node_kind.value,

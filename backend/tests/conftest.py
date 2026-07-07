@@ -49,7 +49,11 @@ async def settings(request, tmp_path):
     """Fresh Settings per test; postgres tier gets its own throwaway database."""
     from lga.services.settings import Settings
 
-    kwargs: dict[str, Any] = {"home": tmp_path / "lga-home", "env": "test"}
+    kwargs: dict[str, Any] = {
+        "home": tmp_path / "lga-home",
+        "env": "test",
+        "create_starter_flows": False,  # keep test DBs empty (see test_langflow_parity)
+    }
     if request.param == "postgres":
         db = f"lga_test_{uuid.uuid4().hex[:10]}"
         kwargs["database_url"] = await _ensure_pg_database(db)
@@ -62,7 +66,7 @@ async def settings(request, tmp_path):
 async def sqlite_settings(tmp_path):
     from lga.services.settings import Settings
 
-    settings = Settings(home=tmp_path / "lga-home", env="test")
+    settings = Settings(home=tmp_path / "lga-home", env="test", create_starter_flows=False)
     settings.ensure_dirs()
     return settings
 

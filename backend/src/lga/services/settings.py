@@ -41,6 +41,7 @@ class Settings(BaseSettings):
     auth_enabled: bool | None = None  # default: False in dev, True in prod
 
     # A2A
+    a2a_task_store: str = "db"  # db | memory | "my_pkg.module:factory" (pluggable)
     a2a_blocking_timeout_s: float = 30.0
     a2a_accepted_mime: str = DEFAULT_ACCEPTED_MIME
     a2a_allow_http: bool = False
@@ -57,6 +58,19 @@ class Settings(BaseSettings):
     files_dir: Path | None = None
     track_apikey_usage: bool = True
     recursion_limit_default: int = 50
+
+    # Langflow parity (SPEC §18.1)
+    load_flows_path: Path | None = None  # FlowSpec *.json imported at boot
+    load_flows_overwrite: bool = False
+    load_flows_publish: bool = False
+    create_starter_flows: bool = True
+    auto_saving: bool = True
+    auto_saving_interval_ms: int = 1000
+    max_file_size_mb: int = 50
+    max_text_length: int = 300
+    ssl_cert_file: Path | None = None
+    ssl_key_file: Path | None = None
+    log_file: Path | None = None
 
     # test-only hooks (never documented)
     testing: bool = False

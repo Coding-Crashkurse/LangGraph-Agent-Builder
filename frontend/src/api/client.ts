@@ -121,8 +121,8 @@ export const api = {
       },
     ) =>
       unwrap<RunResult & { run_id: string; thread_id: string }>(
-        await raw.POST("/api/v1/flows/{flow_id}/run", {
-          params: { path: { flow_id: id } },
+        await raw.POST("/api/v1/flows/{flow_ref}/run", {
+          params: { path: { flow_ref: id } },
           body: body as never,
         }),
       ),

@@ -78,9 +78,10 @@ def _event_source(svc: Any, run_id: str, after_seq: int) -> EventSourceResponse:
     return EventSourceResponse(gen())
 
 
-@router.post("/flows/{flow_id}/run")
-async def run_flow_endpoint(flow_id: str, body: RunBody, svc: Services) -> Any:
-    flow = await svc.flows.get(flow_id)
+@router.post("/flows/{flow_ref}/run")
+async def run_flow_endpoint(flow_ref: str, body: RunBody, svc: Services) -> Any:
+    # flow_ref = id or slug — the slug form is the stable per-flow API base URL
+    flow = await svc.flows.get(flow_ref) or await svc.flows.get_by_slug(flow_ref)
     if flow is None:
         raise HTTPException(404, "flow not found")
     files = await _resolve_files(svc, body.files)

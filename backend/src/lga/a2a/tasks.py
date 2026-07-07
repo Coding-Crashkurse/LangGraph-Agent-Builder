@@ -39,6 +39,35 @@ class IllegalTaskTransitionError(RuntimeError):
     pass
 
 
+def resolve_task_store(setting: str, *, sessions, flow_slug: str, settings=None) -> TaskStore:
+    """Pluggable task manager (env `LGA_A2A_TASK_STORE`):
+
+    - ``db`` (default): Postgres/SQLite-backed DbTaskStore with transition
+      history and public-session scoping
+    - ``memory``: a2a-sdk InMemoryTaskStore (no persistence, no scoping)
+    - ``"my_pkg.module:factory"``: dotted import path to a callable
+      ``factory(sessions=..., flow_slug=..., settings=...) -> TaskStore``
+    """
+    if setting in ("", "db"):
+        return DbTaskStore(sessions, flow_slug)
+    if setting == "memory":
+        from a2a.server.tasks import InMemoryTaskStore
+
+        return InMemoryTaskStore()
+    import importlib
+
+    module_name, _, attr = setting.partition(":")
+    if not attr:
+        raise ValueError(
+            f"invalid LGA_A2A_TASK_STORE {setting!r} — expected db | memory | module:factory"
+        )
+    factory = getattr(importlib.import_module(module_name), attr)
+    store = factory(sessions=sessions, flow_slug=flow_slug, settings=settings)
+    if not isinstance(store, TaskStore):
+        raise TypeError(f"{setting} did not return an a2a TaskStore (got {type(store)!r})")
+    return store
+
+
 class DbTaskStore(TaskStore):
     """Persists full Task snapshots + transition history; scope-aware (§7.11)."""
 

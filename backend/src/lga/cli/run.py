@@ -124,6 +124,21 @@ def run_command(
     if backend_only:
         os.environ["LGA_BACKEND_ONLY"] = "1"
 
+    if settings.log_file is not None:
+        # LGA_LOG_FILE (SPEC §18.1): tee logs into a file
+        import logging
+
+        handler = logging.FileHandler(settings.log_file, encoding="utf-8")
+        handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s"))
+        logging.getLogger().addHandler(handler)
+
+    ssl_kwargs: dict = {}
+    if settings.ssl_cert_file and settings.ssl_key_file:
+        ssl_kwargs = {
+            "ssl_certfile": str(settings.ssl_cert_file),
+            "ssl_keyfile": str(settings.ssl_key_file),
+        }
+
     if reload or workers > 1:
         # subprocess servers pick their own (selector-capable) loop
         uvicorn.run(
@@ -134,6 +149,7 @@ def run_command(
             reload=reload,
             workers=None if reload else workers,
             log_level=settings.log_level,
+            **ssl_kwargs,
         )
         return
     # single-process: run on OUR selector loop — uvicorn's loop factory would
@@ -143,7 +159,11 @@ def run_command(
     app = create_app(settings, backend_only=backend_only)
     app.state.auto_migrate = False  # already migrated above
     config = uvicorn.Config(
-        app, host=settings.host, port=settings.port, log_level=settings.log_level
+        app,
+        host=settings.host,
+        port=settings.port,
+        log_level=settings.log_level,
+        **ssl_kwargs,
     )
     server = uvicorn.Server(config)
     asyncio.run(server.serve())

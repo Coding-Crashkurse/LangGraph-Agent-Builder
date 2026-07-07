@@ -1284,6 +1284,58 @@ no scattered `os.environ` reads (CI-linted).
 
 ---
 
+## 18. Langflow parity addendum (adopted 2026-07-06)
+
+Sourced from docs.langflow.org (environment-variables, custom-components).
+Rules: adopt what fits the lga architecture, map names to `LGA_*`, reject
+multi-user/telemetry features by design. This table is normative; the env vars
+below extend §14 and are implemented like every other Settings field.
+
+### 18.1 Adopted env vars [MUST]
+
+| LGA var | Langflow origin | Default | Behavior |
+|---|---|---|---|
+| `LGA_LOAD_FLOWS_PATH` | `LANGFLOW_LOAD_FLOWS_PATH` | — | Directory of FlowSpec `*.json`; imported at boot (deploy-time flow provisioning) |
+| `LGA_LOAD_FLOWS_OVERWRITE` | `…_OVERWRITE_ON_NAME_MATCH` | `false` | Overwrite existing drafts on slug match |
+| `LGA_LOAD_FLOWS_PUBLISH` | (lga extension) | `false` | Auto-publish loaded flows (patch bump) so A2A/MCP serve immediately |
+| `LGA_CREATE_STARTER_FLOWS` | `LANGFLOW_CREATE_STARTER_PROJECTS` | `true` | Seed bundled starter flows (hello + HITL template) into an empty DB |
+| `LGA_AUTO_SAVING` | `LANGFLOW_AUTO_SAVING` | `true` | Studio autosaves drafts (debounced) |
+| `LGA_AUTO_SAVING_INTERVAL_MS` | `LANGFLOW_AUTO_SAVING_INTERVAL` | `1000` | Autosave debounce; exposed to the frontend via `GET /api/v1/config` |
+| `LGA_MAX_FILE_SIZE_MB` | `LANGFLOW_MAX_FILE_SIZE_UPLOAD` | `50` | Files API upload limit (§9.6) |
+| `LGA_MAX_TEXT_LENGTH` | `LANGFLOW_MAX_TEXT_LENGTH` | `300` | Truncation length for result/event previews |
+| `LGA_SSL_CERT_FILE` / `LGA_SSL_KEY_FILE` | same | — | TLS for `lga run` (passed to uvicorn) |
+| `LGA_LOG_FILE` | `LANGFLOW_LOG_FILE` | — | Additionally log to this file |
+
+### 18.2 Custom-component DX parity [MUST]
+
+- `priority: ClassVar[int | None]` on `Component` — palette sort order within
+  a category (lower first, ties alphabetical); serialized in the descriptor.
+- Component dirs follow `<dir>/<category>/<module>.py`, ≤2 levels, imported
+  never eval'd (§4.8 unchanged); `lga init` scaffolds this layout.
+- Dev hot-reload (§4.8-3) is REQUIRED: `LGA_ENV=dev` + component dirs ⇒
+  watchfiles watcher re-imports changed modules and bumps the `/components`
+  etag. Langflow's `self.status` / `self.log()` map to
+  `RunContext.emit_status` / `emit_log`; `update_build_config` maps to
+  `on_field_change` (§4.6).
+
+### 18.3 Rejected (by design)
+
+Multi-user/superuser (`LANGFLOW_SUPERUSER*`, `AUTO_LOGIN`), telemetry/tracing
+(`DO_NOT_TRACK`, `LANGFLOW_DEACTIVATE_TRACING` — lga has **no telemetry**),
+Celery/redis job queues (single-process asyncio per §2.4), UI-embedding hide
+flags, `LANGFLOW_CACHE_TYPE` (compile cache is content-addressed, §5.3),
+store/marketplace.
+
+### 18.4 Handle geometry (canvas) [MUST]
+
+Fixed sides so flows read left-to-right with control above and tools below:
+**left** data inputs · **right** data outputs and router branches (amber) ·
+**top** control-in (amber dot, router edge target) and the `toolset` output of
+tool providers · **bottom** the `tools` input of agents. Tool providers
+therefore visually hang below the agents they equip (dashed sky edges).
+
+---
+
 ## Appendix A — Minimal FlowSpec (example 01, canonical fixture)
 ```json
 {"schema_version":"1",

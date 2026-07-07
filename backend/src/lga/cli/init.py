@@ -22,6 +22,7 @@ ENV_TEMPLATE = """\
 # LGA_COMPONENTS_PATH=./components
 # LGA_LOG_LEVEL=info
 # LGA_AUTH_ENABLED=false
+# LGA_A2A_TASK_STORE=db          # db | memory | my_pkg.module:factory (pluggable task manager)
 # LGA_A2A_BLOCKING_TIMEOUT_S=30
 # LGA_A2A_ACCEPTED_MIME=text/plain,application/json,application/pdf,image/*
 # LGA_PUSH_ALLOW_PRIVATE=false    # SSRF guard for push webhooks
@@ -29,6 +30,18 @@ ENV_TEMPLATE = """\
 # LGA_WEBHOOK_AUTH=true
 # LGA_CHECKPOINT_TTL_DAYS=30
 # LGA_FILES_DIR=./data/files
+# Langflow-parity extras (SPEC §18.1):
+# LGA_LOAD_FLOWS_PATH=./flows     # FlowSpec *.json imported at boot
+# LGA_LOAD_FLOWS_OVERWRITE=false
+# LGA_LOAD_FLOWS_PUBLISH=false    # auto-publish imports (A2A/MCP serve immediately)
+# LGA_CREATE_STARTER_FLOWS=true
+# LGA_AUTO_SAVING=true
+# LGA_AUTO_SAVING_INTERVAL_MS=1000
+# LGA_MAX_FILE_SIZE_MB=50
+# LGA_MAX_TEXT_LENGTH=300
+# LGA_SSL_CERT_FILE=              # TLS for lga run
+# LGA_SSL_KEY_FILE=
+# LGA_LOG_FILE=./lga.log
 # Global variables / credentials:
 # LGA_VAR_MY_SETTING=value
 # LGA_CRED_OPENAI_API_KEY=sk-...

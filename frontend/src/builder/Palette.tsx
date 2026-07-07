@@ -85,6 +85,14 @@ export function Palette({ components }: { components: ComponentDescriptor[] }) {
     for (const c of filtered) {
       map.set(c.category, [...(map.get(c.category) ?? []), c]);
     }
+    for (const items of map.values()) {
+      // SPEC §18.2: priority sorts within a category (lower first), ties by name
+      items.sort(
+        (a, b) =>
+          (a.priority ?? 1000) - (b.priority ?? 1000) ||
+          a.display_name.localeCompare(b.display_name),
+      );
+    }
     return [...map.entries()].sort(
       (a, b) => CATEGORY_ORDER.indexOf(a[0]) - CATEGORY_ORDER.indexOf(b[0]),
     );

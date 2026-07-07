@@ -194,7 +194,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/flows/{flow_id}/run": {
+    "/api/v1/flows/{flow_ref}/run": {
         parameters: {
             query?: never;
             header?: never;
@@ -204,7 +204,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** Run Flow Endpoint */
-        post: operations["run_flow_endpoint_api_v1_flows__flow_id__run_post"];
+        post: operations["run_flow_endpoint_api_v1_flows__flow_ref__run_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1297,14 +1297,14 @@ export interface operations {
             };
         };
     };
-    run_flow_endpoint_api_v1_flows__flow_id__run_post: {
+    run_flow_endpoint_api_v1_flows__flow_ref__run_post: {
         parameters: {
             query?: never;
             header?: {
                 "X-API-Key"?: string | null;
             };
             path: {
-                flow_id: string;
+                flow_ref: string;
             };
             cookie?: never;
         };

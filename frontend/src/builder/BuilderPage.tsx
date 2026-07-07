@@ -200,6 +200,34 @@ export function BuilderPage() {
     }
   };
 
+  // autosave (SPEC §18.1: LGA_AUTO_SAVING / LGA_AUTO_SAVING_INTERVAL_MS)
+  const [autosave, setAutosave] = useState<{ on: boolean; ms: number }>({ on: false, ms: 1000 });
+  useEffect(() => {
+    fetch("/api/v1/config")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((cfg) => {
+        if (cfg) {
+          setAutosave({
+            on: Boolean(cfg.auto_saving),
+            ms: Number(cfg.auto_saving_interval_ms) || 1000,
+          });
+        }
+      })
+      .catch(() => {});
+  }, []);
+  useEffect(() => {
+    if (!autosave.on || !store.dirty || !store.flow) return;
+    const timer = window.setTimeout(async () => {
+      try {
+        await api.flows.update(store.flow!.id, store.currentSpec());
+        store.markSaved(); // no loadFlow: keep canvas state (no rebuild mid-edit)
+      } catch {
+        // silent — the amber "unsaved" badge stays until a manual save succeeds
+      }
+    }, autosave.ms);
+    return () => window.clearTimeout(timer);
+  }, [autosave, store.dirty, store.nodes, store.edges]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const validate = async (deep = false) => {
     if (!store.flow) return;
     try {

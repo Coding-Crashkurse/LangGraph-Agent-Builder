@@ -83,6 +83,8 @@ function PortDot({
   offset,
   dimmed,
   onHover,
+  position,
+  crossOffset,
 }: {
   id: string;
   port: PortSpec;
@@ -90,17 +92,23 @@ function PortDot({
   offset: number;
   dimmed: boolean;
   onHover: (tooltip: PortTooltip | null) => void;
+  /** SPEC §18.4: left=data-in, right=data-out, top=toolset-out, bottom=tools-in */
+  position?: Position;
+  /** horizontal placement (%) for top/bottom handles */
+  crossOffset?: number;
 }) {
   const color = PORT_FAMILY_COLORS[port.family] ?? "#9ca3af";
+  const pos = position ?? (side === "in" ? Position.Left : Position.Right);
+  const vertical = pos === Position.Top || pos === Position.Bottom;
   return (
     <Handle
       id={id}
       type={side === "in" ? "target" : "source"}
-      position={side === "in" ? Position.Left : Position.Right}
-      onMouseEnter={() => onHover({ name: id, port, side, top: offset })}
+      position={pos}
+      onMouseEnter={() => onHover({ name: id, port, side, top: vertical ? 0 : offset })}
       onMouseLeave={() => onHover(null)}
       style={{
-        top: offset,
+        ...(vertical ? { left: `${crossOffset ?? 50}%` } : { top: offset }),
         background: port.family === "ANY" ? "transparent" : color,
         border: `2px ${port.family === "ANY" ? "dashed" : "solid"} ${color}`,
         width: 10,
@@ -162,8 +170,13 @@ export const LgaNode = memo(function LgaNode({ id, data, selected }: NodeProps<C
 
   const isPill = id === "start" || id === "end";
   const ports = indexPorts(descriptor, data.config);
-  const inputs = [...ports.inputs.entries()];
-  const outputs = [...ports.outputs.entries()];
+  // SPEC §18.4 handle geometry: toolset ports live on top/bottom, data left/right
+  const allInputs = [...ports.inputs.entries()];
+  const allOutputs = [...ports.outputs.entries()];
+  const inputs = allInputs.filter(([, p]) => p.family !== "TOOLSET");
+  const toolInputs = allInputs.filter(([, p]) => p.family === "TOOLSET");
+  const outputs = allOutputs.filter(([, p]) => p.family !== "TOOLSET");
+  const toolOutputs = allOutputs.filter(([, p]) => p.family === "TOOLSET");
   const nodeDiags = diagnostics.filter((d) => d.node_id === id);
   const errorCount = nodeDiags.filter((d) => d.severity === "error").length;
   const warnCount = nodeDiags.filter((d) => d.severity === "warning").length;
@@ -216,7 +229,7 @@ export const LgaNode = memo(function LgaNode({ id, data, selected }: NodeProps<C
         CATEGORY_ACCENTS[descriptor.category] ?? "border-l-zinc-500",
         selected && "ring-2 ring-accent-500",
       )}
-      style={{ paddingBottom: 6, minHeight: HEADER + rows * ROW }}
+      style={{ paddingBottom: toolInputs.length ? 16 : 6, minHeight: HEADER + rows * ROW }}
     >
       <div className="flex items-center gap-2 border-b border-surface-800 px-3 py-1.5">
         <span className="truncate text-[13px] font-medium text-zinc-100">
@@ -308,6 +321,42 @@ export const LgaNode = memo(function LgaNode({ id, data, selected }: NodeProps<C
               port.family === "ROUTE" ? "font-semibold text-amber-400" : "text-zinc-400",
             )}
             style={{ right: 10, top: HEADER + index * ROW - 8 }}
+          >
+            {name}
+          </span>
+        </div>
+      ))}
+
+      {/* §18.4: toolset OUT on top (providers point up to the agent they equip) */}
+      {toolOutputs.map(([name, port], index) => (
+        <PortDot
+          key={name}
+          id={name}
+          port={port}
+          side="out"
+          offset={0}
+          position={Position.Top}
+          crossOffset={72 + index * 14}
+          dimmed={dimFor(port, "out", name)}
+          onHover={setTooltip}
+        />
+      ))}
+      {/* §18.4: tools IN on the bottom (tools hang below the agent) */}
+      {toolInputs.map(([name, port], index) => (
+        <div key={name}>
+          <PortDot
+            id={name}
+            port={port}
+            side="in"
+            offset={0}
+            position={Position.Bottom}
+            crossOffset={50 + index * 14}
+            dimmed={dimFor(port, "in", name)}
+            onHover={setTooltip}
+          />
+          <span
+            className="absolute bottom-0 left-1/2 -translate-x-1/2 text-[9px] font-medium text-sky-400"
+            style={{ bottom: -1 }}
           >
             {name}
           </span>

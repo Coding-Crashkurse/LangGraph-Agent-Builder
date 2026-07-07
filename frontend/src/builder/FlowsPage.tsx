@@ -22,6 +22,7 @@ export function FlowsPage() {
   const navigate = useNavigate();
   const [createOpen, setCreateOpen] = useState(false);
   const [name, setName] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
 
   const flows = useQuery({ queryKey: ["flows"], queryFn: api.flows.list });
   const runs = useQuery({ queryKey: ["runs"], queryFn: () => api.runs.list() });
@@ -98,9 +99,7 @@ export function FlowsPage() {
               {flow.spec.flow.mcp?.enabled && <Badge tone="sky">MCP</Badge>}
               <button
                 className="ml-auto text-xs text-zinc-600 opacity-0 hover:text-red-400 group-hover:opacity-100"
-                onClick={() => {
-                  if (window.confirm(`Delete flow "${flow.name}"?`)) deleteFlow.mutate(flow.id);
-                }}
+                onClick={() => setDeleteTarget({ id: flow.id, name: flow.name })}
               >
                 delete
               </button>
@@ -153,6 +152,36 @@ export function FlowsPage() {
           </tbody>
         </table>
       </div>
+
+      <Dialog
+        open={deleteTarget !== null}
+        onClose={() => setDeleteTarget(null)}
+        title="Delete flow"
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-zinc-300">
+            Delete <span className="font-semibold text-zinc-100">{deleteTarget?.name}</span>?
+          </p>
+          <p className="text-xs text-zinc-500">
+            This removes the draft, all published versions and unmounts its A2A/MCP
+            endpoints. Runs and task history stay in the dashboard.
+          </p>
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" onClick={() => setDeleteTarget(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                if (deleteTarget) deleteFlow.mutate(deleteTarget.id);
+                setDeleteTarget(null);
+              }}
+            >
+              Delete flow
+            </Button>
+          </div>
+        </div>
+      </Dialog>
 
       <Dialog open={createOpen} onClose={() => setCreateOpen(false)} title="New flow">
         <div className="space-y-3">

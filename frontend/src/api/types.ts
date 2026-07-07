@@ -180,6 +180,7 @@ export interface ComponentDescriptor {
   icon: string;
   category: string;
   tags: string[];
+  priority?: number | null;
   beta: boolean;
   legacy: boolean;
   node_kind: NodeKind;

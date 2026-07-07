@@ -1,13 +1,15 @@
 """LGARequestHandler — DefaultRequestHandler + replay-capable resubscribe.
 
 SPEC §7.5: tasks/resubscribe re-attaches SSE "replaying from persisted event
-seq". The sdk only taps live queues, which races with its immediate-close on
-final events; we replay the persisted Task snapshot first and guarantee a
-final event from the store when the live tap misses it.
+seq". The sdk only taps live queues, which (a) races with its immediate-close
+on final events (tapped children get wiped) and (b) can block silently forever
+on an open-but-quiet queue. We replay the persisted Task snapshot first, then
+consume the live tap under a watchdog that falls back to the task store.
 """
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncGenerator
 from typing import Any
 
@@ -30,6 +32,9 @@ TERMINAL = {
 }
 FINAL_STATES = TERMINAL | {TaskState.input_required, TaskState.auth_required}
 
+WATCHDOG_INTERVAL_S = 1.0
+OVERALL_DEADLINE_S = 120.0
+
 
 class LGARequestHandler(DefaultRequestHandler):
     async def on_resubscribe_to_task(
@@ -41,42 +46,55 @@ class LGARequestHandler(DefaultRequestHandler):
         if not task:
             raise ServerError(error=TaskNotFoundError())
 
+        def final_event(snapshot: Any) -> TaskStatusUpdateEvent:
+            return TaskStatusUpdateEvent(
+                task_id=snapshot.id,
+                context_id=snapshot.context_id,
+                status=snapshot.status,
+                final=True,
+            )
+
         # replay: current snapshot first (client resyncs regardless of what
         # the live buffer still holds)
         yield task
         if task.status.state in FINAL_STATES:
-            yield TaskStatusUpdateEvent(
-                task_id=task.id,
-                context_id=task.context_id,
-                status=task.status,
-                final=True,
-            )
+            yield final_event(task)
             return
 
-        delivered_final = False
+        # live tap under a watchdog: the sdk consumer can block silently on an
+        # open-but-quiet queue, and its immediate-close wipes tapped children —
+        # in both cases the task store is the source of truth for finality.
+        parent = super().on_resubscribe_to_task(params, context)
+        iterator = parent.__aiter__()
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + OVERALL_DEADLINE_S
         try:
-            async for event in super().on_resubscribe_to_task(params, context):
-                if getattr(event, "final", False):
-                    delivered_final = True
-                yield event
-        except ServerError:
-            pass  # live queue already gone — fall through to the store check
-
-        if not delivered_final:
-            import asyncio
-
-            # the live queue can be wiped a beat before the aggregator persists
-            # the final state — poll the store briefly instead of dropping it
-            # (generous window: under load the run may still be finishing when
-            # the wiped live stream ends; exits immediately once terminal)
-            for _ in range(80):
-                refreshed = await self.task_store.get(params.id, context)
-                if refreshed is not None and refreshed.status.state in FINAL_STATES:
-                    yield TaskStatusUpdateEvent(
-                        task_id=refreshed.id,
-                        context_id=refreshed.context_id,
-                        status=refreshed.status,
-                        final=True,
+            while True:
+                try:
+                    event = await asyncio.wait_for(
+                        iterator.__anext__(), timeout=WATCHDOG_INTERVAL_S
                     )
+                except TimeoutError:
+                    refreshed = await self.task_store.get(params.id, context)
+                    if refreshed is not None and refreshed.status.state in FINAL_STATES:
+                        yield final_event(refreshed)
+                        return
+                    if loop.time() > deadline:
+                        return
+                    continue
+                except (StopAsyncIteration, ServerError):
+                    break  # live queue ended or already gone → store fallback below
+                yield event
+                if getattr(event, "final", False):
                     return
-                await asyncio.sleep(0.25)
+        finally:
+            await parent.aclose()
+
+        # stream ended without a final event (wiped child queue): the run may
+        # still be finishing — follow the store until it turns final.
+        while loop.time() <= deadline:
+            refreshed = await self.task_store.get(params.id, context)
+            if refreshed is not None and refreshed.status.state in FINAL_STATES:
+                yield final_event(refreshed)
+                return
+            await asyncio.sleep(0.25)

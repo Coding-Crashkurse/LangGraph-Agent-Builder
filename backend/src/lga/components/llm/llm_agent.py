@@ -22,6 +22,7 @@ class LLMAgent(Component):
     description = "Chat model with attached tools; loops until no more tool calls."
     icon = "brain"
     category = "llm"
+    priority = 1
 
     inputs = [
         fields.ModelInput(name="model", display_name="Model", required=True),
@@ -59,8 +60,9 @@ class LLMAgent(Component):
                 try:
                     model = model.bind_tools(tools)
                 except NotImplementedError:
-                    rc.emit_log("warning", "model does not support tool binding; "
-                                           "tools attached but unused")
+                    rc.emit_log(
+                        "warning", "model does not support tool binding; tools attached but unused"
+                    )
 
             system = str(ctx.get_field("system_prompt") or "")
             if ctx.get_field("use_documents"):
