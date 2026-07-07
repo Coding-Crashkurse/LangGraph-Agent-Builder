@@ -23,6 +23,8 @@ class TextInput(Component):
             info="When on, emits the inbound chat message text instead of the literal.",
             default=False,
         ),
+        # pure trigger port so literals can be chained behind `start`
+        fields.HandleField(name="input", display_name="Input", as_port=ports.MESSAGE),
     ]
     outputs = [Output(name="text", display_name="Text", port=ports.TEXT)]
 

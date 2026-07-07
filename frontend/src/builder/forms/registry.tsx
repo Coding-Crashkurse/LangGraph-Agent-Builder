@@ -2,11 +2,14 @@
  * forms render EXCLUSIVELY from component descriptors. Unknown type → JSON
  * fallback + console warn (forward compat). */
 
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState, type FC } from "react";
 
+import { api } from "@/api/client";
 import type { FieldDescriptor } from "@/api/types";
 import { Input } from "@/components/ui/input";
 import { Select, Switch, Tabs } from "@/components/ui/controls";
+import { toast } from "@/components/ui/toast";
 import { cn } from "@/lib/utils";
 
 export interface WidgetProps {
@@ -16,6 +19,142 @@ export interface WidgetProps {
   onRefresh?: () => void; // refresh_button / options_source round-trip
 }
 
+// ------------------------------------------------------------------ $var/$secret refs (§10.3)
+type RefKind = "$secret" | "$var";
+
+function refOf(value: unknown): { kind: RefKind; name: string } | null {
+  if (typeof value === "object" && value !== null) {
+    const record = value as Record<string, string>;
+    if ("$secret" in record) return { kind: "$secret", name: record.$secret };
+    if ("$var" in record) return { kind: "$var", name: record.$var };
+  }
+  return null;
+}
+
+/** Chip + dropdown that binds a field to a stored global variable/credential.
+ * Values never touch the FlowSpec — only the reference does (SPEC §10.3). */
+const VarPicker: FC<{
+  kind: RefKind;
+  value: unknown;
+  onChange: (value: unknown) => void;
+}> = ({ kind, value, onChange }) => {
+  const queryClient = useQueryClient();
+  const variables = useQuery({ queryKey: ["variables"], queryFn: api.variables.list });
+  const [open, setOpen] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [newValue, setNewValue] = useState("");
+  const wantKind = kind === "$secret" ? "credential" : "generic";
+  const candidates = (variables.data ?? []).filter((v) => v.kind === wantKind);
+  const current = refOf(value);
+
+  if (current) {
+    return (
+      <span className="inline-flex items-center gap-1 rounded border border-emerald-800 bg-emerald-950/60 px-1.5 py-0.5 text-[10px] text-emerald-300">
+        {kind === "$secret" ? "🔑" : "🌐"} {current.kind}: {current.name}
+        <button
+          type="button"
+          className="ml-1 text-emerald-500 hover:text-red-400"
+          title="Remove reference"
+          onClick={() => onChange(null)}
+        >
+          ✕
+        </button>
+      </span>
+    );
+  }
+
+  return (
+    <span className="relative">
+      <button
+        type="button"
+        title={
+          kind === "$secret"
+            ? "Use a stored credential (never saved into the flow)"
+            : "Use a global variable"
+        }
+        onClick={() => setOpen((o) => !o)}
+        className="rounded border border-surface-700 px-1.5 py-0.5 text-[10px] text-zinc-400 hover:border-emerald-700 hover:text-emerald-300"
+      >
+        {kind === "$secret" ? "🔑 use credential" : "🌐 $var"}
+      </button>
+      {open && (
+        <div className="absolute right-0 z-50 mt-1 w-56 rounded-md border border-surface-700 bg-surface-950 p-1.5 shadow-xl">
+          {candidates.length === 0 && !creating && (
+            <p className="px-1 py-0.5 text-[10px] text-zinc-500">
+              no {wantKind}s stored yet
+            </p>
+          )}
+          {candidates.map((variable) => (
+            <button
+              key={variable.name}
+              type="button"
+              className="block w-full rounded px-1.5 py-1 text-left text-[11px] text-zinc-200 hover:bg-surface-800"
+              onClick={() => {
+                onChange({ [kind]: variable.name });
+                setOpen(false);
+              }}
+            >
+              {kind === "$secret" ? "🔑" : "🌐"} {variable.name}
+            </button>
+          ))}
+          <div className="mt-1 border-t border-surface-800 pt-1">
+            {creating ? (
+              <div className="space-y-1 p-0.5">
+                <Input
+                  autoFocus
+                  placeholder="NAME (e.g. OPENAI_API_KEY)"
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                />
+                <Input
+                  type={kind === "$secret" ? "password" : "text"}
+                  placeholder="value (stored server-side)"
+                  value={newValue}
+                  onChange={(e) => setNewValue(e.target.value)}
+                />
+                <button
+                  type="button"
+                  className="w-full rounded bg-accent-600 px-1.5 py-1 text-[11px] font-medium text-white hover:bg-accent-500 disabled:opacity-40"
+                  disabled={!newName || !newValue}
+                  onClick={async () => {
+                    try {
+                      await api.variables.set({ name: newName, value: newValue, kind: wantKind });
+                      queryClient.invalidateQueries({ queryKey: ["variables"] });
+                      onChange({ [kind]: newName });
+                      setOpen(false);
+                      setCreating(false);
+                      setNewName("");
+                      setNewValue("");
+                      toast.success(
+                        wantKind === "credential"
+                          ? "credential stored (encrypted, write-only)"
+                          : "variable stored",
+                      );
+                    } catch (error) {
+                      toast.error(`failed: ${(error as Error).message}`);
+                    }
+                  }}
+                >
+                  save & use
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                className="block w-full rounded px-1.5 py-1 text-left text-[11px] text-accent-400 hover:bg-surface-800"
+                onClick={() => setCreating(true)}
+              >
+                ＋ new {wantKind}…
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+    </span>
+  );
+};
+
 function optionValues(field: FieldDescriptor): { value: string; label: string }[] {
   const options = (field.options as (string | { value: string; label?: string })[]) ?? [];
   return options.map((o) =>
@@ -23,22 +162,38 @@ function optionValues(field: FieldDescriptor): { value: string; label: string }[
   );
 }
 
-const Str: FC<WidgetProps> = ({ field, value, onChange }) => (
-  <Input
-    value={String(value ?? "")}
-    placeholder={field.placeholder}
-    onChange={(e) => onChange(e.target.value)}
-  />
-);
+const Str: FC<WidgetProps> = ({ field, value, onChange }) => {
+  const ref = refOf(value);
+  return (
+    <div className="flex items-center gap-1.5">
+      {!ref && (
+        <Input
+          value={String(value ?? "")}
+          placeholder={field.placeholder}
+          onChange={(e) => onChange(e.target.value)}
+        />
+      )}
+      {field.accepts_global_variable && (
+        <VarPicker kind="$var" value={value} onChange={onChange} />
+      )}
+    </div>
+  );
+};
 
-const Multiline: FC<WidgetProps> = ({ field, value, onChange }) => (
-  <textarea
-    className="min-h-[72px] w-full rounded-md border border-surface-700 bg-surface-900 px-2 py-1.5 font-mono text-xs text-zinc-100 focus:border-accent-500 focus:outline-none"
-    value={String(value ?? "")}
-    placeholder={field.placeholder}
-    onChange={(e) => onChange(e.target.value)}
-  />
-);
+const Multiline: FC<WidgetProps> = ({ field, value, onChange }) => {
+  const ref = refOf(value);
+  if (ref) {
+    return <VarPicker kind="$var" value={value} onChange={onChange} />;
+  }
+  return (
+    <textarea
+      className="min-h-[72px] w-full rounded-md border border-surface-700 bg-surface-900 px-2 py-1.5 font-mono text-xs text-zinc-100 focus:border-accent-500 focus:outline-none"
+      value={String(value ?? "")}
+      placeholder={field.placeholder}
+      onChange={(e) => onChange(e.target.value)}
+    />
+  );
+};
 
 const NumberWidget: FC<WidgetProps & { integer?: boolean }> = ({
   field,
@@ -172,20 +327,26 @@ const TabWidget: FC<WidgetProps> = ({ field, value, onChange }) => (
 );
 
 const Secret: FC<WidgetProps> = ({ value, onChange }) => {
-  const isRef = typeof value === "object" && value !== null && "$secret" in (value as object);
+  const ref = refOf(value);
   return (
     <div className="space-y-1">
-      <Input
-        type="password"
-        value={isRef ? "" : String(value ?? "")}
-        placeholder={
-          isRef ? `$secret: ${(value as Record<string, string>).$secret}` : "secret value"
-        }
-        onChange={(e) => onChange(e.target.value)}
-      />
-      <p className="text-[10px] text-zinc-500">
-        Tip: reference a stored credential as {"{\"$secret\": \"name\"}"} instead of pasting it.
-      </p>
+      <div className="flex items-center gap-1.5">
+        {!ref && (
+          <Input
+            type="password"
+            value={String(value ?? "")}
+            placeholder="secret value (better: use a stored credential →)"
+            onChange={(e) => onChange(e.target.value)}
+          />
+        )}
+        <VarPicker kind="$secret" value={value} onChange={onChange} />
+      </div>
+      {!ref && (
+        <p className="text-[10px] text-zinc-500">
+          Pasted values land in the FlowSpec — stored credentials stay encrypted
+          on the server and only the reference is saved.
+        </p>
+      )}
     </div>
   );
 };

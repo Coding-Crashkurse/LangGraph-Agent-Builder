@@ -9,12 +9,43 @@ from __future__ import annotations
 
 from typing import Any
 
-PROVIDERS = ("openai", "anthropic", "ollama", "fake")
+PROVIDERS = ("openai", "anthropic", "ollama", "fake", "echo")
 
 
 class ProviderNotInstalledError(RuntimeError):
     def __init__(self, provider: str, extra: str) -> None:
         super().__init__(f"model provider {provider!r} is not installed — install lga[{extra}]")
+
+
+def _echo_chat_model(prefix: str = ""):
+    """Deterministic chat model that echoes the last human message.
+
+    Works everywhere a real model does (llm_call, llm_agent, llm_router) —
+    flows stay fully testable without API keys (SPEC §1.5-6).
+    """
+    from langchain_core.language_models.chat_models import BaseChatModel
+    from langchain_core.messages import AIMessage, BaseMessage
+    from langchain_core.outputs import ChatGeneration, ChatResult
+
+    class EchoChatModel(BaseChatModel):
+        echo_prefix: str = ""
+
+        @property
+        def _llm_type(self) -> str:
+            return "lga-echo"
+
+        def _generate(self, messages: list[BaseMessage], stop=None, run_manager=None, **kw):
+            text = ""
+            for message in reversed(messages):
+                if getattr(message, "type", "") == "human":
+                    content = message.content
+                    text = content if isinstance(content, str) else str(content)
+                    break
+            return ChatResult(
+                generations=[ChatGeneration(message=AIMessage(content=self.echo_prefix + text))]
+            )
+
+    return EchoChatModel(echo_prefix=prefix)
 
 
 def parse_model_value(value: Any) -> dict[str, Any]:
@@ -63,6 +94,9 @@ def resolve_model(value: Any):  # -> BaseChatModel
 
         replies = cfg.get("replies") or [model or "fake reply"]
         return FakeListChatModel(responses=[str(r) for r in replies])
+    if provider == "echo":
+        # echoes the last human message; `model` doubles as an optional prefix
+        return _echo_chat_model(prefix=f"{model}: " if model else "")
     raise ValueError(f"unknown model provider {provider!r} (supported: {PROVIDERS})")
 
 

@@ -1,0 +1,21 @@
+# Standalone compose for this example — real pgvector, zero API keys.
+# (The repo root docker-compose.yml works too; this one is copy-paste portable.)
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_USER: lga
+      POSTGRES_PASSWORD: lga
+      POSTGRES_DB: lga
+    ports:
+      - "55432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lga"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - lga_pgdata:/var/lib/postgresql/data
+
+volumes:
+  lga_pgdata:
