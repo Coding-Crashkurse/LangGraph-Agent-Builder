@@ -869,6 +869,11 @@ moving into `capabilities`) behind the sdk upgrade — never hand-roll type drif
 
 - Each **published** flow with `a2a.enabled=true` is served as an independent A2A agent at
   `https://{host}/a2a/{agent_slug}` (single JSON-RPC POST endpoint).
+- **Serving surfaces are mutually exclusive [MUST].** A published flow is served as an A2A
+  agent **XOR** an MCP tool (§8.1) **XOR** a plain REST API — never two at once. The FlowMeta
+  invariant enforces this (`FlowMeta._exclusive_serving`, A2A precedence if both are set) and
+  exposes the derived `serve_mode ∈ {a2a, mcp, api}`. **A2A is the default surface for a new
+  flow.** The Studio Share dialog is a single exclusive mode selector.
 - Serving always targets a **pinned published version** (flow setting: `serve: latest_published | vX.Y.Z`).
   Draft edits never change live agent behavior. Republish → agent card `version` bumps.
 
@@ -1072,7 +1077,8 @@ Consume other A2A agents from flows (incl. our own → multi-agent):
 - Endpoint: `/mcp` — **streamable HTTP** transport; `/mcp/sse` legacy SSE fallback.
 - Tools = published flows with `mcp.enabled=true`. Tool name default = flow slug
   (**never** a UUID); name + description editable in Flow Settings → MCP tab; same
-  publish-guards as A2A (`E062 MissingMCPDescription`).
+  publish-guards as A2A (`E062 MissingMCPDescription`). Serving is **exclusive** (§7.1):
+  `mcp.enabled=true` implies A2A off — a flow is an MCP tool XOR an A2A agent XOR REST-only.
 - Tool input schema: derived from flow input contract — default
   `{input_text: string}` + structured `data` properties if the start node declares a schema.
   Tool output: text content (terminal message) + structured content (Json/Table result) per
@@ -1488,6 +1494,7 @@ canonical. (component_id prefix `lga.`)
 ### 12.2 LLM
 | id | Notes |
 |---|---|
+| `llm.language_model` (exists) | **Dual-role (Langflow parity):** ModelInput + `input: Message` + `system_message`. Wire an Input → it *runs* the model, emitting `message: Message` / `text: Text` (Model Response); the `model: Model` handle is always exposed (carries the provider *config dict*, not a client) for an Agent/Router. Runs only when an Input is wired, so handle-only use is a cheap config pass-through. |
 | `llm.llm_call` (exists) | one-shot completion; PromptInput (dynamic {var} ports), ModelInput, structured-output toggle (Json schema) |
 | `llm.llm_agent` (exists) | tool-loop agent (LangGraph prebuilt ReAct under the hood); ToolsInput; system PromptInput; max_iterations; emits `tool_call`/`tool_result` events (§6.2) |
 | `llm.structured_output` | force Json/Table per schema from a model (TableInput schema editor: name, description, type — Langflow parity) |
@@ -1700,6 +1707,7 @@ reject multi-user/telemetry/marketplace features by design. This table is normat
 | Workflow API `background=true` + job polling + stop | §6.5 background runs on the one run model |
 | Endpoint name alias for `/run/$FLOW_ID` | §9 slug-first everywhere (superset) |
 | DataFrame data type | `lga:Table` port (§4.3) |
+| Unified **Language Model** component (dual outputs: *Model Response* + *Language Model* handle) + canonical Chat Input → Language Model → Chat Output flow | §12.2 `llm.language_model` dual-role (runs on `input`, always exposes the `model` handle); `io.start`/`io.end` present as **Chat Input**/**Chat Output** |
 | Type Convert, Structured Output schema table, Message History, Mock Data, Current Date, Web Search | §12 catalog |
 | Playground agent tool-call visibility | `tool_call`/`tool_result` events (§6.2) + Playground blocks (§11.7) |
 | Templates / starter projects | §9.9 template gallery + `LGA_CREATE_STARTER_FLOWS` |

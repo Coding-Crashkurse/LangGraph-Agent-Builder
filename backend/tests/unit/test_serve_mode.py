@@ -6,17 +6,15 @@ two at once. A2A takes precedence if a spec somehow enables both.
 
 from __future__ import annotations
 
-from lga.schema.flowspec import FlowMeta
-
-
-def _meta(**flow: object) -> FlowMeta:
-    return FlowMeta(name="x", slug="x", **flow)
+from lga.schema.flowspec import A2ASettings, FlowMeta, McpSettings
 
 
 def test_both_enabled_a2a_wins_mcp_forced_off() -> None:
-    meta = _meta(
-        a2a={"enabled": True, "description": "d"},
-        mcp={"enabled": True, "description": "t"},
+    meta = FlowMeta(
+        name="x",
+        slug="x",
+        a2a=A2ASettings(enabled=True, description="d"),
+        mcp=McpSettings(enabled=True, description="t"),
     )
     assert meta.a2a.enabled is True
     assert meta.mcp.enabled is False
@@ -24,19 +22,19 @@ def test_both_enabled_a2a_wins_mcp_forced_off() -> None:
 
 
 def test_mcp_only_is_mcp_mode() -> None:
-    meta = _meta(mcp={"enabled": True, "description": "t"})
+    meta = FlowMeta(name="x", slug="x", mcp=McpSettings(enabled=True, description="t"))
     assert meta.serve_mode == "mcp"
     assert meta.a2a.enabled is False
 
 
 def test_neither_enabled_is_api_mode() -> None:
-    meta = _meta()
+    meta = FlowMeta(name="x", slug="x")
     assert meta.a2a.enabled is False
     assert meta.mcp.enabled is False
     assert meta.serve_mode == "api"
 
 
 def test_a2a_only_is_a2a_mode() -> None:
-    meta = _meta(a2a={"enabled": True, "description": "d"})
+    meta = FlowMeta(name="x", slug="x", a2a=A2ASettings(enabled=True, description="d"))
     assert meta.serve_mode == "a2a"
     assert meta.mcp.enabled is False
