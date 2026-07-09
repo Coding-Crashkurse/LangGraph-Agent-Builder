@@ -9,8 +9,9 @@ import asyncio
 import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal
 
+from langchain_core.runnables import RunnableConfig
 from langgraph.errors import GraphRecursionError
 from langgraph.types import Command
 from pydantic import BaseModel
@@ -58,15 +59,35 @@ class RunHandle:
     flow_slug: str
     mode: str
     run_context: RunContext
-    task: asyncio.Task | None = None
+    task: asyncio.Task[Any] | None = None
     result: RunResult | None = None
     done: asyncio.Event = field(default_factory=asyncio.Event)
 
 
-def extract_result(compiled: CompiledFlow, state_values: dict[str, Any]) -> tuple[str, Any]:
-    """Terminal node result → (text, structured|None) (SPEC §7.8 outbound)."""
+def extract_result(
+    compiled: CompiledFlow, state_values: dict[str, Any], until_node: str | None = None
+) -> tuple[str, Any]:
+    """Terminal (or ``until_node``) result → (text, structured|None) (SPEC §7.8/§6.4)."""
     ports_map = state_values.get("ports") or {}
     assert compiled.ir is not None
+    if until_node is not None:
+        target = compiled.ir.nodes.get(until_node)
+        if target is not None:
+            for out_name in target.outputs:
+                value = ports_map.get(f"{until_node}.{out_name}")
+                if value is None:
+                    continue
+                if isinstance(value, Message):
+                    return value.content, None
+                if isinstance(value, str):
+                    return value, None
+                if isinstance(value, (dict, list)):
+                    import json
+
+                    structured = value if isinstance(value, dict) else {"rows": value}
+                    return json.dumps(value, ensure_ascii=False, default=str), structured
+                return str(value), None
+        return "", None
     for node in compiled.ir.nodes.values():
         if node.kind != NodeKind.TERMINAL:
             continue
@@ -118,6 +139,10 @@ class Executor:
         event: str,
         data: dict[str, Any],
     ) -> None:
+        # scrub once here so both the bus and the A2A sink get redacted data (§10.5)
+        from lga.schema.scrub import scrub_data
+
+        data = scrub_data(data)
         self._publish(run_id, thread_id, event, data)
         if sink is not None:
             try:
@@ -147,6 +172,7 @@ class Executor:
         resume: Any = None,
         debug: bool = False,
         debug_action: str | None = None,  # "step" | "continue" on a paused debug run
+        until_node: str | None = None,  # partial run (SPEC §6.4)
         register: bool = True,
         run_context: RunContext | None = None,
         event_sink: Callable[[RunEvent], Awaitable[None]] | None = None,
@@ -176,6 +202,7 @@ class Executor:
                 resume=resume,
                 debug=debug,
                 debug_action=debug_action,
+                until_node=until_node,
                 event_sink=event_sink,
             )
         except asyncio.CancelledError:
@@ -216,19 +243,24 @@ class Executor:
         resume: Any,
         debug: bool,
         debug_action: str | None = None,
+        until_node: str | None = None,
         event_sink: Callable[[RunEvent], Awaitable[None]] | None = None,
     ) -> RunResult:
         run_id, thread_id = handle.run_id, handle.thread_id
+        if until_node is not None:
+            from lga.compiler.subgraph import induce_subgraph
+
+            compiled = induce_subgraph(compiled, until_node)
         checkpointer = await self._get_checkpointer()
         graph = compiled.compile(checkpointer=checkpointer)
-        config: dict[str, Any] = {
+        config: RunnableConfig = {
             "configurable": {"thread_id": thread_id, RUN_CTX_KEY: handle.run_context},
             "recursion_limit": compiled.spec.flow.settings.recursion_limit
             or self._recursion_default,
         }
-        stream_kwargs: dict[str, Any] = {}
-        if debug or debug_action == "step":
-            stream_kwargs["interrupt_before"] = "*"
+        # durable checkpoints written asynchronously (SPEC §6.3): the flagship
+        # HITL/resume story needs state persisted, but off the run's hot path.
+        interrupt_before: Literal["*"] | None = "*" if (debug or debug_action == "step") else None
         if debug_action == "continue":
             debug = False
 
@@ -265,7 +297,11 @@ class Executor:
         last_started_node = ""
         try:
             async for stream_mode, chunk in graph.astream(
-                graph_input, config, stream_mode=["custom", "updates"], **stream_kwargs
+                graph_input,
+                config,
+                stream_mode=["custom", "updates"],
+                durability="async",
+                interrupt_before=interrupt_before,
             ):
                 if stream_mode == "custom" and isinstance(chunk, dict):
                     event = str(chunk.get("event") or "custom")
@@ -366,7 +402,7 @@ class Executor:
                 interrupt={"kind": "debug_step", "next": list(snapshot.next)},
                 interrupt_node=snapshot.next[0],
             )
-        text, structured = extract_result(compiled, snapshot.values or {})
+        text, structured = extract_result(compiled, snapshot.values or {}, until_node)
         await self._status(run_id, "completed", result_preview=text[: self._preview_length])
         await self._emit(
             event_sink,

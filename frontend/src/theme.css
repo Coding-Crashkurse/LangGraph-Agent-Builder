@@ -1,0 +1,47 @@
+@import "tailwindcss";
+@import "@fontsource-variable/instrument-sans";
+@import "@fontsource-variable/jetbrains-mono";
+
+@theme {
+  --font-sans: "Instrument Sans Variable", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono Variable", ui-monospace, monospace;
+
+  /* chrome */
+  --color-canvas: #0E1116;
+  --color-surface-1: #151A21;
+  --color-surface-2: #1C232D;
+  --color-surface-3: #232C38;
+  --color-border: #2A3340;
+  --color-border-strong: #3A4553;
+  --color-text-1: #E8ECF2;
+  --color-text-2: #9AA4B2;
+  --color-text-3: #6B7482;
+  --color-accent: #8B7CF7;
+  --color-success: #4ADE80;
+  --color-warning: #FBBF24;
+  --color-danger: #F87171;
+
+  /* port families (§11.1) */
+  --color-port-message: #818CF8;
+  --color-port-data: #94A3B8;
+  --color-port-table: #2DD4BF;
+  --color-port-documents: #34D399;
+  --color-port-embedding: #A78BFA;
+  --color-port-model: #22D3EE;
+  --color-port-vectorstore: #E879F9;
+  --color-port-toolset: #38BDF8;
+  --color-port-route: #FBBF24;
+  --color-port-file: #FB923C;
+  --color-port-any: #6B7482;
+
+  /* geometry */
+  --radius-node: 12px;
+  --radius-panel: 10px;
+  --radius-input: 8px;
+  --radius-chip: 6px;
+
+  /* motion */
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --duration-micro: 120ms;
+  --duration-panel: 200ms;
+}

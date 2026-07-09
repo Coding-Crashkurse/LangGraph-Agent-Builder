@@ -8,13 +8,14 @@ our own interrupt (nested HITL across agents). Tool mode: exposed to agents as
 from __future__ import annotations
 
 import hashlib
-from typing import Any
+from typing import Any, cast
 
 import httpx
 from langchain_core.messages import AIMessage
 from langgraph.types import interrupt
 
-from lga.sdk import Component, Output, fields, ports
+from lga.sdk import BuildContext, Component, Output, fields, ports
+from lga.sdk.component import NodeConfig, NodeFn
 from lga.sdk.ports import LazyToolset, ToolDef
 from lga.sdk.runtime import get_run_context
 from lga.sdk.templating import last_message_text
@@ -47,11 +48,11 @@ def _task_text(task: dict[str, Any]) -> str:
     for artifact in task.get("artifacts") or []:
         for part in artifact.get("parts") or []:
             if part.get("kind") == "text":
-                return part["text"]
+                return cast(str, part["text"])
     message = (task.get("status") or {}).get("message") or {}
     for part in message.get("parts") or []:
         if part.get("kind") == "text":
-            return part["text"]
+            return cast(str, part["text"])
     return ""
 
 
@@ -100,7 +101,7 @@ class A2ARemoteAgent(Component):
     outputs = [Output(name="message", display_name="Message", port=ports.MESSAGE)]
 
     @classmethod
-    def outputs_for_config(cls, config):
+    def outputs_for_config(cls, config: NodeConfig) -> list[Output]:
         """mode=node → Message output; mode=tool → Toolset output (SPEC §7.12)."""
         if str(config.get("mode") or "node") == "tool":
             from lga.sdk.ports import TOOLSET
@@ -109,8 +110,8 @@ class A2ARemoteAgent(Component):
         return list(cls.outputs)
 
     # ---------------------------------------------------------------- helpers
-    def _client(self, ctx) -> httpx.AsyncClient:
-        headers = {}
+    def _client(self, ctx: BuildContext) -> httpx.AsyncClient:
+        headers: dict[str, str] = {}
         auth = ctx.get_field("auth")
         if auth:
             headers["X-API-Key"] = str(auth)
@@ -121,12 +122,12 @@ class A2ARemoteAgent(Component):
         )
 
     @staticmethod
-    def _endpoint(ctx) -> str:
+    def _endpoint(ctx: BuildContext) -> str:
         url = str(ctx.get_field("agent_url") or "").rstrip("/")
         return url + "/"
 
     # ---------------------------------------------------------------- node mode
-    def build(self, ctx):
+    def build(self, ctx: BuildContext) -> NodeFn:
         endpoint = self._endpoint(ctx)
 
         async def node(state: dict[str, Any], config: Any) -> dict[str, Any]:
@@ -220,7 +221,7 @@ class A2ARemoteAgent(Component):
         return node
 
     # ---------------------------------------------------------------- tool mode
-    def provide_tools(self, ctx) -> LazyToolset:
+    def provide_tools(self, ctx: BuildContext) -> LazyToolset:
         endpoint = self._endpoint(ctx)
         component = self
 
@@ -266,7 +267,7 @@ class A2ARemoteAgent(Component):
 
         return LazyToolset(factory)
 
-    def on_field_change(self, config, field_name, value):
+    def on_field_change(self, config: NodeConfig, field_name: str, value: Any) -> NodeConfig:
         config = dict(config)
         config[field_name] = value
         return config

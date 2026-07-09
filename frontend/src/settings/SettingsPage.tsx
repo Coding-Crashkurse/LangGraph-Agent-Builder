@@ -11,7 +11,16 @@ import { Input } from "@/components/ui/input";
 import { Select, Tabs } from "@/components/ui/controls";
 import { toast } from "@/components/ui/toast";
 
-type Tab = "variables" | "apikeys" | "mcp";
+type Tab = "variables" | "apikeys" | "mcp" | "vectorstores";
+
+interface VectorConn {
+  name: string;
+  backend: string;
+  managed: boolean;
+  ok?: boolean;
+  error?: string | null;
+  collections?: { name: string; dim: number; metric: string; count: number }[];
+}
 
 export function SettingsPage() {
   const [tab, setTab] = useState<Tab>("variables");
@@ -30,6 +39,7 @@ export function SettingsPage() {
               { value: "variables", label: "Global Variables" },
               { value: "apikeys", label: "API Keys" },
               { value: "mcp", label: "MCP Servers" },
+              { value: "vectorstores", label: "Vector Stores" },
             ]}
           />
         </div>
@@ -37,6 +47,128 @@ export function SettingsPage() {
       {tab === "variables" && <VariablesTab />}
       {tab === "apikeys" && <ApiKeysTab />}
       {tab === "mcp" && <McpServersTab />}
+      {tab === "vectorstores" && <VectorStoresTab />}
+    </div>
+  );
+}
+
+// ------------------------------------------------------------------ Vector Stores (§8b.3/§11.8)
+function VectorStoresTab() {
+  const queryClient = useQueryClient();
+  const conns = useQuery({
+    queryKey: ["vectorstores"],
+    queryFn: async (): Promise<VectorConn[]> => {
+      const r = await fetch("/api/v1/vectorstores");
+      return r.ok ? r.json() : [];
+    },
+  });
+  const backends = useQuery({
+    queryKey: ["vs-backends"],
+    queryFn: async (): Promise<{ installed: string[]; all: string[] }> => {
+      const r = await fetch("/api/v1/vectorstores/backends");
+      return r.ok ? r.json() : { installed: [], all: [] };
+    },
+  });
+  const [name, setName] = useState("");
+  const [backend, setBackend] = useState("local");
+
+  const create = useMutation({
+    mutationFn: async () => {
+      const r = await fetch("/api/v1/vectorstores", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name, backend, config: {} }),
+      });
+      if (!r.ok) throw new Error(await r.text());
+    },
+    onSuccess: () => {
+      setName("");
+      queryClient.invalidateQueries({ queryKey: ["vectorstores"] });
+      toast.success("connection created");
+    },
+    onError: (e) => toast.error((e as Error).message),
+  });
+  const remove = useMutation({
+    mutationFn: async (n: string) => {
+      await fetch(`/api/v1/vectorstores/${n}`, { method: "DELETE" });
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["vectorstores"] }),
+  });
+
+  return (
+    <div className="max-w-3xl space-y-4">
+      <p className="text-xs text-text-3">
+        Installed backends:{" "}
+        <span className="font-mono text-text-2">
+          {(backends.data?.installed ?? ["local"]).join(", ")}
+        </span>
+      </p>
+      <div className="flex items-end gap-2">
+        <div>
+          <label className="mb-1 block text-xs text-text-2">Name</label>
+          <Input value={name} placeholder="prod-qdrant" onChange={(e) => setName(e.target.value)} />
+        </div>
+        <div>
+          <label className="mb-1 block text-xs text-text-2">Backend</label>
+          <Select value={backend} onChange={(e) => setBackend(e.target.value)}>
+            {(backends.data?.all ?? ["local"]).map((b) => (
+              <option key={b} value={b}>
+                {b}
+              </option>
+            ))}
+          </Select>
+        </div>
+        <Button disabled={!name || create.isPending} onClick={() => create.mutate()}>
+          Add connection
+        </Button>
+      </div>
+      <div className="space-y-2">
+        {(conns.data ?? []).map((c) => (
+          <div key={c.name} className="gf-card p-3">
+            <div className="flex items-center gap-2">
+              <span
+                className="h-2 w-2 rounded-full"
+                style={{ background: c.ok ? "var(--color-success)" : "var(--color-danger)" }}
+                title={c.ok ? "healthy" : c.error ?? "unreachable"}
+              />
+              <span className="font-mono text-sm text-text-1">{c.name}</span>
+              <Badge>{c.backend}</Badge>
+              {c.managed && <Badge>managed</Badge>}
+              {c.name !== "local" && (
+                <button
+                  className="ml-auto text-xs text-text-3 hover:text-danger"
+                  onClick={() => remove.mutate(c.name)}
+                >
+                  delete
+                </button>
+              )}
+            </div>
+            {c.error && <p className="mt-1 text-[11px] text-danger">{c.error}</p>}
+            {c.collections && c.collections.length > 0 && (
+              <table className="mt-2 w-full text-left text-[11px] text-text-2">
+                <thead className="text-text-3">
+                  <tr>
+                    <th className="py-0.5">collection</th>
+                    <th>dim</th>
+                    <th>metric</th>
+                    <th>count</th>
+                  </tr>
+                </thead>
+                <tbody className="font-mono tabular-nums">
+                  {c.collections.map((col) => (
+                    <tr key={col.name}>
+                      <td className="py-0.5">{col.name}</td>
+                      <td>{col.dim}</td>
+                      <td>{col.metric}</td>
+                      <td>{col.count}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

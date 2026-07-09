@@ -5,9 +5,14 @@ from __future__ import annotations
 import asyncio
 import sys
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from rich.console import Console
+
+if TYPE_CHECKING:
+    from collections.abc import Coroutine
+
+    from lga.services.settings import Settings
 
 console = Console()
 err_console = Console(stderr=True)
@@ -37,7 +42,7 @@ def load_env_files(env_file: Path | None) -> None:
     load_dotenv(Path(".env"), override=False)
 
 
-def build_settings(env_file: Path | None = None, **flag_overrides: Any):
+def build_settings(env_file: Path | None = None, **flag_overrides: Any) -> Settings:
     """CLI flag > env > --env-file > ./.env > defaults."""
     from lga.services.settings import Settings
 
@@ -46,6 +51,6 @@ def build_settings(env_file: Path | None = None, **flag_overrides: Any):
     return Settings(**overrides)
 
 
-def run_async(coro):
+def run_async[T](coro: Coroutine[Any, Any, T]) -> T:
     ensure_selector_policy()
     return asyncio.run(coro)

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -14,7 +16,7 @@ from lga.services.settings import Settings
 
 def create_engine(settings: Settings) -> AsyncEngine:
     url = settings.async_database_url
-    kwargs: dict = {"pool_pre_ping": True}
+    kwargs: dict[str, Any] = {"pool_pre_ping": True}
     if settings.is_sqlite:
         settings.ensure_dirs()
         settings.sqlite_db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -25,7 +27,7 @@ def create_engine(settings: Settings) -> AsyncEngine:
         from sqlalchemy import event
 
         @event.listens_for(engine.sync_engine, "connect")
-        def _sqlite_pragmas(dbapi_conn, _record):  # pragma: no cover - trivial
+        def _sqlite_pragmas(dbapi_conn: Any, _record: object) -> None:  # pragma: no cover - trivial
             cur = dbapi_conn.cursor()
             cur.execute("PRAGMA journal_mode=WAL")
             cur.execute("PRAGMA foreign_keys=ON")

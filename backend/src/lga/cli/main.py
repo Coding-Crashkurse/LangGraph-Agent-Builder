@@ -94,11 +94,14 @@ def version(json_out: Annotated[bool, typer.Option("--json/--no-json")] = False)
         langgraph_version = importlib.metadata.version("langgraph")
     except importlib.metadata.PackageNotFoundError:
         langgraph_version = "unknown"
+    from lga.vectorstores import installed_backends
+
     info = {
         "lga": lga_pkg.__version__,
         "a2a_protocol": str(protocol),
         "langgraph": langgraph_version,
         "db_backend": settings.storage_tier,
+        "vector_backends": installed_backends(),
     }
     if json_out:
         print(json.dumps(info))

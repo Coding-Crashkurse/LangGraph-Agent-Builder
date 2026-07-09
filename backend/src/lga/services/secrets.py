@@ -7,10 +7,10 @@ through the API). Env promotion: LGA_VAR_<NAME> / LGA_CRED_<NAME>.
 from __future__ import annotations
 
 import os
-from typing import Any
+from typing import Any, cast
 
 from cryptography.fernet import Fernet, InvalidToken
-from sqlalchemy import delete, select
+from sqlalchemy import CursorResult, delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from lga.db.models import GlobalVariableRow
@@ -52,7 +52,7 @@ class SecretsService:
                 delete(GlobalVariableRow).where(GlobalVariableRow.name == name)
             )
             await session.commit()
-            return bool(result.rowcount)
+            return bool(cast("CursorResult[Any]", result).rowcount)
 
     async def list(self) -> list[dict[str, Any]]:
         """Metadata only — credential values are never returned (write-only)."""

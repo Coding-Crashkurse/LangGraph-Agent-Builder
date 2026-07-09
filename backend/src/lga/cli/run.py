@@ -6,12 +6,17 @@ import asyncio
 import socket
 import sys
 from pathlib import Path
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated, Any
 
 import typer
 from rich.panel import Panel
 
 from lga.cli._common import build_settings, console, ensure_selector_policy
+
+if TYPE_CHECKING:
+    from fastapi import FastAPI
+
+    from lga.services.settings import Settings
 
 
 def _free_port(host: str, port: int, fallback: bool) -> int:
@@ -25,7 +30,7 @@ def _free_port(host: str, port: int, fallback: bool) -> int:
     raise typer.BadParameter(f"port {port} is busy (and fallback disabled/exhausted)")
 
 
-async def _served_summary(settings) -> tuple[list[str], list[str]]:
+async def _served_summary(settings: Settings) -> tuple[list[str], list[str]]:
     from lga.services.db import create_engine, create_sessionmaker
     from lga.services.flows import FlowService
 
@@ -73,7 +78,7 @@ def run_command(
     """Start the full lga server (Studio + A2A + MCP + frontend)."""
     import os
 
-    overrides: dict = {}
+    overrides: dict[str, Any] = {}
     if host is not None:
         overrides["host"] = host
     if port is not None:
@@ -100,13 +105,16 @@ def run_command(
         upgrade(settings)
     a2a_slugs, mcp_tools = asyncio.new_event_loop().run_until_complete(_served_summary(settings))
 
+    from lga.vectorstores import installed_backends
+
     url = f"http://{settings.host}:{settings.port}"
     lines = [
         f"[bold]lga[/bold] ready to serve on [link={url}]{url}[/link]",
         f"database: [cyan]{settings.storage_tier}[/cyan] ({settings.database_url})",
+        f"vector stores: [cyan]{', '.join(installed_backends())}[/cyan]",
         f"auth: {'[green]on[/green]' if settings.auth_enabled else '[yellow]off (dev)[/yellow]'}",
-        f"A2A agents: {', '.join(a2a_slugs) or '(none published)'}  →  {url}/a2a/{{slug}}",
-        f"MCP tools:  {', '.join(mcp_tools) or '(none published)'}  →  {url}/mcp",
+        f"A2A agents: {', '.join(a2a_slugs) or '(none published)'}  ->  {url}/a2a/{{slug}}",
+        f"MCP tools:  {', '.join(mcp_tools) or '(none published)'}  ->  {url}/mcp",
     ]
     console.print(Panel("\n".join(lines), border_style="cyan", title="lga run"))
 
@@ -132,7 +140,7 @@ def run_command(
         handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s"))
         logging.getLogger().addHandler(handler)
 
-    ssl_kwargs: dict = {}
+    ssl_kwargs: dict[str, Any] = {}
     if settings.ssl_cert_file and settings.ssl_key_file:
         ssl_kwargs = {
             "ssl_certfile": str(settings.ssl_cert_file),
@@ -169,7 +177,7 @@ def run_command(
     asyncio.run(server.serve())
 
 
-def asgi_factory():
+def asgi_factory() -> FastAPI:
     """Factory for reload/multi-worker subprocesses."""
     import os
 

@@ -6,12 +6,16 @@ stay robust against prebuilt API drift.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 
 from langchain_core.messages import BaseMessage, SystemMessage, ToolMessage
 
 from lga.sdk import Component, Output, fields, ports
-from lga.sdk.ports import resolve_toolsets
+from lga.sdk.component import BuildContext, NodeFn
+from lga.sdk.ports import LazyToolset, ToolDef, resolve_toolsets
+
+if TYPE_CHECKING:
+    from langchain_core.language_models.chat_models import BaseChatModel
 from lga.sdk.runtime import get_run_context
 from lga.sdk.templating import message_text
 
@@ -28,9 +32,10 @@ class LLMAgent(Component):
         fields.ModelInput(
             name="model", display_name="Model", required=True, as_port=ports.LANGUAGE_MODEL
         ),
-        fields.MultilineInput(
+        fields.PromptInput(
             name="system_prompt",
             display_name="System Prompt",
+            info="{variables} spawn input ports and resolve from ports or data.",
             default="You are a helpful assistant.",
         ),
         fields.ToolsInput(name="tools", display_name="Tools"),
@@ -49,24 +54,27 @@ class LLMAgent(Component):
     ]
     outputs = [Output(name="message", display_name="Message", port=ports.MESSAGE)]
 
-    def build(self, ctx):
+    def build(self, ctx: BuildContext) -> NodeFn:
         from lga.components.llm._models import resolve_model
+        from lga.components.llm.llm_call import collect_prompt_values
         from lga.runtime.tools import as_langchain_tools
+        from lga.sdk.templating import render_prompt
 
         async def node(state: dict[str, Any], config: Any) -> dict[str, Any]:
             rc = get_run_context(config)
-            tool_defs = await resolve_toolsets(ctx.tools)
+            tool_defs = await resolve_toolsets(cast(list[ToolDef | LazyToolset], ctx.tools))
             tools = as_langchain_tools(tool_defs)
             model = resolve_model(ctx.get_input(state, "model"))
             if tools:
                 try:
-                    model = model.bind_tools(tools)
+                    model = cast("BaseChatModel", model.bind_tools(tools))
                 except NotImplementedError:
                     rc.emit_log(
                         "warning", "model does not support tool binding; tools attached but unused"
                     )
 
-            system = str(ctx.get_field("system_prompt") or "")
+            template = str(ctx.get_field("system_prompt") or "")
+            system = render_prompt(template, collect_prompt_values(ctx, state, template))
             if ctx.get_field("use_documents"):
                 docs = ctx.get_input(state, "documents") or []
                 if docs:
@@ -95,7 +103,13 @@ class LLMAgent(Component):
                 if not tool_calls:
                     break
                 for call in tool_calls:
-                    rc.emit("agent.tool_call", {"tool": call["name"], "args": call.get("args", {})})
+                    import time as _time
+
+                    rc.emit(
+                        "tool_call",
+                        {"tool_name": call["name"], "args_preview": call.get("args", {})},
+                    )
+                    _t0 = _time.perf_counter()
                     tool = tools_by_name.get(call["name"])
                     if tool is None:
                         result: Any = f"Unknown tool: {call['name']}"
@@ -104,6 +118,16 @@ class LLMAgent(Component):
                             result = await tool.ainvoke(call.get("args", {}))
                         except Exception as exc:  # tool errors go back to the model
                             result = f"Tool error: {exc}"
+                    rc.emit(
+                        "tool_result",
+                        {
+                            "tool_name": call["name"],
+                            "result_preview": (result if isinstance(result, str) else str(result))[
+                                :300
+                            ],
+                            "duration_ms": round((_time.perf_counter() - _t0) * 1000, 2),
+                        },
+                    )
                     new_messages.append(
                         ToolMessage(
                             content=result if isinstance(result, str) else str(result),

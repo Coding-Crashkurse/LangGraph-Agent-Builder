@@ -7,24 +7,33 @@ ModelInput values look like {"provider": "openai", "model": "gpt-4o-mini",
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
+
+from lga.errors import LgaRuntimeError
+
+if TYPE_CHECKING:
+    from langchain_core.callbacks import CallbackManagerForLLMRun
+    from langchain_core.embeddings import Embeddings
+    from langchain_core.language_models.chat_models import BaseChatModel
+    from langchain_core.messages import BaseMessage
+    from langchain_core.outputs import ChatResult
 
 PROVIDERS = ("openai", "anthropic", "ollama", "fake", "echo")
 
 
-class ProviderNotInstalledError(RuntimeError):
+class ProviderNotInstalledError(LgaRuntimeError):
     def __init__(self, provider: str, extra: str) -> None:
         super().__init__(f"model provider {provider!r} is not installed — install lga[{extra}]")
 
 
-def _echo_chat_model(prefix: str = ""):
+def _echo_chat_model(prefix: str = "") -> BaseChatModel:
     """Deterministic chat model that echoes the last human message.
 
     Works everywhere a real model does (llm_call, llm_agent, llm_router) —
     flows stay fully testable without API keys (SPEC §1.5-6).
     """
     from langchain_core.language_models.chat_models import BaseChatModel
-    from langchain_core.messages import AIMessage, BaseMessage
+    from langchain_core.messages import AIMessage
     from langchain_core.outputs import ChatGeneration, ChatResult
 
     class EchoChatModel(BaseChatModel):
@@ -34,7 +43,13 @@ def _echo_chat_model(prefix: str = ""):
         def _llm_type(self) -> str:
             return "lga-echo"
 
-        def _generate(self, messages: list[BaseMessage], stop=None, run_manager=None, **kw):
+        def _generate(
+            self,
+            messages: list[BaseMessage],
+            stop: list[str] | None = None,
+            run_manager: CallbackManagerForLLMRun | None = None,
+            **kw: Any,
+        ) -> ChatResult:
             text = ""
             for message in reversed(messages):
                 if getattr(message, "type", "") == "human":
@@ -57,7 +72,7 @@ def parse_model_value(value: Any) -> dict[str, Any]:
     raise ValueError(f"unsupported model value: {value!r}")
 
 
-def resolve_model(value: Any):  # -> BaseChatModel
+def resolve_model(value: Any) -> BaseChatModel:
     cfg = parse_model_value(value)
     provider = str(cfg.get("provider", "")).lower()
     model = str(cfg.get("model", ""))
@@ -73,13 +88,13 @@ def resolve_model(value: Any):  # -> BaseChatModel
             raise ProviderNotInstalledError("openai", "openai") from exc
         if cfg.get("base_url"):
             kwargs["base_url"] = cfg["base_url"]
-        return ChatOpenAI(model=model, **kwargs)
+        return ChatOpenAI(model=model, **kwargs)  # type: ignore[call-arg]  # `model` is a pydantic alias langchain_openai exposes; unseen by mypy
     if provider == "anthropic":
         try:
             from langchain_anthropic import ChatAnthropic
         except ImportError as exc:
             raise ProviderNotInstalledError("anthropic", "anthropic") from exc
-        return ChatAnthropic(model=model, **kwargs)
+        return cast("BaseChatModel", ChatAnthropic(model=model, **kwargs))
     if provider == "ollama":
         try:
             from langchain_ollama import ChatOllama
@@ -87,7 +102,7 @@ def resolve_model(value: Any):  # -> BaseChatModel
             raise ProviderNotInstalledError("ollama", "ollama") from exc
         if cfg.get("base_url"):
             kwargs["base_url"] = cfg["base_url"]
-        return ChatOllama(model=model, **kwargs)
+        return cast("BaseChatModel", ChatOllama(model=model, **kwargs))
     if provider == "fake":
         # deterministic model for tests: replies with a fixed string
         from langchain_core.language_models.fake_chat_models import FakeListChatModel
@@ -100,7 +115,7 @@ def resolve_model(value: Any):  # -> BaseChatModel
     raise ValueError(f"unknown model provider {provider!r} (supported: {PROVIDERS})")
 
 
-def resolve_embeddings(value: Any):  # -> Embeddings
+def resolve_embeddings(value: Any) -> Embeddings:
     cfg = parse_model_value(value)
     provider = str(cfg.get("provider", "")).lower()
     model = str(cfg.get("model", ""))
@@ -115,9 +130,9 @@ def resolve_embeddings(value: Any):  # -> Embeddings
             from langchain_ollama import OllamaEmbeddings
         except ImportError as exc:
             raise ProviderNotInstalledError("ollama", "ollama") from exc
-        return OllamaEmbeddings(model=model)
-    if provider == "fake":
+        return cast("Embeddings", OllamaEmbeddings(model=model))
+    if provider in ("fake", "hash", "testing"):
         from langchain_core.embeddings.fake import DeterministicFakeEmbedding
 
-        return DeterministicFakeEmbedding(size=32)
+        return DeterministicFakeEmbedding(size=int(cfg.get("dim") or 32))
     raise ValueError(f"unknown embedding provider {provider!r}")

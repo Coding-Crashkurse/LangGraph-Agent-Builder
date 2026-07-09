@@ -6,18 +6,24 @@ Ports are Pydantic schemas; edge validation is structural, not bucket-based.
 from __future__ import annotations
 
 import functools
+from collections.abc import Awaitable, Callable, Iterable
 from enum import StrEnum
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
+
+if TYPE_CHECKING:
+    from langchain_core.messages import BaseMessage
 
 
 class PortFamily(StrEnum):
     MESSAGE = "MESSAGE"
     DATA = "DATA"
+    TABLE = "TABLE"
     DOCUMENTS = "DOCUMENTS"
     EMBEDDING = "EMBEDDING"
     MODEL = "MODEL"
+    VECTORSTORE = "VECTORSTORE"
     TOOLSET = "TOOLSET"
     ROUTE = "ROUTE"
     FILE = "FILE"
@@ -51,7 +57,7 @@ class Message(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
     files: list[FileRef] = Field(default_factory=list)
 
-    def to_langchain(self):  # -> BaseMessage
+    def to_langchain(self) -> BaseMessage:
         from langchain_core.messages import (
             AIMessage,
             HumanMessage,
@@ -80,7 +86,7 @@ class Message(BaseModel):
 
         if isinstance(msg, cls):
             return msg
-        role = "user"
+        role: Literal["user", "assistant", "system", "tool"] = "user"
         if isinstance(msg, AIMessage):
             role = "assistant"
         elif isinstance(msg, SystemMessage):
@@ -96,6 +102,18 @@ class Document(BaseModel):
     page_content: str
     metadata: dict[str, Any] = Field(default_factory=dict)
     score: float | None = None
+
+
+class VectorStoreHandle(BaseModel):
+    """Runtime handle for an injected vector store (SPEC §8b).
+
+    Carries the *name* of a server-managed connection plus an optional default
+    collection — never credentials, so it stays serializable and portable.
+    The concrete provider is resolved lazily via ``ctx.vectorstores.get(name)``.
+    """
+
+    connection: str
+    collection: str | None = None
 
 
 class ToolDef(BaseModel):
@@ -116,7 +134,7 @@ class ToolDef(BaseModel):
 class LazyToolset:
     """Deferred toolset (e.g. MCP listing needs IO) — resolved at first run."""
 
-    def __init__(self, factory) -> None:
+    def __init__(self, factory: Callable[[], Awaitable[Iterable[ToolDef]]]) -> None:
         self._factory = factory
         self._cache: list[ToolDef] | None = None
 
@@ -156,6 +174,12 @@ MESSAGES = PortSpec(
 )
 TEXT = PortSpec(schema_ref="lga:Text", json_schema={"type": "string"}, family=PortFamily.DATA)
 JSON = PortSpec(schema_ref="lga:Json", json_schema={"type": "object"}, family=PortFamily.DATA)
+TABLE = PortSpec(
+    schema_ref="lga:Table",
+    json_schema={"type": "array", "items": {"type": "object"}},
+    family=PortFamily.TABLE,
+    is_list=True,
+)
 DOCUMENTS = PortSpec(
     schema_ref="lga:Documents",
     json_schema={"type": "array", "items": _schema(Document)},
@@ -164,6 +188,11 @@ DOCUMENTS = PortSpec(
 )
 EMBEDDING = PortSpec(schema_ref="lga:Embedding", json_schema={}, family=PortFamily.EMBEDDING)
 LANGUAGE_MODEL = PortSpec(schema_ref="lga:LanguageModel", json_schema={}, family=PortFamily.MODEL)
+VECTOR_STORE = PortSpec(
+    schema_ref="lga:VectorStore",
+    json_schema=_schema(VectorStoreHandle),
+    family=PortFamily.VECTORSTORE,
+)
 TOOLSET = PortSpec(
     schema_ref="lga:Toolset",
     json_schema={"type": "array", "items": _schema(ToolDef)},
@@ -182,9 +211,11 @@ CORE_PORTS: dict[str, PortSpec] = {
         MESSAGES,
         TEXT,
         JSON,
+        TABLE,
         DOCUMENTS,
         EMBEDDING,
         LANGUAGE_MODEL,
+        VECTOR_STORE,
         TOOLSET,
         ROUTE,
         FILE_REF,

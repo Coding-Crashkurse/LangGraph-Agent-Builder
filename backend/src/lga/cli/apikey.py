@@ -3,17 +3,22 @@
 from __future__ import annotations
 
 import json
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated, Any
 
 import typer
 from rich.table import Table
 
 from lga.cli._common import build_settings, console, err_console, run_async
 
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncEngine
+
+    from lga.services.apikeys import ApiKeyService
+
 apikey_app = typer.Typer(help="Manage API keys (direct DB; works without a running server).")
 
 
-async def _service():
+async def _service() -> tuple[ApiKeyService, AsyncEngine]:
     from lga.services.apikeys import ApiKeyService
     from lga.services.db import create_engine, create_sessionmaker
     from lga.services.settings import get_settings
@@ -34,7 +39,7 @@ def create(
 ) -> None:
     build_settings(None)
 
-    async def _run():
+    async def _run() -> tuple[str, dict[str, Any]]:
         service, engine = await _service()
         try:
             return await service.create(scopes, name)
@@ -57,7 +62,7 @@ def create(
 def list_keys(json_out: Annotated[bool, typer.Option("--json/--no-json")] = False) -> None:
     build_settings(None)
 
-    async def _run():
+    async def _run() -> list[dict[str, Any]]:
         service, engine = await _service()
         try:
             return await service.list()
@@ -85,7 +90,7 @@ def list_keys(json_out: Annotated[bool, typer.Option("--json/--no-json")] = Fals
 def revoke(key_id: Annotated[str, typer.Argument()]) -> None:
     build_settings(None)
 
-    async def _run():
+    async def _run() -> bool:
         service, engine = await _service()
         try:
             return await service.revoke(key_id)

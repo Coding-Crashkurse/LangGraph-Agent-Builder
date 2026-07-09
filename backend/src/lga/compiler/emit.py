@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import time
-from typing import Any
+from collections.abc import Callable, Hashable
+from typing import Any, cast
 
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, START, StateGraph
@@ -12,7 +13,7 @@ from langgraph.graph import END, START, StateGraph
 from lga.compiler.ir import FlowIR, NodeIR
 from lga.schema.diagnostics import RuntimeError_, RuntimeErrorCode
 from lga.schema.state import FlowState
-from lga.sdk.component import BuildContext
+from lga.sdk.component import BuildContext, NodeFn
 from lga.sdk.ports import PortFamily
 from lga.sdk.runtime import _stream_write, current_node_id
 
@@ -29,7 +30,7 @@ def _preview(value: Any, limit: int = 200) -> Any:
     return s if len(s) <= limit else s[: limit - 1] + "…"
 
 
-def make_node_wrapper(node: NodeIR, fn, ctx: BuildContext):
+def make_node_wrapper(node: NodeIR, fn: NodeFn, ctx: BuildContext) -> NodeFn:
     node_id = node.id
     output_names = set(node.outputs.keys())
     route_labels = {name for name, o in node.outputs.items() if o.port.family == PortFamily.ROUTE}
@@ -113,7 +114,7 @@ def pure_tool_providers(ir: FlowIR) -> set[str]:
     return out
 
 
-def wrap_component(component_cls: Any, ctx: BuildContext):
+def wrap_component(component_cls: Any, ctx: BuildContext) -> NodeFn:
     """Public wrapper builder — used by exported standalone flow.py files."""
     from types import SimpleNamespace
 
@@ -123,8 +124,8 @@ def wrap_component(component_cls: Any, ctx: BuildContext):
     return make_node_wrapper(shim, fn, ctx)  # type: ignore[arg-type]
 
 
-def emit(ir: FlowIR, contexts: dict[str, BuildContext]) -> StateGraph:
-    graph: StateGraph = StateGraph(FlowState)
+def emit(ir: FlowIR, contexts: dict[str, BuildContext]) -> StateGraph[FlowState]:
+    graph: StateGraph[FlowState] = StateGraph(FlowState)
     providers = pure_tool_providers(ir)
 
     for node in ir.nodes.values():
@@ -157,13 +158,15 @@ def emit(ir: FlowIR, contexts: dict[str, BuildContext]) -> StateGraph:
 
     for node_id, table in routers.items():
 
-        def make_reader(nid: str):
+        def make_reader(nid: str) -> Callable[[dict[str, Any]], str]:
             def route_reader(state: dict[str, Any]) -> str:
-                return state.get("route", {}).get(nid, "")
+                return cast(str, state.get("route", {}).get(nid, ""))
 
             return route_reader
 
-        graph.add_conditional_edges(node_id, make_reader(node_id), dict(table))
+        graph.add_conditional_edges(
+            node_id, make_reader(node_id), cast("dict[Hashable, str]", dict(table))
+        )
 
     # terminal nodes and dead-end branches finish the graph
     for node in ir.nodes.values():

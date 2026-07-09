@@ -14,6 +14,8 @@ const EVENT_NAMES = [
   "node_token",
   "node_status",
   "node_log",
+  "tool_call",
+  "tool_result",
   "node_finished",
   "node_error",
   "interrupt_raised",
@@ -70,7 +72,9 @@ export async function streamRun(
     const { done, value } = await reader.read();
     if (done) break;
     buffer += decoder.decode(value, { stream: true });
-    const frames = buffer.split("\n\n");
+    // frame separator is a blank line — sse-starlette emits CRLF (\r\n\r\n),
+    // the a2a-sdk emits LF (\n\n); accept both or we parse zero events
+    const frames = buffer.split(/\r?\n\r?\n/);
     buffer = frames.pop() ?? "";
     for (const frame of frames) {
       const dataLine = frame.split("\n").find((line) => line.startsWith("data:"));

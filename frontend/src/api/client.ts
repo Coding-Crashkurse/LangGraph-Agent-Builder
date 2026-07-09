@@ -75,38 +75,38 @@ export const api = {
     list: async () => unwrap<FlowInfo[]>(await raw.GET("/api/v1/flows")),
     get: async (id: string) =>
       unwrap<FlowInfo>(
-        await raw.GET("/api/v1/flows/{flow_id}", { params: { path: { flow_id: id } } }),
+        await raw.GET("/api/v1/flows/{id_or_slug}", { params: { path: { id_or_slug: id } } }),
       ),
     create: async (spec: FlowSpec) =>
       unwrap<FlowInfo>(await raw.POST("/api/v1/flows", { body: { spec } as never })),
     update: async (id: string, spec: FlowSpec) =>
       unwrap<FlowInfo>(
-        await raw.PATCH("/api/v1/flows/{flow_id}", {
-          params: { path: { flow_id: id } },
+        await raw.PATCH("/api/v1/flows/{id_or_slug}", {
+          params: { path: { id_or_slug: id } },
           body: { spec } as never,
         }),
       ),
     delete: async (id: string) =>
       unwrap<void>(
-        await raw.DELETE("/api/v1/flows/{flow_id}", { params: { path: { flow_id: id } } }),
+        await raw.DELETE("/api/v1/flows/{id_or_slug}", { params: { path: { id_or_slug: id } } }),
       ),
     validate: async (id: string, deep = false) =>
       unwrap<ValidateResponse>(
-        await raw.POST("/api/v1/flows/{flow_id}/validate", {
-          params: { path: { flow_id: id }, query: { deep } },
+        await raw.POST("/api/v1/flows/{id_or_slug}/validate", {
+          params: { path: { id_or_slug: id }, query: { deep } },
         }),
       ),
     publish: async (id: string, body: { version: string; changelog: string }) =>
       unwrap<{ published: boolean; version?: VersionInfo; diagnostics: Diagnostic[] }>(
-        await raw.POST("/api/v1/flows/{flow_id}/publish", {
-          params: { path: { flow_id: id } },
+        await raw.POST("/api/v1/flows/{id_or_slug}/publish", {
+          params: { path: { id_or_slug: id } },
           body: body as never,
         }),
       ),
     versions: async (id: string) =>
       unwrap<VersionInfo[]>(
-        await raw.GET("/api/v1/flows/{flow_id}/versions", {
-          params: { path: { flow_id: id } },
+        await raw.GET("/api/v1/flows/{id_or_slug}/versions", {
+          params: { path: { id_or_slug: id } },
         }),
       ),
     run: async (
@@ -121,8 +121,8 @@ export const api = {
       },
     ) =>
       unwrap<RunResult & { run_id: string; thread_id: string }>(
-        await raw.POST("/api/v1/flows/{flow_ref}/run", {
-          params: { path: { flow_ref: id } },
+        await raw.POST("/api/v1/flows/{id_or_slug}/run", {
+          params: { path: { id_or_slug: id } },
           body: body as never,
         }),
       ),

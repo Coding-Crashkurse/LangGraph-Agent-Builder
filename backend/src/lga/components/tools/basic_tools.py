@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import ast
 import operator
+from collections.abc import Callable
 from typing import Any
 
-from lga.sdk import Component, Output, fields, ports
+from lga.sdk import BuildContext, Component, Output, fields, ports
+from lga.sdk.component import NodeFn
 
-_OPS = {
+_OPS: dict[type[ast.AST], Callable[..., float]] = {
     ast.Add: operator.add,
     ast.Sub: operator.sub,
     ast.Mult: operator.mul,
@@ -60,7 +62,7 @@ class Calculator(Component):
     ]
     outputs = [Output(name="text", display_name="Result", port=ports.TEXT)]
 
-    def build(self, ctx):
+    def build(self, ctx: BuildContext) -> NodeFn:
         async def node(state: dict[str, Any], config: Any) -> dict[str, Any]:
             expression = str(
                 ctx.get_input(state, "expression") or ctx.get_field("expression") or "0"
@@ -101,7 +103,7 @@ class HttpRequest(Component):
         Output(name="json", display_name="Json", port=ports.JSON),
     ]
 
-    def build(self, ctx):
+    def build(self, ctx: BuildContext) -> NodeFn:
         settings = ctx.settings
 
         async def node(state: dict[str, Any], config: Any) -> dict[str, Any]:
@@ -132,5 +134,102 @@ class HttpRequest(Component):
             except ValueError:
                 json_out = {"status": response.status_code}
             return {"text": text, "json": json_out}
+
+        return node
+
+
+class WebSearch(Component):
+    component_id = "lga.tools.web_search"
+    display_name = "Web Search"
+    description = "Provider-agnostic web search → Table (SSRF-guarded searxng)."
+    icon = "search"
+    category = "tools"
+    beta = True
+    tool_mode_supported = True
+    tool_mode_default = True
+
+    inputs = [
+        fields.DropdownInput(
+            name="provider",
+            display_name="Provider",
+            options=["tavily", "serpapi", "searxng"],
+            default="tavily",
+        ),
+        fields.QueryInput(name="query", display_name="Query", required=True),
+        fields.IntInput(name="max_results", display_name="Max Results", default=5, min=1, max=20),
+        fields.SecretInput(
+            name="api_key",
+            display_name="API Key",
+            info="Required for tavily / serpapi; searxng needs none.",
+        ),
+        fields.StrInput(
+            name="searxng_url",
+            display_name="SearXNG URL",
+            info="Base URL when provider = searxng.",
+            advanced=True,
+        ),
+    ]
+    outputs = [Output(name="table", display_name="Results", port=ports.TABLE)]
+
+    def build(self, ctx: BuildContext) -> NodeFn:
+        settings = ctx.settings
+
+        async def node(state: dict[str, Any], config: Any) -> dict[str, Any]:
+            import httpx
+
+            provider = str(ctx.get_field("provider") or "tavily")
+            query = str(ctx.get_input(state, "query") or ctx.get_field("query") or "")
+            k = int(ctx.get_field("max_results") or 5)
+            api_key = str(ctx.get_field("api_key") or "")
+            rows: list[dict[str, Any]] = []
+            async with httpx.AsyncClient(timeout=20.0) as client:
+                if provider == "tavily":
+                    resp = await client.post(
+                        "https://api.tavily.com/search",
+                        json={"api_key": api_key, "query": query, "max_results": k},
+                    )
+                    for r in resp.json().get("results", [])[:k]:
+                        rows.append(
+                            {
+                                "title": r.get("title"),
+                                "url": r.get("url"),
+                                "content": r.get("content"),
+                            }
+                        )
+                elif provider == "serpapi":
+                    resp = await client.get(
+                        "https://serpapi.com/search",
+                        params={"q": query, "api_key": api_key, "num": k},
+                    )
+                    for r in resp.json().get("organic_results", [])[:k]:
+                        rows.append(
+                            {
+                                "title": r.get("title"),
+                                "url": r.get("link"),
+                                "content": r.get("snippet"),
+                            }
+                        )
+                elif provider == "searxng":
+                    from lga.a2a.push import SsrfError, validate_webhook_url
+                    from lga.services.settings import Settings
+
+                    base = str(ctx.get_field("searxng_url") or "")
+                    try:
+                        validate_webhook_url(base, settings or Settings())
+                    except SsrfError as exc:
+                        return {"table": [{"error": str(exc)}]}
+                    resp = await client.get(
+                        base.rstrip("/") + "/search",
+                        params={"q": query, "format": "json"},
+                    )
+                    for r in resp.json().get("results", [])[:k]:
+                        rows.append(
+                            {
+                                "title": r.get("title"),
+                                "url": r.get("url"),
+                                "content": r.get("content"),
+                            }
+                        )
+            return {"table": rows}
 
         return node

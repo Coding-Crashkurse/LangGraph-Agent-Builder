@@ -1,32 +1,32 @@
-@import "tailwindcss";
+@import "./theme.css";
 @import "@xyflow/react/dist/style.css";
 
-/* GraphForge — dark ops-tool theme. Dark-first by design (builder + debug
-   dashboards are night-shift tools); html.dark is set in index.html. */
+/* lga design system (SPEC §11.1–11.4, Appendix C). theme.css owns all colour
+   tokens; the legacy surface / accent / cat names below are compatibility
+   aliases remapped onto the new graphite palette so existing utilities adopt
+   the v2 look without a mass rename. New code should use the theme.css tokens. */
 
 @theme {
-  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, "Cascadia Code", Consolas, monospace;
+  /* legacy chrome aliases → graphite palette */
+  --color-surface-950: #0e1116;
+  --color-surface-900: #151a21;
+  --color-surface-850: #171d25;
+  --color-surface-800: #1c232d;
+  --color-surface-700: #232c38;
+  --color-line: #2a334077;
 
-  --color-surface-950: #09090b;
-  --color-surface-900: #101014;
-  --color-surface-850: #16161c;
-  --color-surface-800: #1d1d26;
-  --color-surface-700: #2a2a37;
+  /* legacy accent aliases → single violet accent */
+  --color-accent-300: #b3a9fa;
+  --color-accent-400: #8b7cf7;
+  --color-accent-500: #8b7cf7;
+  --color-accent-600: #7264d6;
 
-  --color-line: #26263077;
-
-  --color-accent-300: #c4b5fd;
-  --color-accent-400: #a78bfa;
-  --color-accent-500: #8b5cf6;
-  --color-accent-600: #7c3aed;
-
-  /* category colors */
+  /* category colours (align to port families) */
   --color-cat-llm: #a78bfa;
   --color-cat-rag: #34d399;
   --color-cat-flow: #fbbf24;
   --color-cat-tools: #38bdf8;
-  --color-cat-io: #fb7185;
+  --color-cat-io: #fb923c;
 }
 
 html,
@@ -36,29 +36,29 @@ body,
 }
 
 body {
-  @apply bg-surface-950 text-zinc-200 antialiased;
+  @apply bg-canvas text-text-1 antialiased;
   color-scheme: dark;
-  font-feature-settings: "cv02", "cv03", "cv11";
-  /* subtle brand atmosphere instead of flat black */
-  background-image:
-    radial-gradient(1100px 520px at 12% -8%, rgb(139 92 246 / 0.09), transparent 62%),
-    radial-gradient(900px 480px at 88% 112%, rgb(56 189 248 / 0.06), transparent 60%),
-    radial-gradient(700px 380px at 55% 45%, rgb(139 92 246 / 0.03), transparent 65%);
-  background-attachment: fixed;
+  font-feature-settings: "tnum";
+}
+
+/* Canvas texture: 24px dot grid, dots fade below 60% zoom (§11.1). No glow. */
+.react-flow__pane,
+.gf-canvas {
+  background-color: var(--color-canvas);
+  background-image: radial-gradient(var(--color-border) 1px, transparent 1px);
+  background-size: 24px 24px;
 }
 
 /* ---- shared surfaces & motion ------------------------------------------- */
 .gf-card {
-  @apply relative rounded-xl border border-surface-800 transition-all duration-200;
-  background:
-    linear-gradient(180deg, var(--color-surface-850) 0%, var(--color-surface-900) 100%);
+  @apply relative rounded-xl border border-border bg-surface-1 transition-all;
+  transition-duration: var(--duration-panel);
 }
 .gf-card:hover {
-  @apply -translate-y-0.5 border-surface-700;
+  @apply border-border-strong;
   box-shadow:
-    0 12px 32px -14px rgb(0 0 0 / 0.85),
-    0 0 0 1px rgb(139 92 246 / 0.14),
-    0 6px 28px -10px rgb(139 92 246 / 0.14);
+    0 1px 2px rgb(0 0 0 / 0.4),
+    0 8px 24px rgb(0 0 0 / 0.28);
 }
 
 @keyframes gf-fade-up {
@@ -82,14 +82,14 @@ body {
   }
 }
 .gf-animate-in {
-  animation: gf-fade-up 0.3s ease-out both;
+  animation: gf-fade-up 0.3s var(--ease-standard) both;
 }
 .gf-zoom-in {
-  animation: gf-zoom-in 0.16s ease-out both;
+  animation: gf-zoom-in 0.16s var(--ease-standard) both;
 }
 
 ::selection {
-  background: color-mix(in srgb, var(--color-accent-500) 40%, transparent);
+  background: color-mix(in srgb, var(--color-accent) 40%, transparent);
 }
 
 *::-webkit-scrollbar {
@@ -97,7 +97,7 @@ body {
   height: 10px;
 }
 *::-webkit-scrollbar-thumb {
-  background: #2a2a37;
+  background: var(--color-surface-3);
   border-radius: 8px;
   border: 2px solid transparent;
   background-clip: content-box;
@@ -108,55 +108,97 @@ body {
 
 /* ---- React Flow re-skin -------------------------------------------------- */
 .react-flow {
-  --xy-background-color: var(--color-surface-950);
-  --xy-edge-stroke: #52525b;
-  --xy-edge-stroke-selected: var(--color-accent-400);
+  --xy-background-color: var(--color-canvas);
+  --xy-edge-stroke: var(--color-border-strong);
+  --xy-edge-stroke-selected: var(--color-accent);
   --xy-attribution-background-color: transparent;
 }
 .react-flow__attribution {
-  color: #3f3f46;
+  color: var(--color-text-3);
 }
 .react-flow__controls {
-  @apply overflow-hidden rounded-lg border border-surface-700 bg-surface-900 shadow-none;
+  @apply overflow-hidden rounded-lg border border-border bg-surface-1 shadow-none;
 }
 .react-flow__controls-button {
-  @apply border-surface-700 bg-surface-900 text-zinc-400;
+  @apply border-border bg-surface-1 text-text-2;
 }
 .react-flow__controls-button:hover {
-  @apply bg-surface-800 text-zinc-100;
+  @apply bg-surface-2 text-text-1;
 }
 .react-flow__controls-button svg {
   fill: currentColor;
 }
 .react-flow__edge.selected .react-flow__edge-path {
-  stroke: var(--color-accent-400);
+  stroke: var(--color-accent);
 }
 .react-flow__handle {
-  @apply h-3 w-3 rounded-full border-2 border-surface-950;
-  background: #71717a;
+  @apply h-3 w-3 rounded-full;
+  border: 2px solid var(--color-surface-1);
+  background: var(--color-text-3);
 }
 .react-flow__handle.connectionindicator:hover {
-  background: var(--color-accent-400);
+  background: var(--color-accent);
 }
 .react-flow__minimap {
-  @apply rounded-lg border border-surface-700;
-  background: var(--color-surface-900) !important;
+  @apply rounded-lg border border-border;
+  background: var(--color-surface-1) !important;
 }
 
-@keyframes gf-pulse {
-  0%,
-  100% {
-    box-shadow: 0 0 0 0 color-mix(in srgb, var(--gf-pulse-color, #fbbf24) 55%, transparent);
+/* ---- node run states (§11.2) -------------------------------------------- */
+@keyframes gf-hairline {
+  0% {
+    background-position: 0 0;
   }
-  50% {
-    box-shadow: 0 0 0 7px transparent;
+  100% {
+    background-position: 200% 0;
   }
 }
 .gf-node-active {
-  --gf-pulse-color: #60a5fa;
-  animation: gf-pulse 1.4s ease-in-out infinite;
+  position: relative;
+}
+.gf-node-active::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 2px;
+  border-radius: var(--radius-node) var(--radius-node) 0 0;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--color-accent),
+    transparent
+  );
+  background-size: 200% 100%;
+  animation: gf-hairline 0.9s linear infinite;
+}
+@keyframes gf-flash {
+  from {
+    box-shadow: 0 0 0 1.5px var(--color-success);
+  }
+  to {
+    box-shadow: 0 0 0 1.5px transparent;
+  }
+}
+.gf-node-finished {
+  animation: gf-flash 600ms var(--ease-standard);
 }
 .gf-node-interrupted {
-  --gf-pulse-color: #fbbf24;
-  animation: gf-pulse 1.4s ease-in-out infinite;
+  box-shadow: 0 0 0 1.5px var(--color-warning);
+}
+.gf-node-error {
+  box-shadow: 0 0 0 1.5px var(--color-danger);
+}
+.gf-node-dimmed {
+  opacity: 0.35;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gf-node-active::before {
+    animation: none;
+    background: var(--color-accent);
+  }
+  .gf-animate-in,
+  .gf-zoom-in {
+    animation: none;
+  }
 }

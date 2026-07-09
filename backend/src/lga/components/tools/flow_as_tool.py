@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
-from lga.sdk import Component, Output, fields, ports
+from lga.sdk import BuildContext, Component, Output, fields, ports
+from lga.sdk.component import NodeFn
 from lga.sdk.ports import LazyToolset, ToolDef
 
 
@@ -29,7 +30,7 @@ class FlowAsTool(Component):
     ]
     outputs = [Output(name="toolset", display_name="Toolset", port=ports.TOOLSET)]
 
-    def provide_tools(self, ctx) -> LazyToolset:
+    def provide_tools(self, ctx: BuildContext) -> LazyToolset:
         slug = str(ctx.get_field("flow_slug") or "")
         tool_name = str(ctx.get_field("tool_name") or slug.replace("-", "_"))
         tool_description = str(ctx.get_field("tool_description") or "")
@@ -58,7 +59,7 @@ class FlowAsTool(Component):
                     raise RuntimeError(
                         f"child flow {slug} ended {result.status}: {result.error_message or ''}"
                     )
-                return result.result_text
+                return cast(str, result.result_text)
 
             description = tool_description or flow.description or flow.name
             return [
@@ -76,7 +77,7 @@ class FlowAsTool(Component):
 
         return LazyToolset(factory)
 
-    def build(self, ctx):
+    def build(self, ctx: BuildContext) -> NodeFn:
         async def node(state: dict[str, Any], config: Any) -> dict[str, Any]:
             return {}
 

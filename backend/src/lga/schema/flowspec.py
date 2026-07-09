@@ -7,9 +7,11 @@ import re
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
-SCHEMA_VERSION = "1"
+from lga.errors import LgaValueError
+
+SCHEMA_VERSION = "2"
 RESERVED_NODE_IDS = {"start", "end"}
 SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
@@ -45,6 +47,7 @@ class FlowMeta(BaseModel):
     description: str = ""
     icon: str = "bot"
     tags: list[str] = Field(default_factory=list)
+    locked: bool = False  # SPEC §9.1 — PATCH rejected while locked
     a2a: A2ASettings = Field(default_factory=A2ASettings)
     mcp: McpSettings = Field(default_factory=McpSettings)
     settings: FlowRunSettings = Field(default_factory=FlowRunSettings)
@@ -55,6 +58,24 @@ class FlowMeta(BaseModel):
         if not SLUG_RE.match(v):
             raise ValueError("slug must be url-safe kebab-case ([a-z0-9-])")
         return v
+
+    @model_validator(mode="after")
+    def _exclusive_serving(self) -> FlowMeta:
+        """Serving surfaces are mutually exclusive (SPEC §7.1/§8.1): a published
+        flow is an A2A agent XOR an MCP tool XOR a plain REST API — never two at
+        once. A2A takes precedence if a spec somehow enables both."""
+        if self.a2a.enabled and self.mcp.enabled:
+            self.mcp.enabled = False
+        return self
+
+    @property
+    def serve_mode(self) -> Literal["a2a", "mcp", "api"]:
+        """The single active serving surface (A2A default for new flows)."""
+        if self.a2a.enabled:
+            return "a2a"
+        if self.mcp.enabled:
+            return "mcp"
+        return "api"
 
 
 class Position(BaseModel):
@@ -124,15 +145,28 @@ class FlowSpec(BaseModel):
         return json.dumps(self.model_dump(mode="json"), sort_keys=True, separators=(",", ":"))
 
 
-class FlowSpecError(ValueError):
+class FlowSpecError(LgaValueError):
     """Raised by parse_flowspec on schema violations (→ E001)."""
+
+
+def _migrate_1_to_2(raw: dict[str, Any]) -> dict[str, Any]:
+    """v1 → v2 (lossless): adds ``flow.locked`` and the ``flow.mcp`` block."""
+    raw = dict(raw)
+    flow = dict(raw.get("flow") or {})
+    flow.setdefault("locked", False)
+    flow.setdefault("mcp", {"enabled": False})
+    raw["flow"] = flow
+    raw["schema_version"] = "2"
+    return raw
 
 
 def migrate_schema(raw: dict[str, Any]) -> dict[str, Any]:
     """Migrate older schema_versions to the current one."""
-    version = str(raw.get("schema_version", ""))
+    version = str(raw.get("schema_version", "") or "1")
     if version == SCHEMA_VERSION:
         return raw
+    if version == "1":
+        return _migrate_1_to_2(raw)
     raise FlowSpecError(f"unknown schema_version {version!r} (supported: {SCHEMA_VERSION})")
 
 

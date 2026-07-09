@@ -57,6 +57,24 @@ jobs:
         working-directory: backend
         run: uv run pytest ../examples -q
 
+  quality:
+    name: quality (mypy --strict + coverage)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - name: sync
+        working-directory: backend
+        run: uv sync
+      - name: mypy --strict (REFACTOR.md §2/§8)
+        working-directory: backend
+        run: uv run mypy
+      - name: coverage >= 85% on core (REFACTOR.md §4)
+        working-directory: backend
+        run: uv run pytest tests -q --cov=lga --cov-report=term-missing
+
   frontend:
     runs-on: ubuntu-latest
     steps:

@@ -22,7 +22,8 @@ class VariableBody(BaseModel):
 
 @router.get("/variables")
 async def list_variables(svc: Services) -> list[dict[str, Any]]:
-    return await svc.secrets.list()
+    variables: list[dict[str, Any]] = await svc.secrets.list()
+    return variables
 
 
 @router.post("/variables", status_code=201)
@@ -45,7 +46,8 @@ class ApiKeyBody(BaseModel):
 
 @router.get("/apikeys")
 async def list_apikeys(svc: Services) -> list[dict[str, Any]]:
-    return await svc.apikeys.list()
+    keys: list[dict[str, Any]] = await svc.apikeys.list()
+    return keys
 
 
 @router.post("/apikeys", status_code=201)
@@ -70,16 +72,18 @@ async def upload_file(file: UploadFile, svc: Services) -> dict[str, Any]:
 
     content = await file.read()
     try:
-        return await svc.files.save(
+        saved: dict[str, Any] = await svc.files.save(
             file.filename or "upload", file.content_type or "application/octet-stream", content
         )
+        return saved
     except FileTooLargeError as exc:
         raise HTTPException(413, str(exc)) from exc
 
 
 @router.get("/files")
 async def list_files(svc: Services) -> list[dict[str, Any]]:
-    return await svc.files.list()
+    files: list[dict[str, Any]] = await svc.files.list()
+    return files
 
 
 # ---------------------------------------------------------------- mcp servers (§8.3, §11.7)
@@ -91,12 +95,14 @@ class McpServerBody(BaseModel):
 
 @router.get("/mcp-servers")
 async def list_mcp_servers(svc: Services) -> list[dict[str, Any]]:
-    return await svc.mcp_servers.list()
+    servers: list[dict[str, Any]] = await svc.mcp_servers.list()
+    return servers
 
 
 @router.post("/mcp-servers", status_code=201)
 async def upsert_mcp_server(body: McpServerBody, svc: Services) -> dict[str, Any]:
-    return await svc.mcp_servers.upsert(body.name, body.transport, body.config)
+    server: dict[str, Any] = await svc.mcp_servers.upsert(body.name, body.transport, body.config)
+    return server
 
 
 @router.delete("/mcp-servers/{name}", status_code=204)
@@ -143,11 +149,14 @@ async def health(svc: Services) -> dict[str, Any]:
     except Exception:
         checkpointer_ok = False
     status = "ok" if db_ok and checkpointer_ok else "degraded"
+    from lga.vectorstores import installed_backends
+
     return {
         "status": status,
         "db": db_ok,
         "checkpointer": checkpointer_ok,
         "tier": svc.settings.storage_tier,
+        "vector_backends": installed_backends(),
     }
 
 
@@ -163,11 +172,14 @@ async def version(svc: Services) -> dict[str, Any]:
         protocol = DEFAULT_PROTOCOL_VERSION
     except Exception:
         protocol = "0.3.x"
+    from lga.vectorstores import installed_backends
+
     return {
         "lga": lga_pkg.__version__,
         "a2a_protocol": protocol,
         "langgraph": getattr(langgraph, "__version__", "unknown"),
         "db_backend": svc.settings.storage_tier,
+        "vector_backends": installed_backends(),
     }
 
 

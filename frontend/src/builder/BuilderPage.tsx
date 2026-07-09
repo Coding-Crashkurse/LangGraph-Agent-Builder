@@ -280,6 +280,7 @@ export function BuilderPage() {
   const [publishOpen, setPublishOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   const [playgroundOpen, setPlaygroundOpen] = useState(false);
+  const [needsValidation, setNeedsValidation] = useState(true);
 
   const componentsQuery = useQuery({ queryKey: ["components"], queryFn: api.components.list });
   const flowQuery = useQuery({
@@ -344,21 +345,41 @@ export function BuilderPage() {
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
   }, []);
 
-  const validate = async (deep = false) => {
+  const validate = async (deep = false, silent = false) => {
     if (!store.flow) return;
     try {
       if (store.dirty) await api.flows.update(store.flow.id, store.currentSpec());
       const result = await api.flows.validate(store.flow.id, deep);
       store.setDiagnostics(result.diagnostics);
-      const errors = result.diagnostics.filter((d) => d.severity === "error").length;
-      if (errors === 0) toast.success(`valid — ${result.diagnostics.length} diagnostics`);
-      else toast.error(`${errors} error(s)`);
+      // Applying coercions rewrites edges; skip in the silent auto-validate so
+      // the debounced effect does not re-trigger itself.
+      if (!silent && result.compile_report?.coercions) {
+        store.applyCoercions(result.compile_report.coercions);
+      }
+      setNeedsValidation(false);
+      if (!silent) {
+        const errors = result.diagnostics.filter((d) => d.severity === "error").length;
+        if (errors === 0) toast.success(`valid — ${result.diagnostics.length} diagnostics`);
+        else toast.error(`${errors} error(s)`);
+      }
     } catch (error) {
-      toast.error(`validate failed: ${(error as Error).message}`);
+      if (!silent) toast.error(`validate failed: ${(error as Error).message}`);
     }
   };
 
+  // Publishing is gated on a CURRENT, clean validation. Every edit marks the
+  // graph unvalidated; a debounced silent validation refreshes diagnostics so
+  // the Publish button reflects reality without a manual Validate click.
+  useEffect(() => {
+    if (!store.flow) return;
+    setNeedsValidation(true);
+    const timer = setTimeout(() => void validate(false, true), 600);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [store.flow?.id, store.nodes, store.edges, store.baseSpec]);
+
   const hasErrors = store.diagnostics.some((d) => d.severity === "error");
+  const publishBlocked = hasErrors || needsValidation;
 
   if (!flowQuery.data || !componentsQuery.data) {
     return <div className="p-8 text-sm text-zinc-500">loading…</div>;
@@ -394,8 +415,14 @@ export function BuilderPage() {
             </Button>
             <Button
               onClick={() => setPublishOpen(true)}
-              disabled={hasErrors}
-              title={hasErrors ? "fix validation errors first" : "publish a version"}
+              disabled={publishBlocked}
+              title={
+                hasErrors
+                  ? "fix validation errors first"
+                  : needsValidation
+                    ? "validating…"
+                    : "publish a version"
+              }
             >
               Publish
             </Button>

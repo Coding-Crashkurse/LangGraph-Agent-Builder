@@ -37,6 +37,8 @@ cd backend
 uv sync
 uv run lga run --port 8010          # THE entry point (see Windows note below)
 uv run pytest                       # full backend suite (SQLite tier; +Postgres when :55432 up)
+uv run pytest --cov=lga             # + coverage gate (fail_under = 85, REFACTOR.md §4)
+uv run mypy                         # strict type-checker gate (REFACTOR.md §2/§8)
 uv run ruff check --fix && uv run ruff format
 
 cd frontend
@@ -45,8 +47,12 @@ pnpm lint && pnpm test && pnpm build
 pnpm gen:api                        # after changing API shapes: regen schema.gen.ts
 ```
 
-Quality gates before every commit: ruff clean, backend pytest green, frontend
-lint+test+build green, `uv run pytest ../examples` green.
+Quality gates before every commit: ruff clean, **`uv run mypy` (strict) clean**,
+backend pytest green with **coverage ≥ 85 %**, frontend lint+test+build green,
+`uv run pytest ../examples` green. Refactor standards (typing, DI-via-Protocol,
+error hierarchy, fakes-over-mocks tests) live in `REFACTOR.md` — its §0.0 records
+the binding decisions (package stays `lga`, no rename; Langflow-builder
+architecture stays; mypy strict; 85 % coverage).
 
 ## Machine constraints (this dev box)
 

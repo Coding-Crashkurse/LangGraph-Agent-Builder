@@ -273,9 +273,7 @@ def validate(ir: FlowIR) -> list[Diagnostic]:
         diags.append(D(DiagnosticCode.E030, "flow has no terminal node (e.g. `end`)"))
 
     # explicit endpoint rules: `start` must lead somewhere, terminals must be fed
-    if start is not None and not any(
-        e.kind in ("data", "router") for e in ir.out_edges("start")
-    ):
+    if start is not None and not any(e.kind in ("data", "router") for e in ir.out_edges("start")):
         diags.append(
             D(
                 DiagnosticCode.E030,
@@ -374,7 +372,7 @@ def validate(ir: FlowIR) -> list[Diagnostic]:
                         break
 
     # dedupe identical diagnostics (fan-out checks can repeat)
-    seen_keys: set[tuple] = set()
+    seen_keys: set[tuple[DiagnosticCode, str | None, str | None, str | None, str]] = set()
     unique: list[Diagnostic] = []
     for d in diags:
         key = (d.code, d.node_id, d.edge_id, d.field, d.message)

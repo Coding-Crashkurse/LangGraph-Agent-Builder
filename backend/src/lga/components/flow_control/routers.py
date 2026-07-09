@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from lga.sdk import Component, NodeKind, Output, fields, ports
-from lga.sdk.component import NodeConfig
+from lga.sdk import BuildContext, Component, NodeKind, Output, fields, ports
+from lga.sdk.component import NodeConfig, NodeFn
 from lga.sdk.runtime import get_run_context
 from lga.sdk.templating import eval_predicate, last_message_text
 
@@ -44,7 +44,7 @@ class LLMRouter(Component):
         fields.HandleField(name="input", display_name="Input", as_port=ports.MESSAGE),
     ]
 
-    def build(self, ctx):
+    def build(self, ctx: BuildContext) -> NodeFn:
         labels = [str(x) for x in ctx.get_field("labels") or []]
 
         async def node(state: dict[str, Any], config: Any) -> dict[str, Any]:
@@ -73,10 +73,14 @@ class LLMRouter(Component):
                     .strip()
                     .lower()
                 )
-                label = next((lb for lb in labels if lb.lower() in raw), None)
+                label = next((lb for lb in labels if lb.lower() == raw), None) or next(
+                    (lb for lb in labels if lb.lower() in raw), None
+                )
             else:
                 lowered = text.lower()
-                label = next((lb for lb in labels if lb.lower() in lowered), None)
+                label = next((lb for lb in labels if lb.lower() == lowered), None) or next(
+                    (lb for lb in labels if lb.lower() in lowered), None
+                )
             if label is None:
                 # no match â†’ last label (catch-all by convention, e.g. "other")
                 label = labels[-1] if labels else ""
@@ -123,7 +127,7 @@ class RuleRouter(Component):
             labels.append(default)
         return [Output(name=lb, port=ports.ROUTE) for lb in labels]
 
-    def build(self, ctx):
+    def build(self, ctx: BuildContext) -> NodeFn:
         rules = list(ctx.get_field("rules") or [])
         default = str(ctx.get_field("default_label") or "default")
 

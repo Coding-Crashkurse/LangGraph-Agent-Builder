@@ -15,6 +15,7 @@ class Output(BaseModel):
     port: PortSpec
     method: str | None = None  # multi-output components: method computing ONLY this output
     group: str | None = None
+    deprecated: bool = False
 
     @model_validator(mode="after")
     def _default_display(self) -> Output:
@@ -29,4 +30,5 @@ class Output(BaseModel):
             "port": self.port.model_dump(mode="json"),
             "method": self.method,
             "group": self.group,
+            "deprecated": self.deprecated,
         }

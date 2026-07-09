@@ -11,7 +11,8 @@ if TYPE_CHECKING:
 
 
 def get_services(request: Request) -> AppServices:
-    return request.app.state.svc
+    svc: AppServices = request.app.state.svc
+    return svc
 
 
 Services = Annotated["AppServices", Depends(get_services)]

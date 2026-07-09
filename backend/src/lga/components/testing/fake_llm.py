@@ -6,7 +6,8 @@ from typing import Any
 
 from langchain_core.messages import AIMessage
 
-from lga.sdk import Component, Output, fields, ports
+from lga.sdk import BuildContext, Component, Output, fields, ports
+from lga.sdk.component import NodeFn
 from lga.sdk.runtime import get_run_context
 
 
@@ -23,7 +24,7 @@ class FakeLLM(Component):
             name="replies",
             display_name="Replies",
             info="List of scripted replies; cycled per assistant turn.",
-            schema={"type": "array", "items": {"type": "string"}, "minItems": 1},
+            schema_={"type": "array", "items": {"type": "string"}, "minItems": 1},
             default=["ok"],
             required=True,
             tool_mode=True,
@@ -39,7 +40,7 @@ class FakeLLM(Component):
     ]
     outputs = [Output(name="message", display_name="Message", port=ports.MESSAGE)]
 
-    def build(self, ctx):
+    def build(self, ctx: BuildContext) -> NodeFn:
         async def node(state: dict[str, Any], config: Any) -> dict[str, Any]:
             rc = get_run_context(config)
             replies = list(ctx.get_field("replies") or ["ok"])

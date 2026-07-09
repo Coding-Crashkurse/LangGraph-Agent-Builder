@@ -9,15 +9,18 @@ from __future__ import annotations
 import asyncio
 import json
 import uuid
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 
 import httpx
 import pytest
 
 from tests.conftest import approval_spec, create_and_publish, hello_spec, slow_spec
 
+if TYPE_CHECKING:
+    from lga.app import AppServices
 
-def rpc_body(method: str, params: dict[str, Any], id: Any = 1) -> dict[str, Any]:
+
+def rpc_body(method: str, params: dict[str, Any], id: int | str = 1) -> dict[str, Any]:
     return {"jsonrpc": "2.0", "id": id, "method": method, "params": params}
 
 
@@ -31,17 +34,24 @@ def user_message(text: str, **extra: Any) -> dict[str, Any]:
 
 
 async def send(
-    client: httpx.AsyncClient, slug: str, method: str, params: dict, id: Any = 1
+    client: httpx.AsyncClient,
+    slug: str,
+    method: str,
+    params: dict[str, Any],
+    id: int | str = 1,
 ) -> dict[str, Any]:
     response = await client.post(f"/a2a/{slug}/", json=rpc_body(method, params, id))
     assert response.status_code == 200, response.text
     body = response.json()
-    assert body["jsonrpc"] == "2.0" and body["id"] == id
-    return body
+    assert body["jsonrpc"] == "2.0"
+    assert body["id"] == id
+    return cast("dict[str, Any]", body)
 
 
 # ------------------------------------------------------------------ agent card
-async def test_card_served_on_both_paths_and_validates(client, svc):
+async def test_card_served_on_both_paths_and_validates(
+    client: httpx.AsyncClient, svc: AppServices
+) -> None:
     await create_and_publish(client, hello_spec("card-flow"))
     for path in ("agent-card.json", "agent.json"):
         response = await client.get(f"/a2a/card-flow/.well-known/{path}")
@@ -57,10 +67,11 @@ async def test_card_served_on_both_paths_and_validates(client, svc):
         assert card.skills[0].description == "Scripted greeting."
     # GET on the agent root also returns the card
     response = await client.get("/a2a/card-flow/")
-    assert response.status_code == 200 and response.json()["name"]
+    assert response.status_code == 200
+    assert response.json()["name"]
 
 
-async def test_card_version_bumps_on_republish(client):
+async def test_card_version_bumps_on_republish(client: httpx.AsyncClient) -> None:
     flow_id = await create_and_publish(client, hello_spec("bump-flow"))
     card1 = (await client.get("/a2a/bump-flow/.well-known/agent-card.json")).json()
     response = await client.post(f"/api/v1/flows/{flow_id}/publish", json={"version": "major"})
@@ -70,7 +81,7 @@ async def test_card_version_bumps_on_republish(client):
 
 
 # ------------------------------------------------------------------ message/send
-async def test_message_send_completes_with_artifact(client):
+async def test_message_send_completes_with_artifact(client: httpx.AsyncClient) -> None:
     await create_and_publish(client, hello_spec("send-flow"))
     body = await send(client, "send-flow", "message/send", {"message": user_message("hi")})
     task = body["result"]
@@ -82,7 +93,7 @@ async def test_message_send_completes_with_artifact(client):
     assert task["contextId"]
 
 
-async def test_multi_turn_context_continuation(client):
+async def test_multi_turn_context_continuation(client: httpx.AsyncClient) -> None:
     await create_and_publish(client, hello_spec("turns-flow"))
     first = (await send(client, "turns-flow", "message/send", {"message": user_message("one")}))[
         "result"
@@ -97,7 +108,7 @@ async def test_multi_turn_context_continuation(client):
     assert second["id"] != first["id"]  # new task, same thread
 
 
-async def test_message_id_dedup(client):
+async def test_message_id_dedup(client: httpx.AsyncClient) -> None:
     """Same messageId + taskId ⇒ prior result, don't re-run (SPEC §7.5).
 
     Exercised on a non-terminal (input-required) task; for terminal tasks the
@@ -128,7 +139,7 @@ async def test_message_id_dedup(client):
     assert len(third.get("history") or []) <= history_len + 2
 
 
-async def test_terminal_task_cannot_restart(client):
+async def test_terminal_task_cannot_restart(client: httpx.AsyncClient) -> None:
     await create_and_publish(client, hello_spec("term-flow"))
     task = (await send(client, "term-flow", "message/send", {"message": user_message("hi")}))[
         "result"
@@ -140,10 +151,10 @@ async def test_terminal_task_cannot_restart(client):
 
 
 # ------------------------------------------------------------------ streaming
-async def test_message_stream_sse_framing(client):
+async def test_message_stream_sse_framing(client: httpx.AsyncClient) -> None:
     """Each SSE data: field is one complete JSON-RPC Response; final flag set."""
     await create_and_publish(client, hello_spec("stream-flow"))
-    events: list[dict] = []
+    events: list[dict[str, Any]] = []
     async with client.stream(
         "POST",
         "/a2a/stream-flow/",
@@ -166,11 +177,11 @@ async def test_message_stream_sse_framing(client):
     assert artifact_events, "artifact must be streamed"
 
 
-async def test_stream_tokens_artifact_chunks(client):
+async def test_stream_tokens_artifact_chunks(client: httpx.AsyncClient) -> None:
     spec = hello_spec("tokens-flow")
     spec["nodes"][1]["config"]["stream_tokens"] = True
     await create_and_publish(client, spec)
-    chunks: list[dict] = []
+    chunks: list[dict[str, Any]] = []
     async with client.stream(
         "POST",
         "/a2a/tokens-flow/",
@@ -182,13 +193,14 @@ async def test_stream_tokens_artifact_chunks(client):
                 if result.get("kind") == "artifact-update":
                     chunks.append(result)
     streamed = [c for c in chunks if c["artifact"]["artifactId"] == "response-stream"]
-    assert streamed and any(c.get("lastChunk") for c in streamed)
+    assert streamed
+    assert any(c.get("lastChunk") for c in streamed)
     text = "".join(p.get("text", "") for c in streamed for p in c["artifact"]["parts"])
     assert text == "Hello from LGA!"
 
 
 # ------------------------------------------------------------------ input-required (§7.7)
-async def test_input_required_roundtrip_approval(client):
+async def test_input_required_roundtrip_approval(client: httpx.AsyncClient) -> None:
     await create_and_publish(client, approval_spec("hitl-flow"))
     task = (
         await send(client, "hitl-flow", "message/send", {"message": user_message("please draft")})
@@ -216,7 +228,9 @@ async def test_input_required_roundtrip_approval(client):
     assert text == "draft answer"
 
 
-async def test_input_required_text_answer_parsed_case_insensitively(client):
+async def test_input_required_text_answer_parsed_case_insensitively(
+    client: httpx.AsyncClient,
+) -> None:
     await create_and_publish(client, approval_spec("hitl-text"))
     task = (await send(client, "hitl-text", "message/send", {"message": user_message("draft")}))[
         "result"
@@ -226,7 +240,7 @@ async def test_input_required_text_answer_parsed_case_insensitively(client):
     assert done["status"]["state"] == "completed"
 
 
-async def test_unparseable_answer_stays_input_required(client):
+async def test_unparseable_answer_stays_input_required(client: httpx.AsyncClient) -> None:
     await create_and_publish(client, approval_spec("hitl-bad"))
     task = (await send(client, "hitl-bad", "message/send", {"message": user_message("draft")}))[
         "result"
@@ -235,12 +249,13 @@ async def test_unparseable_answer_stays_input_required(client):
     still = (await send(client, "hitl-bad", "message/send", {"message": answer}))["result"]
     assert still["status"]["state"] == "input-required"
     hint = next(p["text"] for p in still["status"]["message"]["parts"] if p["kind"] == "text")
-    assert "approve" in hint.lower() and "reject" in hint.lower()
+    assert "approve" in hint.lower()
+    assert "reject" in hint.lower()
 
 
-async def test_stream_closes_final_on_input_required(client):
+async def test_stream_closes_final_on_input_required(client: httpx.AsyncClient) -> None:
     await create_and_publish(client, approval_spec("hitl-stream"))
-    finals = []
+    finals: list[dict[str, Any]] = []
     async with client.stream(
         "POST",
         "/a2a/hitl-stream/",
@@ -251,11 +266,12 @@ async def test_stream_closes_final_on_input_required(client):
                 result = json.loads(line[5:].strip()).get("result", {})
                 if result.get("final"):
                     finals.append(result)
-    assert finals and finals[-1]["status"]["state"] == "input-required"
+    assert finals
+    assert finals[-1]["status"]["state"] == "input-required"
 
 
 # ------------------------------------------------------------------ tasks/*
-async def test_tasks_get_history_length(client):
+async def test_tasks_get_history_length(client: httpx.AsyncClient) -> None:
     await create_and_publish(client, hello_spec("hist-flow"))
     task = (await send(client, "hist-flow", "message/send", {"message": user_message("hi")}))[
         "result"
@@ -266,13 +282,13 @@ async def test_tasks_get_history_length(client):
     assert body2["result"].get("history")
 
 
-async def test_tasks_get_unknown_is_32001(client):
+async def test_tasks_get_unknown_is_32001(client: httpx.AsyncClient) -> None:
     await create_and_publish(client, hello_spec("t404-flow"))
     body = await send(client, "t404-flow", "tasks/get", {"id": "nope-task"})
     assert body["error"]["code"] == -32001
 
 
-async def test_cancel_running_and_not_cancelable_terminal(client):
+async def test_cancel_running_and_not_cancelable_terminal(client: httpx.AsyncClient) -> None:
     await create_and_publish(client, slow_spec("cancel-flow", seconds=20))
     task = (
         await send(
@@ -291,7 +307,7 @@ async def test_cancel_running_and_not_cancelable_terminal(client):
     assert body["error"]["code"] == -32002
 
 
-async def test_resubscribe_replays_live_task(client):
+async def test_resubscribe_replays_live_task(client: httpx.AsyncClient) -> None:
     await create_and_publish(client, slow_spec("resub-flow", seconds=2))
     task = (
         await send(
@@ -318,7 +334,7 @@ async def test_resubscribe_replays_live_task(client):
     assert got_final
 
 
-async def test_resubscribe_unknown_task(client):
+async def test_resubscribe_unknown_task(client: httpx.AsyncClient) -> None:
     await create_and_publish(client, hello_spec("resub404"))
     async with client.stream(
         "POST",
@@ -330,7 +346,7 @@ async def test_resubscribe_unknown_task(client):
 
 
 # ------------------------------------------------------------------ push notification config
-async def test_push_config_crud(client):
+async def test_push_config_crud(client: httpx.AsyncClient) -> None:
     await create_and_publish(client, hello_spec("push-flow"))
     task = (await send(client, "push-flow", "message/send", {"message": user_message("hi")}))[
         "result"
@@ -364,7 +380,7 @@ async def test_push_config_crud(client):
     assert listed2["result"] == []
 
 
-async def test_push_config_ssrf_rejected(client):
+async def test_push_config_ssrf_rejected(client: httpx.AsyncClient) -> None:
     await create_and_publish(client, hello_spec("ssrf-flow"))
     task = (await send(client, "ssrf-flow", "message/send", {"message": user_message("hi")}))[
         "result"
@@ -382,13 +398,13 @@ async def test_push_config_ssrf_rejected(client):
 
 
 # ------------------------------------------------------------------ JSON-RPC errors
-async def test_unknown_method_32601(client):
+async def test_unknown_method_32601(client: httpx.AsyncClient) -> None:
     await create_and_publish(client, hello_spec("err-flow"))
     body = await send(client, "err-flow", "totally/bogus", {})
     assert body["error"]["code"] == -32601
 
 
-async def test_parse_error_32700(client):
+async def test_parse_error_32700(client: httpx.AsyncClient) -> None:
     await create_and_publish(client, hello_spec("parse-flow"))
     response = await client.post(
         "/a2a/parse-flow/",
@@ -399,19 +415,19 @@ async def test_parse_error_32700(client):
     assert body["error"]["code"] == -32700
 
 
-async def test_invalid_params_32602(client):
+async def test_invalid_params_32602(client: httpx.AsyncClient) -> None:
     await create_and_publish(client, hello_spec("params-flow"))
     body = await send(client, "params-flow", "message/send", {"nope": True})
     assert body["error"]["code"] in (-32602, -32600)
 
 
-async def test_unknown_agent_404(client):
+async def test_unknown_agent_404(client: httpx.AsyncClient) -> None:
     response = await client.post("/a2a/ghost/", json=rpc_body("message/send", {}))
     assert response.status_code == 404
 
 
 # ------------------------------------------------------------------ auth (§7.11)
-async def test_api_key_auth_401_and_success(client, svc):
+async def test_api_key_auth_401_and_success(client: httpx.AsyncClient, svc: AppServices) -> None:
     spec = hello_spec("auth-flow")
     spec["flow"]["a2a"]["auth"] = "api-key"
     await create_and_publish(client, spec)
@@ -447,7 +463,7 @@ async def test_api_key_auth_401_and_success(client, svc):
     assert response.json()["result"]["status"]["state"] == "completed"
 
 
-async def test_public_context_namespacing(client, svc):
+async def test_public_context_namespacing(client: httpx.AsyncClient, svc: AppServices) -> None:
     """Anonymous callers must not be able to address foreign sessions (§7.11)."""
     await create_and_publish(client, hello_spec("ns-flow"))
     task = (await send(client, "ns-flow", "message/send", {"message": user_message("hi")}))[
@@ -470,7 +486,9 @@ async def test_public_context_namespacing(client, svc):
 
 
 # ------------------------------------------------------------------ task store state machine
-async def test_state_transition_history_persisted(client, svc):
+async def test_state_transition_history_persisted(
+    client: httpx.AsyncClient, svc: AppServices
+) -> None:
     await create_and_publish(client, approval_spec("trans-flow"))
     task = (await send(client, "trans-flow", "message/send", {"message": user_message("draft")}))[
         "result"
@@ -481,10 +499,11 @@ async def test_state_transition_history_persisted(client, svc):
     transitions = await store.transitions(task["id"])
     states = [t["to"] for t in transitions]
     assert states[0] == "submitted"
-    assert "working" in states and "input-required" in states
+    assert "working" in states
+    assert "input-required" in states
 
 
-async def test_illegal_transition_raises(svc):
+async def test_illegal_transition_raises(svc: AppServices) -> None:
     from a2a.types import Message as A2AMessage
     from a2a.types import Part, Role, Task, TaskState, TaskStatus, TextPart
 

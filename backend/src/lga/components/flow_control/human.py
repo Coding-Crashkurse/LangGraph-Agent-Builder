@@ -7,7 +7,8 @@ from typing import Any
 from langchain_core.messages import HumanMessage
 from langgraph.types import interrupt
 
-from lga.sdk import Component, NodeKind, Output, fields, ports
+from lga.sdk import BuildContext, Component, NodeKind, Output, fields, ports
+from lga.sdk.component import NodeFn
 from lga.sdk.interrupts import ApprovalRequest, InputRequest
 from lga.sdk.templating import last_message_text
 
@@ -44,7 +45,7 @@ class HumanApproval(Component):
         Output(name="reject", display_name="Reject", port=ports.ROUTE),
     ]
 
-    def build(self, ctx):
+    def build(self, ctx: BuildContext) -> NodeFn:
         async def node(state: dict[str, Any], config: Any) -> dict[str, Any]:
             context: dict[str, Any] = {}
             if ctx.get_field("include_preview"):
@@ -92,10 +93,10 @@ class HumanInput(Component):
     ]
     outputs = [Output(name="message", display_name="Message", port=ports.MESSAGE)]
 
-    def build(self, ctx):
+    def build(self, ctx: BuildContext) -> NodeFn:
         async def node(state: dict[str, Any], config: Any) -> dict[str, Any]:
             schema = ctx.get_field("input_schema") or None
-            payload = InputRequest(prompt=str(ctx.get_field("prompt") or ""), schema=schema)
+            payload = InputRequest(prompt=str(ctx.get_field("prompt") or ""), schema_=schema)
             resume = interrupt(payload.model_dump(by_alias=True))
             if isinstance(resume, dict) and "text" in resume and schema is None:
                 text = str(resume["text"])

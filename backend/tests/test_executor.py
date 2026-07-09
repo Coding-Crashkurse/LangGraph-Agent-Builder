@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from typing import Any
 
 import pytest
 
@@ -14,19 +15,19 @@ from tests.conftest import approval_spec, hello_spec, slow_spec
 
 
 @pytest.fixture
-def mem_executor():
+def mem_executor() -> tuple[Executor, EventBus]:
     from langgraph.checkpoint.memory import InMemorySaver
 
     saver = InMemorySaver()
 
-    async def get():
+    async def get() -> InMemorySaver:
         return saver
 
     bus = EventBus()
     return Executor(checkpointer_getter=get, bus=bus), bus
 
 
-async def test_run_completes_with_events(mem_executor):
+async def test_run_completes_with_events(mem_executor: tuple[Executor, EventBus]) -> None:
     executor, _bus = mem_executor
     compiled = compile_flow(hello_spec(), use_cache=False)
     seen: list[RunEvent] = []
@@ -38,16 +39,19 @@ async def test_run_completes_with_events(mem_executor):
     assert result.status == "completed"
     assert result.result_text == "Hello from LGA!"
     names = [e.event for e in seen]
-    assert names[0] == "run_started" and names[-1] == "run_finished"
-    assert "node_started" in names and "node_finished" in names
+    assert names[0] == "run_started"
+    assert names[-1] == "run_finished"
+    assert "node_started" in names
+    assert "node_finished" in names
     assert "fake.thinking" in names  # custom component event
 
 
-async def test_interrupt_resume_roundtrip(mem_executor):
+async def test_interrupt_resume_roundtrip(mem_executor: tuple[Executor, EventBus]) -> None:
     executor, _bus = mem_executor
     compiled = compile_flow(approval_spec(), use_cache=False)
     result = await executor.execute(compiled, input_text="draft this", thread_id="t1")
     assert result.status == "input_required"
+    assert result.interrupt is not None
     assert result.interrupt["kind"] == "approval"
     assert result.interrupt["prompt"] == "Release this answer?"
     assert result.interrupt_node == "review"
@@ -57,7 +61,7 @@ async def test_interrupt_resume_roundtrip(mem_executor):
     assert resumed.result_text == "draft answer"
 
 
-async def test_reject_branch_loops_back(mem_executor):
+async def test_reject_branch_loops_back(mem_executor: tuple[Executor, EventBus]) -> None:
     executor, _bus = mem_executor
     compiled = compile_flow(approval_spec(), use_cache=False)
     first = await executor.execute(compiled, input_text="draft", thread_id="t2")
@@ -72,18 +76,19 @@ async def test_reject_branch_loops_back(mem_executor):
     assert third.result_text == "revised answer"
 
 
-async def test_cancel_during_slow_node(mem_executor):
+async def test_cancel_during_slow_node(mem_executor: tuple[Executor, EventBus]) -> None:
     executor, _bus = mem_executor
     compiled = compile_flow(slow_spec(seconds=30), use_cache=False)
     handle = executor.start(compiled, input_text="zzz")
     await asyncio.sleep(0.3)
     assert await executor.cancel(handle.run_id)
     await asyncio.wait_for(handle.done.wait(), timeout=5)
-    assert handle.result is not None and handle.result.status == "cancelled"
+    assert handle.result is not None
+    assert handle.result.status == "cancelled"
     assert handle.result.error_code == "RT104"
 
 
-async def test_failing_node_rt103(mem_executor):
+async def test_failing_node_rt103(mem_executor: tuple[Executor, EventBus]) -> None:
     executor, _bus = mem_executor
     spec = hello_spec()
     spec["nodes"][1] = {
@@ -100,7 +105,7 @@ async def test_failing_node_rt103(mem_executor):
     assert "boom" in (result.error_message or "")
 
 
-async def test_recursion_limit_rt105(mem_executor):
+async def test_recursion_limit_rt105(mem_executor: tuple[Executor, EventBus]) -> None:
     executor, _bus = mem_executor
     spec = approval_spec("loopy")
     # auto-reject forever is impossible (interrupt pauses); use loop_until instead
@@ -172,10 +177,11 @@ async def test_recursion_limit_rt105(mem_executor):
     compiled = compile_flow(spec, use_cache=False)
     assert compiled.ok, [d.message for d in compiled.diagnostics]
     result = await executor.execute(compiled, input_text="go")
-    assert result.status == "failed" and result.error_code == "RT105"
+    assert result.status == "failed"
+    assert result.error_code == "RT105"
 
 
-async def test_loop_until_terminates(mem_executor):
+async def test_loop_until_terminates(mem_executor: tuple[Executor, EventBus]) -> None:
     executor, _bus = mem_executor
     spec = {
         "schema_version": "1",
@@ -243,10 +249,11 @@ async def test_loop_until_terminates(mem_executor):
     assert "APPROVED" in result.result_text
 
 
-async def test_rt102_invalid_router_label(mem_executor):
+async def test_rt102_invalid_router_label(mem_executor: tuple[Executor, EventBus]) -> None:
     """A router emitting an undeclared label fails fast with RT102."""
-    from lga.sdk import Component, NodeKind, Output, ports
+    from lga.sdk import BuildContext, Component, NodeKind, Output, ports
     from lga.sdk import fields as sdk_fields
+    from lga.sdk.component import NodeFn
     from lga.sdk.registry import ComponentRegistry, get_registry
 
     class BadRouter(Component):
@@ -258,8 +265,8 @@ async def test_rt102_invalid_router_label(mem_executor):
         inputs = [sdk_fields.HandleField(name="input", display_name="Input", as_port=ports.MESSAGE)]
         outputs = [Output(name="a", port=ports.ROUTE), Output(name="b", port=ports.ROUTE)]
 
-        def build(self, ctx):
-            async def node(state, config):
+        def build(self, ctx: BuildContext) -> NodeFn:
+            async def node(state: dict[str, Any], config: Any) -> dict[str, Any]:
                 return {"route": "zzz"}
 
             return node
@@ -327,10 +334,11 @@ async def test_rt102_invalid_router_label(mem_executor):
     compiled = compile_flow(spec, registry=registry, use_cache=False)
     assert compiled.ok, [d.message for d in compiled.diagnostics]
     result = await executor.execute(compiled, input_text="x")
-    assert result.status == "failed" and result.error_code == "RT102"
+    assert result.status == "failed"
+    assert result.error_code == "RT102"
 
 
-async def test_token_streaming_events(mem_executor):
+async def test_token_streaming_events(mem_executor: tuple[Executor, EventBus]) -> None:
     executor, _bus = mem_executor
     spec = hello_spec()
     spec["nodes"][1]["config"]["stream_tokens"] = True
@@ -346,7 +354,7 @@ async def test_token_streaming_events(mem_executor):
     assert "".join(tokens) == "Hello from LGA!"
 
 
-async def test_event_bus_replay_and_live(mem_executor):
+async def test_event_bus_replay_and_live(mem_executor: tuple[Executor, EventBus]) -> None:
     executor, _bus = mem_executor
     compiled = compile_flow(hello_spec(), use_cache=False)
     result = await executor.execute(compiled, input_text="hi")
@@ -354,7 +362,7 @@ async def test_event_bus_replay_and_live(mem_executor):
     assert result.status == "completed"
 
 
-async def test_harness_run_in_flow():
+async def test_harness_run_in_flow() -> None:
     from lga.components.testing.fake_llm import FakeLLM
     from lga.sdk.testing import ComponentTestHarness
 
@@ -364,7 +372,7 @@ async def test_harness_run_in_flow():
     assert outcome["result_text"] == "harnessed"
 
 
-async def test_harness_build():
+async def test_harness_build() -> None:
     from lga.components.tools.basic_tools import Calculator
     from lga.sdk.testing import ComponentTestHarness
 

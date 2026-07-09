@@ -10,7 +10,9 @@ import {
 } from "@xyflow/react";
 import { create } from "zustand";
 
-import type { ComponentDescriptor, Diagnostic, FlowInfo, FlowSpec } from "@/api/types";
+import { api } from "@/api/client";
+import { streamRun } from "@/api/sse";
+import type { ComponentDescriptor, Diagnostic, FlowInfo, FlowSpec, RunEvent } from "@/api/types";
 
 import type { CanvasEdge, CanvasNode } from "./convert";
 import {
@@ -27,6 +29,12 @@ import { indexPorts } from "./guards";
 interface Snapshot {
   nodes: CanvasNode[];
   edges: CanvasEdge[];
+}
+
+export interface NodeRunState {
+  status: "running" | "finished" | "error";
+  durationMs?: number;
+  errorCode?: string;
 }
 
 const HISTORY_LIMIT = 50;
@@ -49,6 +57,8 @@ interface BuilderState {
   future: Snapshot[];
   clipboard: Snapshot | null;
   dragging: boolean;
+  runStates: Record<string, NodeRunState>;
+  partialTarget: string | null; // node an active partial run targets (dims the rest)
 
   loadFlow: (flow: FlowInfo) => void;
   setDescriptors: (list: ComponentDescriptor[]) => void;
@@ -71,6 +81,12 @@ interface BuilderState {
   copySelection: () => number;
   paste: () => number;
   autoLayout: () => void;
+
+  applyRunEvent: (event: RunEvent) => void;
+  resetRunStates: () => void;
+  setPartialTarget: (nodeId: string | null) => void;
+  applyCoercions: (coercions: { edge_id: string; coercion: string }[]) => void;
+  runToNode: (nodeId: string) => Promise<string>; // partial run (§6.4); returns result preview
 }
 
 export const useBuilder = create<BuilderState>((set, get) => {
@@ -96,6 +112,8 @@ export const useBuilder = create<BuilderState>((set, get) => {
     future: [],
     clipboard: null,
     dragging: false,
+    runStates: {},
+    partialTarget: null,
 
     loadFlow: (flow) => {
       const { nodes, edges } = specToCanvas(flow.spec);
@@ -108,6 +126,8 @@ export const useBuilder = create<BuilderState>((set, get) => {
         diagnostics: [],
         past: [],
         future: [],
+        runStates: {},
+        partialTarget: null,
       });
     },
     setDescriptors: (list) => set({ descriptors: new Map(list.map((d) => [d.component_id, d])) }),
@@ -377,6 +397,67 @@ export const useBuilder = create<BuilderState>((set, get) => {
           target.has(node.id) ? { ...node, position: target.get(node.id)! } : node,
         ),
       }));
+    },
+
+    // ---------------------------------------------------------------- run states (§11.2)
+    applyRunEvent: (event) => {
+      const nodeId = String(event.data?.node_id ?? "");
+      if (!nodeId) return;
+      set((state) => {
+        const runStates = { ...state.runStates };
+        if (event.event === "node_started") {
+          runStates[nodeId] = { status: "running" };
+        } else if (event.event === "node_finished") {
+          runStates[nodeId] = {
+            status: "finished",
+            durationMs: Number(event.data?.duration_ms ?? 0),
+          };
+        } else if (event.event === "node_error") {
+          runStates[nodeId] = {
+            status: "error",
+            errorCode: String(event.data?.code ?? "RT103"),
+          };
+        } else {
+          return {};
+        }
+        return { runStates };
+      });
+    },
+    resetRunStates: () => set({ runStates: {} }),
+    setPartialTarget: (nodeId) => set({ partialTarget: nodeId }),
+    applyCoercions: (coercions) => {
+      const map = new Map(coercions.map((c) => [c.edge_id, c.coercion]));
+      set((state) => ({
+        edges: state.edges.map((edge) =>
+          map.has(edge.id)
+            ? { ...edge, data: { ...(edge.data ?? { kind: "data" }), coercion: map.get(edge.id) } }
+            : edge,
+        ),
+      }));
+    },
+
+    // ---------------------------------------------------------------- run to node (§6.4)
+    runToNode: async (nodeId) => {
+      const { flow, dirty } = get();
+      if (!flow) throw new Error("no flow loaded");
+      // partial runs execute the STORED spec — persist the draft first
+      if (dirty) {
+        await api.flows.update(flow.id, get().currentSpec());
+        set({ dirty: false });
+      }
+      set({ runStates: {}, partialTarget: nodeId });
+      let preview = "";
+      try {
+        await streamRun(flow.id, { input_text: "", until_node: nodeId }, (event) => {
+          get().applyRunEvent(event);
+          if (event.event === "run_finished") {
+            preview = String(event.data.result_preview ?? "");
+          }
+        });
+      } finally {
+        set({ partialTarget: null });
+      }
+      return preview;
     },
   };
 });

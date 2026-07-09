@@ -7,10 +7,19 @@ import asyncio
 import socket
 import sys
 import uuid
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 
 import httpx
 import pytest
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
+    from pathlib import Path
+
+    from fastapi import FastAPI
+
+    from lga.app import AppServices
+    from lga.services.settings import Settings
 
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
@@ -45,7 +54,7 @@ async def _ensure_pg_database(name: str) -> str:
 
 
 @pytest.fixture(params=TIERS)
-async def settings(request, tmp_path):
+async def settings(request: pytest.FixtureRequest, tmp_path: Path) -> Settings:
     """Fresh Settings per test; postgres tier gets its own throwaway database."""
     from lga.services.settings import Settings
 
@@ -59,11 +68,11 @@ async def settings(request, tmp_path):
         kwargs["database_url"] = await _ensure_pg_database(db)
     settings = Settings(**kwargs)
     settings.ensure_dirs()
-    yield settings
+    return settings
 
 
 @pytest.fixture
-async def sqlite_settings(tmp_path):
+async def sqlite_settings(tmp_path: Path) -> Settings:
     from lga.services.settings import Settings
 
     settings = Settings(home=tmp_path / "lga-home", env="test", create_starter_flows=False)
@@ -72,7 +81,7 @@ async def sqlite_settings(tmp_path):
 
 
 @pytest.fixture
-async def app(settings):
+async def app(settings: Settings) -> AsyncIterator[FastAPI]:
     """Full FastAPI app with lifespan running (backend-only).
 
     The lifespan is driven by ONE dedicated task: pytest-asyncio tears fixtures
@@ -115,7 +124,7 @@ async def app(settings):
 
 
 @pytest.fixture
-async def client(app):
+async def client(app: FastAPI) -> AsyncIterator[httpx.AsyncClient]:
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(
         transport=transport, base_url="http://test", timeout=60.0
@@ -124,8 +133,8 @@ async def client(app):
 
 
 @pytest.fixture
-def svc(app):
-    return app.state.svc
+def svc(app: FastAPI) -> AppServices:
+    return cast("AppServices", app.state.svc)
 
 
 # --------------------------------------------------------------------- specs
@@ -305,5 +314,6 @@ async def create_and_publish(client: httpx.AsyncClient, spec: dict[str, Any]) ->
     assert response.status_code == 201, response.text
     flow_id = response.json()["id"]
     response = await client.post(f"/api/v1/flows/{flow_id}/publish", json={"version": "minor"})
-    assert response.status_code == 200 and response.json()["published"], response.text
-    return flow_id
+    assert response.status_code == 200, response.text
+    assert response.json()["published"], response.text
+    return cast("str", flow_id)

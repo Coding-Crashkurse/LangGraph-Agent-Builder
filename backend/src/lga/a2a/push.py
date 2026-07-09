@@ -16,6 +16,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from lga.db.models import PushConfigRow
+from lga.errors import LgaValueError
 from lga.services.settings import Settings
 
 logger = logging.getLogger("lga.a2a.push")
@@ -30,7 +31,7 @@ NOTIFY_STATES = {
 RETRIES = 3
 
 
-class SsrfError(ValueError):
+class SsrfError(LgaValueError):
     pass
 
 

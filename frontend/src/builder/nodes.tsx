@@ -15,6 +15,7 @@ import {
 import { memo, useState, type ReactNode } from "react";
 
 import { PORT_FAMILY_COLORS, type FieldDescriptor, type PortSpec } from "@/api/types";
+import { toast } from "@/components/ui/toast";
 import { cn } from "@/lib/utils";
 
 import type { CanvasEdge, CanvasNode } from "./convert";
@@ -123,7 +124,9 @@ function RowHandle({
   dimmed: boolean;
 }) {
   const [hovered, setHovered] = useState(false);
-  const color = PORT_FAMILY_COLORS[port.family] ?? "#9ca3af";
+  const color = PORT_FAMILY_COLORS[port.family] ?? "var(--color-port-any)";
+  // §11.1 [MUST]: list ports render as diamonds (square rotated 45°), scalars as circles.
+  const isDiamond = port.is_list;
   return (
     <>
       <Handle
@@ -136,10 +139,12 @@ function RowHandle({
           // centered ON the card border (row spans to the card edge)
           [side === "in" ? "left" : "right"]: -7,
           top: "50%",
-          background: port.family === "ANY" ? "#18181b" : color,
+          background: port.family === "ANY" ? "var(--color-surface-1)" : color,
           border: `2px ${port.family === "ANY" ? "dashed" : "solid"} ${color}`,
           width: 12,
           height: 12,
+          borderRadius: isDiamond ? 2 : 999,
+          transform: isDiamond ? "translateY(-50%) rotate(45deg)" : undefined,
           opacity: dimmed ? 0.15 : 1,
           transition: "opacity 120ms",
         }}
@@ -160,6 +165,9 @@ export const LgaNode = memo(function LgaNode({ id, data, selected }: NodeProps<C
   const edges = useBuilder((s) => s.edges);
   const updateNodeConfig = useBuilder((s) => s.updateNodeConfig);
   const select = useBuilder((s) => s.select);
+  const runState = useBuilder((s) => s.runStates[id]);
+  const partialTarget = useBuilder((s) => s.partialTarget);
+  const runToNode = useBuilder((s) => s.runToNode);
   const descriptor = descriptors.get(data.componentId);
   const dimFor = useHandleDimmer(id);
 
@@ -243,12 +251,27 @@ export const LgaNode = memo(function LgaNode({ id, data, selected }: NodeProps<C
     edges.some((e) => e.target === id && e.targetHandle === input);
 
   const chip = CATEGORY_CHIP[descriptor.category] ?? CATEGORY_CHIP.data;
+  const stateClass =
+    runState?.status === "running"
+      ? "gf-node-active"
+      : runState?.status === "finished"
+        ? "gf-node-finished"
+        : runState?.status === "error"
+          ? "gf-node-error"
+          : "";
+  // §6.4: during a partial run, nodes outside the executed subgraph dim out
+  const dimmedByPartial = partialTarget !== null && id !== partialTarget && !runState;
+  const installed = descriptor.version;
+  const pinned = data.componentVersion;
+  const updateAvailable = Boolean(pinned && installed && pinned !== installed && !descriptor.legacy);
 
   return (
     <div
       className={cn(
-        "relative w-72 rounded-xl border bg-surface-900 shadow-lg shadow-black/30",
+        "group relative w-72 rounded-xl border bg-surface-900 shadow-lg shadow-black/30",
         selected ? "border-accent-500 ring-1 ring-accent-500/50" : "border-surface-700",
+        stateClass,
+        dimmedByPartial && "gf-node-dimmed",
       )}
     >
       {/* header */}
@@ -267,6 +290,19 @@ export const LgaNode = memo(function LgaNode({ id, data, selected }: NodeProps<C
           </p>
           <p className="truncate font-mono text-[9px] text-zinc-600">{id}</p>
         </div>
+        <button
+          type="button"
+          title="Run to here (partial run, §6.4)"
+          className="nodrag hidden text-zinc-500 hover:text-accent-300 group-hover:block"
+          onClick={(e) => {
+            e.stopPropagation();
+            runToNode(id)
+              .then((preview) => toast.success(`ran to ${id}${preview ? `: ${preview.slice(0, 60)}` : ""}`))
+              .catch((err) => toast.error(`run failed: ${(err as Error).message}`));
+          }}
+        >
+          ▶
+        </button>
         {descriptor.node_kind === "interrupt" && (
           <span className="rounded bg-amber-900/60 px-1 py-0.5 text-[9px] font-bold text-amber-300">
             HITL
@@ -404,6 +440,28 @@ export const LgaNode = memo(function LgaNode({ id, data, selected }: NodeProps<C
         </div>
       )}
 
+      {/* footer: last-run chip + version badge with update indicator (§11.2/§4.11) */}
+      <div className="flex items-center justify-between border-t border-surface-800 px-3.5 py-1 text-[10px]">
+        <span className="font-mono tabular-nums">
+          {runState?.status === "finished" && (
+            <span className="text-emerald-400">✓ {runState.durationMs ?? 0}ms</span>
+          )}
+          {runState?.status === "error" && (
+            <span className="text-red-400">✗ {runState.errorCode}</span>
+          )}
+          {runState?.status === "running" && <span className="text-accent-300">running…</span>}
+        </span>
+        <span className="flex items-center gap-1 font-mono text-zinc-600">
+          {descriptor.legacy && <span className="text-amber-500">LEGACY</span>}
+          v{installed}
+          {updateAvailable && (
+            <span className="text-amber-400" title={`pinned ${pinned} → installed ${installed}`}>
+              ⚠ update
+            </span>
+          )}
+        </span>
+      </div>
+
       {/* tools IN on the bottom (§18.4: tools hang below the agent) */}
       {toolInputs.map(([name, port], index) => (
         <Handle
@@ -481,15 +539,34 @@ export const NoteNode = memo(function NoteNode({ id, data, selected }: NodeProps
 });
 
 export function LgaEdge(props: EdgeProps<CanvasEdge>) {
-  const [path] = getBezierPath(props);
+  const [path, labelX, labelY] = getBezierPath(props);
   const kind = props.data?.kind ?? "data";
   const style =
     kind === "tool"
-      ? { stroke: "#0ea5e9", strokeDasharray: "6 4", strokeWidth: 1.6 }
+      ? {
+          stroke: "var(--color-port-toolset)",
+          strokeDasharray: "6 4",
+          strokeWidth: 1.75,
+        }
       : kind === "router"
-        ? { stroke: "#f59e0b", strokeWidth: 1.8 }
-        : { stroke: "#71717a", strokeWidth: 1.6 };
-  return <BaseEdge id={props.id} path={path} style={style} />;
+        ? { stroke: "var(--color-port-route)", strokeWidth: 1.75 }
+        : { stroke: "var(--color-border-strong)", strokeWidth: 1.75 };
+  const coercion = props.data?.coercion;
+  return (
+    <>
+      <BaseEdge id={props.id} path={path} style={style} />
+      {coercion && (
+        <foreignObject x={labelX - 9} y={labelY - 9} width={18} height={18}>
+          <div
+            title={`coercion: ${coercion}`}
+            className="flex h-[18px] w-[18px] items-center justify-center rounded-full border border-border-strong bg-surface-2 text-[11px] text-text-2"
+          >
+            ≈
+          </div>
+        </foreignObject>
+      )}
+    </>
+  );
 }
 
 export const nodeTypes = { lga: LgaNode, note: NoteNode };

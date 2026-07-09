@@ -13,6 +13,8 @@ EventType = Literal[
     "node_token",
     "node_status",
     "node_log",
+    "tool_call",
+    "tool_result",
     "node_finished",
     "node_error",
     "interrupt_raised",

@@ -22,7 +22,11 @@ class BuiltNode:
         self.fn = fn
         self.ctx = ctx
 
-    async def __call__(self, state: dict[str, Any] | None = None, config: dict | None = None):
+    async def __call__(
+        self,
+        state: dict[str, Any] | None = None,
+        config: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         return await self.fn(state or {}, config or {"configurable": {}})
 
 

@@ -11,6 +11,7 @@ import asyncio
 import fnmatch
 import logging
 import time
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from a2a.server.agent_execution import AgentExecutor, RequestContext
@@ -56,7 +57,7 @@ class LGAAgentExecutor(AgentExecutor):
     def __init__(
         self,
         *,
-        spec_provider,  # async () -> dict FlowSpec of the pinned served version
+        spec_provider: Callable[[], Awaitable[dict[str, Any]]],  # pinned served FlowSpec
         flow_slug: str,
         orchestrator: Orchestrator,
         executor: Executor,

@@ -51,7 +51,7 @@ def parse_input_resume(payload: Any, schema: dict[str, Any] | None) -> dict[str,
     """Normalize a resume payload for kind=free_text (SPEC §7.7-4)."""
     if isinstance(payload, dict):
         if schema is not None:
-            import jsonschema
+            import jsonschema  # type: ignore[import-untyped]  # jsonschema ships no stubs
 
             try:
                 jsonschema.validate(payload, schema)

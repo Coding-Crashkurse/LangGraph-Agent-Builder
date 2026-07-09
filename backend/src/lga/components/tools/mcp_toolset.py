@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import os
-from typing import Any
+from typing import Any, cast
 
-from lga.sdk import Component, Output, fields, ports
-from lga.sdk.component import NodeConfig
+from lga.sdk import BuildContext, Component, Output, fields, ports
+from lga.sdk.component import NodeConfig, NodeFn
 from lga.sdk.ports import LazyToolset, ToolDef
 
 
@@ -36,8 +36,9 @@ def _connection_from_config(config: dict[str, Any]) -> dict[str, Any]:
 async def load_mcp_tools(config: dict[str, Any]) -> list[ToolDef]:
     """Live tool listing (also used by on_field_change refresh)."""
     from langchain_mcp_adapters.client import MultiServerMCPClient
+    from langchain_mcp_adapters.sessions import Connection
 
-    client = MultiServerMCPClient({"toolset": _connection_from_config(config)})
+    client = MultiServerMCPClient({"toolset": cast(Connection, _connection_from_config(config))})
     tools = await client.get_tools()
     allow = set(config.get("tools") or [])
     defs: list[ToolDef] = []
@@ -83,7 +84,7 @@ class MCPToolset(Component):
         fields.NestedDictInput(
             name="args",
             display_name="Args",
-            schema={"type": "array", "items": {"type": "string"}},
+            schema_={"type": "array", "items": {"type": "string"}},
             advanced=True,
         ),
         fields.DictInput(name="env", display_name="Env", advanced=True),
@@ -106,11 +107,11 @@ class MCPToolset(Component):
     ]
     outputs = [Output(name="toolset", display_name="Toolset", port=ports.TOOLSET)]
 
-    def provide_tools(self, ctx) -> LazyToolset:
+    def provide_tools(self, ctx: BuildContext) -> LazyToolset:
         config = dict(ctx.config)
         return LazyToolset(lambda: load_mcp_tools(config))
 
-    def build(self, ctx):
+    def build(self, ctx: BuildContext) -> NodeFn:
         async def node(state: dict[str, Any], config: Any) -> dict[str, Any]:
             # pure tool providers never run as graph nodes; defensive no-op
             return {}
@@ -122,5 +123,5 @@ class MCPToolset(Component):
         config[field_name] = value
         return config
 
-    async def health_check(self, ctx) -> None:
+    async def health_check(self, ctx: BuildContext) -> None:
         await load_mcp_tools(dict(ctx.config))

@@ -12,6 +12,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from lga.db.models import A2ATaskRow, TaskTransitionRow
+from lga.errors import LgaRuntimeError
+from lga.services.settings import Settings
 
 logger = logging.getLogger("lga.a2a.tasks")
 
@@ -35,11 +37,17 @@ ALLOWED_TRANSITIONS: dict[str, set[str]] = {
 }
 
 
-class IllegalTaskTransitionError(RuntimeError):
+class IllegalTaskTransitionError(LgaRuntimeError):
     pass
 
 
-def resolve_task_store(setting: str, *, sessions, flow_slug: str, settings=None) -> TaskStore:
+def resolve_task_store(
+    setting: str,
+    *,
+    sessions: async_sessionmaker[AsyncSession],
+    flow_slug: str,
+    settings: Settings | None = None,
+) -> TaskStore:
     """Pluggable task manager (env `LGA_A2A_TASK_STORE`):
 
     - ``db`` (default): Postgres/SQLite-backed DbTaskStore with transition

@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Select, Switch } from "@/components/ui/controls";
 import { toast } from "@/components/ui/toast";
 import { cn } from "@/lib/utils";
+import { useBuilder } from "./store";
 
 interface ChatItem {
   role: "user" | "assistant" | "event" | "error";
@@ -35,7 +36,7 @@ export function Playground({ flow, onClose }: { flow: FlowInfo; onClose: () => v
   const [runId, setRunId] = useState<string | null>(null);
   const [eventLog, setEventLog] = useState<RunEvent[]>([]);
   const eventsRef = useRef<RunEvent[]>([]); // sync view of the stream (state lags)
-  const [showRaw, setShowRaw] = useState(false);
+  const [showTimeline, setShowTimeline] = useState(false); // node timeline popup, default off
   const [stateJson, setStateJson] = useState<string | null>(null);
   const bottom = useRef<HTMLDivElement>(null);
 
@@ -50,6 +51,7 @@ export function Playground({ flow, onClose }: { flow: FlowInfo; onClose: () => v
   const handleEvent = useCallback((event: RunEvent) => {
     eventsRef.current = [...eventsRef.current.slice(-800), event];
     setEventLog(eventsRef.current);
+    useBuilder.getState().applyRunEvent(event); // drive node run-state visuals (§11.2)
     if (event.event === "node_token") {
       const delta = String(event.data.delta ?? "");
       setItems((prev) => {
@@ -119,6 +121,7 @@ export function Playground({ flow, onClose }: { flow: FlowInfo; onClose: () => v
     setBusy(true);
     eventsRef.current = [];
     setEventLog([]);
+    useBuilder.getState().resetRunStates();
     let currentRunId: string | null = null;
     try {
       await streamRun(
@@ -184,13 +187,19 @@ export function Playground({ flow, onClose }: { flow: FlowInfo; onClose: () => v
   };
 
   const nodeTimeline = eventLog.filter((e) =>
-    ["node_started", "node_finished", "node_error", "node_status", "interrupt_raised"].includes(
-      e.event,
-    ),
+    [
+      "node_started",
+      "node_finished",
+      "node_error",
+      "node_status",
+      "tool_call",
+      "tool_result",
+      "interrupt_raised",
+    ].includes(e.event),
   );
 
   return (
-    <div className="flex w-[430px] flex-col border-l border-surface-800 bg-surface-950">
+    <div className="relative flex w-[430px] flex-col border-l border-surface-800 bg-surface-950">
       <header className="flex items-center gap-2 border-b border-surface-800 px-3 py-2">
         <h2 className="text-sm font-semibold">Playground</h2>
         <span className="flex overflow-hidden rounded border border-surface-700 text-[10px]">
@@ -220,6 +229,18 @@ export function Playground({ flow, onClose }: { flow: FlowInfo; onClose: () => v
               debug
               <Switch checked={debugMode} onCheckedChange={setDebugMode} />
             </span>
+            <button
+              className={cn(
+                "rounded border border-surface-700 px-1.5 py-0.5 text-[10px]",
+                showTimeline
+                  ? "bg-surface-700 text-zinc-200"
+                  : "text-zinc-500 hover:text-zinc-300",
+              )}
+              onClick={() => setShowTimeline((v) => !v)}
+              title="Node execution timeline"
+            >
+              timeline{nodeTimeline.length > 0 ? ` ·${nodeTimeline.length}` : ""}
+            </button>
             <Select
               className="!h-7 w-32 text-xs"
               value={sessionId ?? ""}
@@ -257,46 +278,6 @@ export function Playground({ flow, onClose }: { flow: FlowInfo; onClose: () => v
             {item.text}
           </div>
         ))}
-        {nodeTimeline.length > 0 && (
-          <div className="rounded border border-surface-800 bg-surface-900/70 p-2">
-            <div className="flex items-center justify-between">
-              <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-500">
-                node timeline
-              </p>
-              <button
-                className="text-[10px] text-zinc-500 hover:text-zinc-300"
-                onClick={() => setShowRaw((v) => !v)}
-              >
-                {showRaw ? "pretty" : "raw json"}
-              </button>
-            </div>
-            {showRaw ? (
-              <pre className="max-h-48 overflow-auto text-[9px] text-zinc-400">
-                {JSON.stringify(eventLog, null, 1)}
-              </pre>
-            ) : (
-              <div className="mt-1 space-y-0.5">
-                {nodeTimeline.map((event, index) => (
-                  <p key={index} className="font-mono text-[10px] text-zinc-400">
-                    <span
-                      className={cn(
-                        event.event === "node_error" && "text-red-400",
-                        event.event === "interrupt_raised" && "text-amber-400",
-                        event.event === "node_finished" && "text-emerald-400",
-                      )}
-                    >
-                      {event.event}
-                    </span>{" "}
-                    {String(event.data.node_id ?? "")}
-                    {event.event === "node_finished" &&
-                      ` ${String(event.data.duration_ms ?? "")}ms`}
-                    {event.event === "node_status" && ` — ${String(event.data.text ?? "")}`}
-                  </p>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
         {stateJson && (
           <div className="rounded border border-surface-800 bg-surface-900/70 p-2">
             <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-500">
@@ -307,6 +288,14 @@ export function Playground({ flow, onClose }: { flow: FlowInfo; onClose: () => v
         )}
         <div ref={bottom} />
       </div>
+
+      {showTimeline && (
+        <TimelinePopup
+          timeline={nodeTimeline}
+          events={eventLog}
+          onClose={() => setShowTimeline(false)}
+        />
+      )}
 
       {pending && <InterruptModal payload={pending.payload} onAnswer={resume} />}
 
@@ -343,6 +332,142 @@ export function Playground({ flow, onClose }: { flow: FlowInfo; onClose: () => v
         </Button>
       </footer>
         </>
+      )}
+    </div>
+  );
+}
+
+// --------------------------------------------------------------------------- node timeline (popup, default off)
+function TimelinePopup({
+  timeline,
+  events,
+  onClose,
+}: {
+  timeline: RunEvent[];
+  events: RunEvent[];
+  onClose: () => void;
+}) {
+  const [showRaw, setShowRaw] = useState(false);
+  return (
+    <div className="absolute left-2 right-2 top-11 z-20 flex max-h-[75%] flex-col rounded-lg border border-surface-700 bg-surface-900 shadow-xl">
+      <div className="flex items-center justify-between border-b border-surface-800 px-3 py-2">
+        <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">
+          node timeline
+        </p>
+        <div className="flex items-center gap-2">
+          {timeline.length > 0 && (
+            <button
+              className="text-[10px] text-zinc-500 hover:text-zinc-300"
+              onClick={() => setShowRaw((v) => !v)}
+            >
+              {showRaw ? "pretty" : "raw json"}
+            </button>
+          )}
+          <button className="text-zinc-500 hover:text-zinc-200" onClick={onClose} title="Close">
+            ✕
+          </button>
+        </div>
+      </div>
+      <div className="overflow-y-auto p-2">
+        {timeline.length === 0 ? (
+          <p className="px-1 py-2 text-[10px] text-zinc-500">
+            No run yet — send a message to see the node timeline.
+          </p>
+        ) : showRaw ? (
+          <pre className="overflow-auto text-[9px] text-zinc-400">
+            {JSON.stringify(events, null, 1)}
+          </pre>
+        ) : (
+          <div className="space-y-0.5">
+            {timeline.map((event, index) =>
+              event.event === "tool_call" || event.event === "tool_result" ? (
+                <ToolBlock key={index} event={event} />
+              ) : event.event === "node_finished" &&
+                event.data.outputs_preview &&
+                Object.keys(event.data.outputs_preview as object).length > 0 ? (
+                <OutputPreviewRow key={index} event={event} />
+              ) : (
+                <p key={index} className="font-mono text-[10px] text-zinc-400">
+                  <span
+                    className={cn(
+                      event.event === "node_error" && "text-red-400",
+                      event.event === "interrupt_raised" && "text-amber-400",
+                      event.event === "node_finished" && "text-emerald-400",
+                    )}
+                  >
+                    {event.event}
+                  </span>{" "}
+                  {String(event.data.node_id ?? "")}
+                  {event.event === "node_finished" &&
+                    ` ${String(event.data.duration_ms ?? "")}ms`}
+                  {event.event === "node_status" && ` — ${String(event.data.text ?? "")}`}
+                </p>
+              ),
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// --------------------------------------------------------------------------- tool-call block (§11.7)
+function ToolBlock({ event }: { event: RunEvent }) {
+  const [open, setOpen] = useState(false);
+  const isCall = event.event === "tool_call";
+  const name = String(event.data.tool_name ?? "tool");
+  const preview = isCall
+    ? JSON.stringify(event.data.args_preview ?? {})
+    : String(event.data.result_preview ?? "");
+  const duration = event.data.duration_ms;
+  return (
+    <div className="rounded border border-surface-800 bg-surface-950/60 px-1.5 py-0.5">
+      <button
+        className="flex w-full items-center gap-1.5 text-left font-mono text-[10px]"
+        onClick={() => setOpen((v) => !v)}
+      >
+        <span className={cn(isCall ? "text-sky-400" : "text-emerald-400")}>
+          {isCall ? "→ tool_call" : "← tool_result"}
+        </span>
+        <span className="text-zinc-300">{name}</span>
+        {duration != null && <span className="text-zinc-600">{String(duration)}ms</span>}
+        <span className="ml-auto text-zinc-600">{open ? "▾" : "▸"}</span>
+      </button>
+      {open && (
+        <pre className="mt-0.5 max-h-32 overflow-auto whitespace-pre-wrap text-[9px] text-zinc-400">
+          {preview}
+        </pre>
+      )}
+    </div>
+  );
+}
+
+// --------------------------------------------------------------------------- output preview (§11.6)
+function OutputPreviewRow({ event }: { event: RunEvent }) {
+  const [open, setOpen] = useState(false);
+  const nodeId = String(event.data.node_id ?? "");
+  const preview = event.data.outputs_preview as Record<string, unknown>;
+  return (
+    <div className="rounded border border-surface-800 bg-surface-950/60 px-1.5 py-0.5">
+      <button
+        className="flex w-full items-center gap-1.5 text-left font-mono text-[10px]"
+        onClick={() => setOpen((v) => !v)}
+      >
+        <span className="text-emerald-400">✓ {nodeId}</span>
+        <span className="text-zinc-600">{String(event.data.duration_ms ?? "")}ms</span>
+        <span className="ml-auto text-zinc-600">{open ? "▾ outputs" : "▸ outputs"}</span>
+      </button>
+      {open && (
+        <div className="mt-0.5 space-y-0.5">
+          {Object.entries(preview).map(([port, value]) => (
+            <div key={port} className="text-[9px]">
+              <span className="font-mono text-zinc-500">{port}</span>
+              <pre className="max-h-28 overflow-auto whitespace-pre-wrap text-zinc-400">
+                {typeof value === "string" ? value : JSON.stringify(value, null, 1)}
+              </pre>
+            </div>
+          ))}
+        </div>
       )}
     </div>
   );
@@ -423,7 +548,8 @@ function A2AChat({ slug }: { slug: string }) {
         const { done, value } = await reader.read();
         if (done) break;
         buffer += decoder.decode(value, { stream: true });
-        const frames = buffer.split("\n\n");
+        // accept CRLF (sse-starlette) and LF (a2a-sdk) blank-line separators
+        const frames = buffer.split(/\r?\n\r?\n/);
         buffer = frames.pop() ?? "";
         for (const frame of frames) {
           const dataLine = frame

@@ -20,7 +20,7 @@ export interface CanvasNodeData extends Record<string, unknown> {
 }
 
 export type CanvasNode = Node<CanvasNodeData>;
-export type CanvasEdge = Edge<{ kind: EdgeKind }>;
+export type CanvasEdge = Edge<{ kind: EdgeKind; coercion?: string }>;
 
 export const ROUTER_TARGET_HANDLE = "__in__";
 /** sticky notes ride along as canvas nodes with this marker componentId (§11.8) */
@@ -148,7 +148,8 @@ export function defaultConfig(descriptor: ComponentDescriptor): Record<string, u
 export function emptyFlowSpec(name: string, slug: string): FlowSpec {
   return {
     schema_version: "1",
-    flow: { name, slug, description: "", a2a: { enabled: false }, mcp: { enabled: false } },
+    // Serving is exclusive; A2A is the default surface for a new flow (SPEC §7.1).
+    flow: { name, slug, description: "", a2a: { enabled: true }, mcp: { enabled: false } },
     nodes: [
       {
         id: "start",

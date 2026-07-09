@@ -13,6 +13,7 @@ from collections import defaultdict
 from collections.abc import AsyncIterator, Awaitable, Callable
 
 from lga.schema.events import RunEvent
+from lga.schema.scrub import scrub_data
 
 logger = logging.getLogger("lga.events")
 
@@ -34,10 +35,13 @@ class EventBus:
         self._load = load
         self._buffer_size = buffer_size
         self._persist_queue: asyncio.Queue[RunEvent] = asyncio.Queue()
-        self._persist_task: asyncio.Task | None = None
+        self._persist_task: asyncio.Task[None] | None = None
 
     # ---------------------------------------------------------------- publish
     def publish(self, event: RunEvent) -> RunEvent:
+        # scrub secrets before anything sees the event — SSE subscribers AND the
+        # persisted row are both fed from this one object (SPEC §10.5)
+        event.data = scrub_data(event.data)
         seq = self._seq.get(event.run_id, 0) + 1
         self._seq[event.run_id] = seq
         event.seq = seq
@@ -69,6 +73,7 @@ class EventBus:
         self._subscribers[run_id].add(queue)
         try:
             last = after_seq
+            event: RunEvent | None
             if replay and self._load is not None:
                 for event in await self._load(run_id, after_seq):
                     last = max(last, event.seq)

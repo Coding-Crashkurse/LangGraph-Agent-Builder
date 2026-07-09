@@ -12,7 +12,7 @@ import secrets as _secrets
 import sys
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -71,6 +71,7 @@ class Settings(BaseSettings):
     ssl_cert_file: Path | None = None
     ssl_key_file: Path | None = None
     log_file: Path | None = None
+    fallback_to_env_var: bool = False  # §9.4 — unresolved $var falls back to process env
 
     # test-only hooks (never documented)
     testing: bool = False
@@ -159,10 +160,33 @@ class Settings(BaseSettings):
             return []
         return [Path(p).expanduser() for p in self.components_path.split(os.pathsep) if p]
 
+    @property
+    def vectors_dir(self) -> Path:
+        """Home of the ``local`` vector store files (SPEC §10.1)."""
+        return self.home / "vectors"
+
+    def vectorstore_env_connections(self) -> dict[str, dict[str, Any]]:
+        """Parse ``LGA_VECTORSTORE_<NAME>`` JSON descriptors (SPEC §8b.3)."""
+        import json
+        import os
+
+        prefix = "LGA_VECTORSTORE_"
+        out: dict[str, dict[str, Any]] = {}
+        for key, value in os.environ.items():
+            if not key.startswith(prefix):
+                continue
+            name = key.removeprefix(prefix).lower().replace("_", "-")
+            try:
+                out[name] = json.loads(value)
+            except (ValueError, TypeError):
+                continue
+        return out
+
     def ensure_dirs(self) -> None:
         self.home.mkdir(parents=True, exist_ok=True)
         assert self.files_dir is not None
         self.files_dir.mkdir(parents=True, exist_ok=True)
+        self.vectors_dir.mkdir(parents=True, exist_ok=True)
 
 
 @lru_cache

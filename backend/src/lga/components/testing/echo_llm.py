@@ -6,7 +6,8 @@ from typing import Any
 
 from langchain_core.messages import AIMessage
 
-from lga.sdk import Component, Output, fields, ports
+from lga.sdk import BuildContext, Component, Output, fields, ports
+from lga.sdk.component import NodeFn
 from lga.sdk.templating import last_message_text, message_text
 
 
@@ -39,7 +40,7 @@ class EchoLLM(Component):
         Output(name="text", display_name="Text", port=ports.TEXT),
     ]
 
-    def build(self, ctx):
+    def build(self, ctx: BuildContext) -> NodeFn:
         async def node(state: dict[str, Any], config: Any) -> dict[str, Any]:
             inbound = ctx.get_input(state, "input")
             text = message_text(inbound) if inbound is not None else ""

@@ -39,6 +39,8 @@ dependencies = [
     "jsonpath-ng>=1.6",
     "cryptography>=42.0",
     "watchfiles>=0.24",
+    # local vector store — pure wheel, no server (SPEC §8b.2)
+    "sqlite-vec>=0.1.3",
 ]
 
 [project.optional-dependencies]
@@ -53,11 +55,13 @@ postgres = [
 ]
 pgvector = [
     "lga[postgres]",
-    "langchain-postgres>=0.0.12",
-    "langchain-text-splitters>=0.3",
+    "pgvector>=0.3",
     "pypdf>=5.0",
 ]
-all = ["lga[openai,anthropic,ollama,postgres,pgvector]"]
+qdrant = ["qdrant-client>=1.12"]
+weaviate = ["weaviate-client>=4.9"]
+chroma = ["chromadb>=0.5"]
+all = ["lga[openai,anthropic,ollama,postgres,pgvector,qdrant,weaviate,chroma]"]
 
 [project.scripts]
 lga = "lga.cli.main:app"
@@ -70,6 +74,9 @@ dev = [
     "ruff>=0.8",
     "pytest>=8.3",
     "pytest-asyncio>=0.24",
+    "pytest-cov>=6.0",
+    "mypy>=1.13",
+    "pre-commit>=4.0",
     "import-linter>=2.0",
     # extras material for the dev/test matrix (both storage tiers, providers)
     "asyncpg>=0.30",
@@ -103,8 +110,13 @@ src = ["src", "tests"]
 extend-exclude = ["src/graphforge", "src/lga/_static"]
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I", "UP", "B", "ASYNC", "RUF"]
-ignore = ["RUF001", "RUF002", "RUF003"]
+# REFACTOR.md §8: E,F,I (basics+imports), UP (pyupgrade), B (bugbear),
+# ANN (annotations), ASYNC, PT (pytest-style), plus W/RUF hygiene.
+select = ["E", "F", "W", "I", "UP", "B", "ANN", "ASYNC", "PT", "RUF"]
+ignore = [
+    "RUF001", "RUF002", "RUF003",
+    "ANN401",  # allow `Any` where deliberately used (each site carries a why)
+]
 
 [tool.ruff.lint.per-file-ignores]
 # Component metadata are ClassVars declared on Component; overriding them in
@@ -117,6 +129,11 @@ ignore = ["RUF001", "RUF002", "RUF003"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
+# REFACTOR.md §4 tiers: unit/ (no net/DB, ms), contract/ (adapter ⇄ port
+# protocol), integration/ (real DB/MCP/A2A, opt-in via the marker + CI job).
+markers = [
+    "integration: exercises a real server/DB/network (vendor vector backends, live MCP/A2A); opt-in, separate CI job",
+]
 filterwarnings = [
     "ignore::DeprecationWarning",
     "ignore::pydantic.PydanticDeprecatedSince20",
@@ -131,3 +148,100 @@ name = "sdk stays lightweight (no fastapi/db imports)"
 type = "forbidden"
 source_modules = ["lga.sdk"]
 forbidden_modules = ["fastapi", "lga.services.db", "lga.api", "sqlalchemy", "alembic"]
+
+# SPEC §8b.2 / §15.6: `import lga` must not import a vendor vector client — the
+# slim-core promise. The five backends live behind the VectorStoreProvider
+# protocol and import their client lazily *inside methods*; only those specific
+# adapter modules may reference the vendor package. Any other lga module reaching
+# for a vector client (or an eager top-level import that would load one at
+# `import lga`) fails this contract. A runtime backstop asserting the clients are
+# absent from `sys.modules` after `import lga` lives in tests/test_slim_core.py.
+[[tool.importlinter.contracts]]
+name = "core stays vector-vendor-free (importing lga must not import a vector client)"
+type = "forbidden"
+source_modules = ["lga"]
+forbidden_modules = ["qdrant_client", "weaviate", "chromadb", "pgvector"]
+ignore_imports = [
+    "lga.vectorstores.qdrant -> qdrant_client",
+    "lga.vectorstores.weaviate -> weaviate",
+    "lga.vectorstores.chroma -> chromadb",
+]
+
+# --------------------------------------------------------------------------- mypy
+# REFACTOR.md §2/§8: strict type-checker as a hard gate. Pydantic plugin so
+# BaseModel field types are understood. Untyped third-party SDKs (a2a, mcp,
+# langgraph, vector clients) have no stubs → their imports are ignored, but our
+# own code stays under full strict rules.
+[tool.mypy]
+python_version = "3.12"
+strict = true
+mypy_path = "src"
+explicit_package_bases = true
+namespace_packages = true
+plugins = ["pydantic.mypy"]
+warn_unused_ignores = true
+warn_redundant_casts = true
+warn_unused_configs = true
+show_error_codes = true
+# tests exercise fakes and partial states; keep them typed but not strict-blocking
+# on decorator/return inference from pytest/pytest-asyncio.
+files = ["src", "tests"]
+
+[tool.pydantic-mypy]
+init_forbid_extra = true
+init_typed = true
+warn_required_dynamic_aliases = true
+
+[[tool.mypy.overrides]]
+module = [
+    "a2a.*",
+    "mcp.*",
+    "langgraph.*",
+    "langgraph_checkpoint.*",
+    "langchain_mcp_adapters.*",
+    "langchain_openai.*",
+    "langchain_anthropic.*",
+    "langchain_ollama.*",
+    "langchain_postgres.*",
+    "langchain_text_splitters.*",
+    "sqlite_vec.*",
+    "jsonpath_ng.*",
+    "pgvector.*",
+    "qdrant_client.*",
+    "weaviate.*",
+    "chromadb.*",
+    "sse_starlette.*",
+    "pypdf.*",
+]
+ignore_missing_imports = true
+
+# --------------------------------------------------------------------------- coverage
+# REFACTOR.md §4: ≥85 % on core logic. Branch coverage so untested routing /
+# error paths (the ones that matter) show up. `--cov` is opt-in; CI passes it.
+[tool.coverage.run]
+source = ["lga"]
+branch = true
+omit = [
+    "*/lga/db/migrations/*",
+    "*/lga/_static/*",
+    # Vendor vector backends are integration-tier adapters (SPEC §8b: "backends
+    # as extras, lazy import"). They require an uninstalled vendor client AND a
+    # live server, so they are exercised by the integration tier (extras + real
+    # servers, separate CI job), NOT the unit gate. The `local` (sqlite-vec)
+    # backend ships in core and IS unit-covered here.
+    "*/lga/vectorstores/chroma.py",
+    "*/lga/vectorstores/pgvector.py",
+    "*/lga/vectorstores/weaviate.py",
+    "*/lga/vectorstores/qdrant.py",
+]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
+fail_under = 85
+exclude_also = [
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "@(abc\\.)?abstractmethod",
+    "\\.\\.\\.",
+]

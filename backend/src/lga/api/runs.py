@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from collections.abc import AsyncGenerator
 from typing import Any
 
 from fastapi import APIRouter, Header, HTTPException, Query, Request
@@ -25,7 +26,19 @@ class RunBody(BaseModel):
     session_id: str | None = None
     tweaks: dict[str, dict[str, Any]] | None = None
     stream: bool = False
+    background: bool = False  # 202 + poll (SPEC §6.5)
+    until_node: str | None = None  # partial run (SPEC §6.4)
     mode: str = "api"  # playground | api | debug
+
+
+def _header_vars(request: Request) -> dict[str, str]:
+    """X-LGA-VAR-<NAME> headers override generic globals for this run (§9.4)."""
+    out: dict[str, str] = {}
+    for key, value in request.headers.items():
+        lower = key.lower()
+        if lower.startswith("x-lga-var-"):
+            out[lower.removeprefix("x-lga-var-")] = value
+    return out
 
 
 class ResumeBody(BaseModel):
@@ -61,7 +74,7 @@ async def _resolve_files(svc: Any, file_ids: list[str]) -> list[dict[str, Any]]:
 
 
 def _event_source(svc: Any, run_id: str, after_seq: int) -> EventSourceResponse:
-    async def gen():
+    async def gen() -> AsyncGenerator[dict[str, Any], None]:
         heartbeat = 0.0
         agen = svc.bus.subscribe(run_id, after_seq=after_seq).__aiter__()
         while True:
@@ -78,25 +91,29 @@ def _event_source(svc: Any, run_id: str, after_seq: int) -> EventSourceResponse:
     return EventSourceResponse(gen())
 
 
-@router.post("/flows/{flow_ref}/run")
-async def run_flow_endpoint(flow_ref: str, body: RunBody, svc: Services) -> Any:
-    # flow_ref = id or slug — the slug form is the stable per-flow API base URL
-    flow = await svc.flows.get(flow_ref) or await svc.flows.get_by_slug(flow_ref)
+@router.post("/flows/{id_or_slug}/run")
+async def run_flow_endpoint(id_or_slug: str, body: RunBody, request: Request, svc: Services) -> Any:
+    # id_or_slug — the slug form is the stable per-flow API base URL (§9)
+    flow = await svc.flows.resolve(id_or_slug)
     if flow is None:
         raise HTTPException(404, "flow not found")
     files = await _resolve_files(svc, body.files)
+    background = body.stream or body.background
+    mode = "partial" if body.until_node else body.mode
     try:
         run_id, thread_id, handle_or_result = await svc.orchestrator.start_run(
             spec=flow.spec,
             flow_row=flow,
-            mode=body.mode if body.mode in ("playground", "api", "debug") else "api",
+            mode=mode if mode in ("playground", "api", "debug", "partial") else "api",
             input_text=body.input_text,
             data=body.data,
             files=files,
             session_id=body.session_id,
             tweaks=body.tweaks,
             debug=body.mode == "debug",
-            background=body.stream,
+            background=background,
+            until_node=body.until_node,
+            extra_vars=_header_vars(request),
         )
     except FlowNotRunnableError as exc:
         raise HTTPException(
@@ -108,6 +125,10 @@ async def run_flow_endpoint(flow_ref: str, body: RunBody, svc: Services) -> Any:
         ) from exc
     if body.stream:
         return _event_source(svc, run_id, 0)
+    if body.background:
+        from fastapi.responses import JSONResponse
+
+        return JSONResponse({"run_id": run_id, "thread_id": thread_id}, status_code=202)
     result = handle_or_result
     return {"run_id": run_id, "thread_id": thread_id, **result.model_dump(mode="json")}
 
@@ -190,7 +211,8 @@ async def resume_run(run_id: str, body: ResumeBody, svc: Services) -> dict[str, 
 # ---------------------------------------------------------------- threads (§6.3)
 @router.get("/threads")
 async def list_threads(svc: Services, flow_slug: str | None = None) -> list[dict[str, Any]]:
-    return await svc.runs.list_threads(flow_slug=flow_slug)
+    threads: list[dict[str, Any]] = await svc.runs.list_threads(flow_slug=flow_slug)
+    return threads
 
 
 async def _thread_flow_spec(svc: Any, thread_id: str) -> dict[str, Any]:
@@ -205,7 +227,8 @@ async def _thread_flow_spec(svc: Any, thread_id: str) -> dict[str, Any]:
     )
     if flow is None:
         raise HTTPException(404, "flow for thread not found")
-    return flow.spec
+    spec: dict[str, Any] = flow.spec
+    return spec
 
 
 def _snapshot_json(snapshot: Any) -> dict[str, Any]:

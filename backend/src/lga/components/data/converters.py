@@ -7,7 +7,7 @@ import re
 from typing import Any
 
 from lga.sdk import Component, Output, fields, ports
-from lga.sdk.component import NodeConfig
+from lga.sdk.component import BuildContext, NodeConfig, NodeFn
 from lga.sdk.ports import Document, Message
 from lga.sdk.templating import PROMPT_VAR_RE, message_text, render_prompt
 
@@ -27,7 +27,7 @@ class PromptTemplate(Component):
         Output(name="message", display_name="Message", port=ports.MESSAGE),
     ]
 
-    def build(self, ctx):
+    def build(self, ctx: BuildContext) -> NodeFn:
         async def node(state: dict[str, Any], config: Any) -> dict[str, Any]:
             template = str(ctx.get_field("template") or "")
             data = state.get("data") or {}
@@ -49,6 +49,8 @@ CONVERSIONS = {
     "documents_to_text": (ports.DOCUMENTS, ports.TEXT),
     "json_to_text": (ports.JSON, ports.TEXT),
     "text_to_json": (ports.TEXT, ports.JSON),
+    "table_to_json": (ports.TABLE, ports.JSON),
+    "json_to_table": (ports.JSON, ports.TABLE),
 }
 
 
@@ -60,10 +62,10 @@ class TypeConvert(Component):
     category = "data"
 
     inputs = [
-        fields.TabInput(
+        fields.DropdownInput(
             name="conversion",
             display_name="Conversion",
-            options=list(CONVERSIONS.keys())[:5],
+            options=list(CONVERSIONS.keys()),  # a growing enum → dropdown, not 5-tab cap
             default="message_to_text",
             required=True,
             real_time_refresh=True,
@@ -93,7 +95,7 @@ class TypeConvert(Component):
         port = CONVERSIONS.get(conversion, (ports.ANY, ports.ANY))[1]
         return [Output(name="output", display_name="Output", port=port)]
 
-    def build(self, ctx):
+    def build(self, ctx: BuildContext) -> NodeFn:
         from lga.sdk.templating import render_jinja
 
         async def node(state: dict[str, Any], config: Any) -> dict[str, Any]:
@@ -136,6 +138,11 @@ class TypeConvert(Component):
                         out = json.loads(str(value or "{}"))
                     except json.JSONDecodeError:
                         out = {"raw": str(value)}
+                case "table_to_json":
+                    out = {"rows": value} if isinstance(value, list) else (value or {})
+                case "json_to_table":
+                    rows = value.get("rows") if isinstance(value, dict) else value
+                    out = rows if isinstance(rows, list) else ([value] if value else [])
                 case _:
                     out = value
             return {"output": out}
@@ -161,7 +168,7 @@ class JsonExtract(Component):
         Output(name="text", display_name="Text", port=ports.TEXT),
     ]
 
-    def build(self, ctx):
+    def build(self, ctx: BuildContext) -> NodeFn:
         async def node(state: dict[str, Any], config: Any) -> dict[str, Any]:
             from jsonpath_ng import parse as jsonpath_parse
 
@@ -198,7 +205,7 @@ class Parser(Component):
     ]
     outputs = [Output(name="json", display_name="Json", port=ports.JSON)]
 
-    def build(self, ctx):
+    def build(self, ctx: BuildContext) -> NodeFn:
         async def node(state: dict[str, Any], config: Any) -> dict[str, Any]:
             text = str(ctx.get_input(state, "input") or "")
             pattern = str(ctx.get_field("pattern") or "")

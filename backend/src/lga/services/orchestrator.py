@@ -13,6 +13,7 @@ from ulid import ULID
 
 from lga.compiler import CompiledFlow, compile_flow
 from lga.db.models import FlowRow
+from lga.errors import LgaRuntimeError
 from lga.runtime.executor import Executor, RunHandle, RunResult
 from lga.schema.diagnostics import Diagnostic
 from lga.schema.flowspec import FlowSpec, parse_flowspec
@@ -40,28 +41,45 @@ class Orchestrator:
         secrets: SecretsService,
         runs: RunService,
         executor: Executor,
+        vectorstores: Any = None,
     ) -> None:
         self.settings = settings
         self.registry = registry
         self.secrets = secrets
         self.runs = runs
         self.executor = executor
+        self.vectorstores = vectorstores
 
     # ---------------------------------------------------------------- compile
+    async def _vectorstore_names(self) -> set[str] | None:
+        if self.vectorstores is None:
+            return None
+        return {c["name"] for c in await self.vectorstores.list()}
+
     async def compiled(
         self,
         spec: dict[str, Any] | FlowSpec,
         *,
         tweaks: dict[str, dict[str, Any]] | None = None,
+        extra_vars: dict[str, str] | None = None,
     ) -> CompiledFlow:
         variables, secret_values = await self.secrets.snapshot()
+        if extra_vars:
+            # header-passed globals override generic vars for this run only (§9.4)
+            variables = {**variables, **extra_vars}
+        vs_provider = SnapshotVariablesProvider(variables, secret_values)
+        if self.settings.fallback_to_env_var:
+            import os
+
+            vs_provider.env_fallback = lambda name: os.environ.get(name)  # type: ignore[attr-defined]
         return compile_flow(
             parse_flowspec(spec),
             registry=self.registry,
-            variables=SnapshotVariablesProvider(variables, secret_values),
+            variables=vs_provider,
             secrets=SecretsResolver(secret_values),
             tweaks=tweaks,
             settings=self.settings,
+            vectorstore_names=await self._vectorstore_names(),
             use_cache=not tweaks,
         )
 
@@ -76,28 +94,33 @@ class Orchestrator:
 
     async def _deep_checks(self, compiled: CompiledFlow) -> list[Diagnostic]:
         from lga.schema.diagnostics import DiagnosticCode
+        from lga.vectorstores.base import (
+            BackendExtraMissing,
+            CollectionMissing,
+            DimensionMismatch,
+            VectorStoreError,
+        )
 
         diags: list[Diagnostic] = []
         assert compiled.ir is not None
         for node in compiled.ir.nodes.values():
-            if node.component.component_id == "lga.rag.pgvector_retriever" and (
-                not self.settings.is_postgres
-            ):
-                diags.append(
-                    Diagnostic.make(
-                        DiagnosticCode.E901,
-                        f"node {node.id!r} requires Postgres (pgvector); current tier is "
-                        f"{self.settings.storage_tier}",
-                        node_id=node.id,
-                        fix_hint="Set LGA_DATABASE_URL=postgresql+asyncpg://…",
-                    )
-                )
-                continue
             ctx = compiled.node_contexts.get(node.id) or node.build_ctx
             if ctx is None:
                 continue
             try:
                 await node.component().health_check(ctx)
+            except BackendExtraMissing as exc:
+                diags.append(
+                    Diagnostic.make(
+                        DiagnosticCode.E901, str(exc), node_id=node.id, fix_hint=exc.detail
+                    )
+                )
+            except CollectionMissing as exc:
+                diags.append(Diagnostic.make(DiagnosticCode.E903, str(exc), node_id=node.id))
+            except DimensionMismatch as exc:
+                diags.append(Diagnostic.make(DiagnosticCode.E904, str(exc), node_id=node.id))
+            except VectorStoreError as exc:
+                diags.append(Diagnostic.make(DiagnosticCode.E902, str(exc), node_id=node.id))
             except Exception as exc:
                 diags.append(
                     Diagnostic.make(
@@ -123,10 +146,12 @@ class Orchestrator:
         tweaks: dict[str, dict[str, Any]] | None = None,
         debug: bool = False,
         background: bool = True,
+        until_node: str | None = None,
+        extra_vars: dict[str, str] | None = None,
         run_id: str | None = None,
     ) -> tuple[str, str, RunHandle | RunResult]:
         """Create the run row and start execution; returns (run_id, thread_id, handle|result)."""
-        compiled = await self.compiled(spec, tweaks=tweaks)
+        compiled = await self.compiled(spec, tweaks=tweaks, extra_vars=extra_vars)
         if not compiled.ok:
             errors = "; ".join(
                 f"{d.code}: {d.message}" for d in compiled.diagnostics if d.severity == "error"
@@ -150,6 +175,7 @@ class Orchestrator:
             data=data,
             files=files,
             debug=debug,
+            until_node=until_node,
         )
         if background:
             handle = self.executor.start(compiled, **kwargs)
@@ -233,7 +259,7 @@ class Orchestrator:
         await graph.aupdate_state({"configurable": {"thread_id": thread_id}}, values)
 
 
-class FlowNotRunnableError(RuntimeError):
+class FlowNotRunnableError(LgaRuntimeError):
     def __init__(self, message: str, diagnostics: list[Diagnostic]) -> None:
         super().__init__(message)
         self.diagnostics = diagnostics

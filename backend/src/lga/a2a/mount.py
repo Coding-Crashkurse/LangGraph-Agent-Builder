@@ -29,7 +29,7 @@ logger = logging.getLogger("lga.a2a.mount")
 CARD_PATHS = {WELL_KNOWN_PATH, LEGACY_WELL_KNOWN_PATH}
 
 
-def effective_path(scope: dict) -> str:
+def effective_path(scope: dict[str, Any]) -> str:
     """Path relative to the mount point (Starlette ≥0.35 keeps the full path
     in scope['path'] for ASGI mounts and only advances root_path)."""
     path: str = scope.get("path", "/")
@@ -47,7 +47,7 @@ class _AgentAuthMiddleware:
         self._svc = svc
         self._auth_mode = auth_mode
 
-    async def __call__(self, scope: dict, receive: Any, send: Any) -> None:
+    async def __call__(self, scope: dict[str, Any], receive: Any, send: Any) -> None:
         if scope["type"] != "http":
             await self._app(scope, receive, send)
             return
@@ -103,7 +103,9 @@ class A2AManager:
                 card = build_card(spec, version.semver, svc.settings)
                 spec_dict = version.flowspec
 
-                async def spec_provider(_spec: dict = spec_dict) -> dict:
+                async def spec_provider(
+                    _spec: dict[str, Any] = spec_dict,
+                ) -> dict[str, Any]:
                     return _spec
 
                 agent_executor = LGAAgentExecutor(
@@ -133,7 +135,9 @@ class A2AManager:
                 )
                 card_json = json.loads(card.model_dump_json(exclude_none=True, by_alias=True))
 
-                async def card_endpoint(_request: Any, _card: dict = card_json) -> JSONResponse:
+                async def card_endpoint(
+                    _request: Any, _card: dict[str, Any] = card_json
+                ) -> JSONResponse:
                     return JSONResponse(_card)
 
                 # the sdk app already serves both well-known paths; add GET / → card
@@ -150,7 +154,7 @@ class A2AManager:
         await self._http.aclose()
 
     # ------------------------------------------------------------ dispatcher
-    async def __call__(self, scope: dict, receive: Any, send: Any) -> None:
+    async def __call__(self, scope: dict[str, Any], receive: Any, send: Any) -> None:
         if scope["type"] == "lifespan":
             return
         path = effective_path(scope)

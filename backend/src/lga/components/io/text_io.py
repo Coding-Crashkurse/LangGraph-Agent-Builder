@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from lga.sdk import Component, NodeKind, Output, fields, ports
+from lga.sdk import BuildContext, Component, NodeKind, Output, fields, ports
+from lga.sdk.component import NodeFn
 from lga.sdk.templating import last_message_text
 
 
@@ -23,12 +24,12 @@ class TextInput(Component):
             info="When on, emits the inbound chat message text instead of the literal.",
             default=False,
         ),
-        # pure trigger port so literals can be chained behind `start`
-        fields.HandleField(name="input", display_name="Input", as_port=ports.MESSAGE),
+        # pure trigger port so literals can be chained behind ANY upstream node
+        fields.HandleField(name="input", display_name="Input", as_port=ports.ANY),
     ]
     outputs = [Output(name="text", display_name="Text", port=ports.TEXT)]
 
-    def build(self, ctx):
+    def build(self, ctx: BuildContext) -> NodeFn:
         async def node(state: dict[str, Any], config: Any) -> dict[str, Any]:
             if ctx.get_field("from_message"):
                 return {"text": last_message_text(state, human_only=True)}
@@ -48,7 +49,7 @@ class TextOutput(Component):
     inputs = [fields.HandleField(name="text", display_name="Text", as_port=ports.TEXT)]
     outputs = [Output(name="result", display_name="Result", port=ports.TEXT)]
 
-    def build(self, ctx):
+    def build(self, ctx: BuildContext) -> NodeFn:
         async def node(state: dict[str, Any], config: Any) -> dict[str, Any]:
             return {"result": str(ctx.get_input(state, "text") or "")}
 
@@ -70,11 +71,11 @@ class WebhookInput(Component):
             advanced=True,
         ),
         # trigger port: webhook flows still start at `start`
-        fields.HandleField(name="input", display_name="Input", as_port=ports.MESSAGE),
+        fields.HandleField(name="input", display_name="Input", as_port=ports.ANY),
     ]
     outputs = [Output(name="payload", display_name="Payload", port=ports.JSON)]
 
-    def build(self, ctx):
+    def build(self, ctx: BuildContext) -> NodeFn:
         async def node(state: dict[str, Any], config: Any) -> dict[str, Any]:
             payload = (state.get("data") or {}).get("webhook_payload") or {}
             return {"payload": payload}

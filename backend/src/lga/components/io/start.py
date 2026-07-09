@@ -4,15 +4,16 @@ from __future__ import annotations
 
 from typing import Any
 
-from lga.sdk import Component, Output, fields, ports
+from lga.sdk import BuildContext, Component, Output, fields, ports
+from lga.sdk.component import NodeFn
 from lga.sdk.templating import last_message_text
 
 
 class Start(Component):
     component_id = "lga.io.start"
-    display_name = "Start"
+    display_name = "Chat Input"
     description = "Flow entry: exposes the inbound chat message and structured input."
-    icon = "play"
+    icon = "messages-square"
     category = "io"
     priority = 0
 
@@ -30,7 +31,7 @@ class Start(Component):
         Output(name="files", display_name="Files", port=ports.FILE_REF),
     ]
 
-    def build(self, ctx):
+    def build(self, ctx: BuildContext) -> NodeFn:
         async def node(state: dict[str, Any], config: Any) -> dict[str, Any]:
             run_meta = state.get("run_meta") or {}
             text = run_meta.get("input_text") or last_message_text(state, human_only=True)

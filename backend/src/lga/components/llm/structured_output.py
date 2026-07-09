@@ -8,6 +8,7 @@ from typing import Any
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from lga.sdk import Component, Output, fields, ports
+from lga.sdk.component import BuildContext, NodeFn
 
 
 class StructuredOutput(Component):
@@ -25,9 +26,12 @@ class StructuredOutput(Component):
         fields.HandleField(name="input", display_name="Input", as_port=ports.MESSAGE),
         fields.MultilineInput(name="instructions", display_name="Instructions", advanced=True),
     ]
-    outputs = [Output(name="json", display_name="Json", port=ports.JSON)]
+    outputs = [
+        Output(name="json", display_name="Json", port=ports.JSON),
+        Output(name="table", display_name="Table", port=ports.TABLE),
+    ]
 
-    def build(self, ctx):
+    def build(self, ctx: BuildContext) -> NodeFn:
         from lga.components.llm._models import resolve_model
         from lga.sdk.templating import message_text
 
@@ -52,6 +56,7 @@ class StructuredOutput(Component):
                 value = json.loads(raw)
             except json.JSONDecodeError:
                 value = {"raw": raw}
-            return {"json": value}
+            table = value if isinstance(value, list) else value.get("rows", [value])
+            return {"json": value, "table": table if isinstance(table, list) else [table]}
 
         return node

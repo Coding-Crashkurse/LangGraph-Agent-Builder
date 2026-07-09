@@ -129,6 +129,7 @@ class Component(ABC):
     priority: ClassVar[int | None] = None  # palette sort within category (§18.2)
     beta: ClassVar[bool] = False
     legacy: ClassVar[bool] = False
+    successor: ClassVar[str | None] = None  # replacement component_id for legacy (§4.11)
 
     # ---- interface ----
     inputs: ClassVar[list[Field]] = []
@@ -255,6 +256,7 @@ class Component(ABC):
             "priority": cls.priority,
             "beta": cls.beta,
             "legacy": cls.legacy,
+            "successor": cls.successor,
             "node_kind": cls.node_kind.value,
             "tool_mode_supported": cls.tool_mode_supported,
             "tool_mode_default": cls.tool_mode_default,

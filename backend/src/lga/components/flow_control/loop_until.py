@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from lga.sdk import Component, NodeKind, Output, fields, ports
+from lga.sdk import BuildContext, Component, NodeKind, Output, fields, ports
+from lga.sdk.component import NodeFn
 from lga.sdk.templating import eval_predicate, last_message_text
 
 
@@ -33,7 +34,7 @@ class LoopUntil(Component):
         Output(name="done", display_name="Done", port=ports.ROUTE),
     ]
 
-    def build(self, ctx):
+    def build(self, ctx: BuildContext) -> NodeFn:
         counter_key = f"__loop_{ctx.node_id}"
 
         async def node(state: dict[str, Any], config: Any) -> dict[str, Any]:

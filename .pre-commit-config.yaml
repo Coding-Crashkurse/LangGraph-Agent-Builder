@@ -1,0 +1,33 @@
+# REFACTOR.md §8 — local gate before every commit: ruff (lint+format), mypy
+# strict, and whitespace hygiene. mypy runs inside the uv-managed venv so it
+# sees the project's own dependencies and stubs.
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: ^backend/src/lga/_static/
+      - id: end-of-file-fixer
+        exclude: ^backend/src/lga/_static/
+      - id: check-yaml
+      - id: check-toml
+      - id: check-merge-conflict
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.6
+    hooks:
+      - id: ruff
+        args: [--fix]
+        files: ^backend/
+      - id: ruff-format
+        files: ^backend/
+
+  - repo: local
+    hooks:
+      - id: mypy
+        name: mypy --strict (backend)
+        entry: bash -c 'cd backend && uv run mypy'
+        language: system
+        types: [python]
+        files: ^backend/(src|tests)/
+        pass_filenames: false

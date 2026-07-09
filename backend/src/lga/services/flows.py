@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import builtins
 import re
 from typing import Any
 
@@ -84,6 +85,7 @@ class FlowService:
             name=parsed.flow.name,
             description=parsed.flow.description,
             spec=parsed.model_dump(mode="json"),
+            locked=parsed.flow.locked,
         )
         async with self._sessions() as session:
             session.add(row)
@@ -104,6 +106,53 @@ class FlowService:
             return (
                 await session.execute(select(FlowRow).where(FlowRow.slug == slug))
             ).scalar_one_or_none()
+
+    async def resolve(self, id_or_slug: str) -> FlowRow | None:
+        """Slug-first resolution (SPEC §9): accept the UUID or the flow slug."""
+        row = await self.get(id_or_slug)
+        return row if row is not None else await self.get_by_slug(id_or_slug)
+
+    async def set_locked(self, flow_id: str, locked: bool) -> FlowRow | None:
+        async with self._sessions() as session:
+            row = await session.get(FlowRow, flow_id)
+            if row is None:
+                return None
+            row.locked = locked
+            spec = dict(row.spec)
+            flow = dict(spec.get("flow") or {})
+            flow["locked"] = locked
+            spec["flow"] = flow
+            row.spec = spec
+            await session.commit()
+            await session.refresh(row)
+        return row
+
+    async def upgrade_node(
+        self, flow_id: str, node_id: str, registry: Any
+    ) -> tuple[FlowRow | None, str | None]:
+        """Run a node's ``migrate_config`` and re-pin it to the installed version (§4.11)."""
+        import copy
+
+        async with self._sessions() as session:
+            row = await session.get(FlowRow, flow_id)
+            if row is None:
+                return None, "flow not found"
+            spec = copy.deepcopy(dict(row.spec))
+            nodes = list(spec.get("nodes") or [])
+            target = next((n for n in nodes if n.get("id") == node_id), None)
+            if target is None:
+                return None, "node not found"
+            cls = registry.get(target.get("component_id"))
+            if cls is None:
+                return None, "component not installed"
+            old_version = target.get("component_version", "1.0.0")
+            target["config"] = cls.migrate_config(old_version, dict(target.get("config") or {}))
+            target["component_version"] = cls.version
+            spec["nodes"] = nodes
+            row.spec = spec
+            await session.commit()
+            await session.refresh(row)
+        return row, None
 
     async def update(self, flow_id: str, spec: dict[str, Any] | FlowSpec) -> FlowRow | None:
         parsed = parse_flowspec(spec)
@@ -137,7 +186,7 @@ class FlowService:
             return True
 
     # ---------------------------------------------------------------- versions
-    async def versions(self, flow_id: str) -> list[FlowVersionRow]:
+    async def versions(self, flow_id: str) -> builtins.list[FlowVersionRow]:
         async with self._sessions() as session:
             rows = (
                 (
@@ -179,8 +228,8 @@ class FlowService:
         registry: Any,
         bump: str = "patch",
         changelog: str = "",
-        compile_diagnostics: list[Diagnostic] | None = None,
-    ) -> tuple[FlowVersionRow | None, list[Diagnostic]]:
+        compile_diagnostics: builtins.list[Diagnostic] | None = None,
+    ) -> tuple[FlowVersionRow | None, builtins.list[Diagnostic]]:
         """Create an immutable version snapshot; blocked by ERROR diagnostics."""
         async with self._sessions() as session:
             row = await session.get(FlowRow, flow_id)
@@ -212,7 +261,7 @@ class FlowService:
         return await self.update(flow_id, version.flowspec)
 
     # ---------------------------------------------------------------- serving helpers
-    async def published_flows(self) -> list[tuple[FlowRow, FlowVersionRow, FlowSpec]]:
+    async def published_flows(self) -> builtins.list[tuple[FlowRow, FlowVersionRow, FlowSpec]]:
         """All flows with a published version whose spec enables A2A or MCP."""
         result: list[tuple[FlowRow, FlowVersionRow, FlowSpec]] = []
         for flow in await self.list():

@@ -22,7 +22,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/flows/{flow_id}": {
+    "/api/v1/flows/{id_or_slug}": {
         parameters: {
             query?: never;
             header?: never;
@@ -30,18 +30,52 @@ export interface paths {
             cookie?: never;
         };
         /** Get Flow */
-        get: operations["get_flow_api_v1_flows__flow_id__get"];
+        get: operations["get_flow_api_v1_flows__id_or_slug__get"];
         put?: never;
         post?: never;
         /** Delete Flow */
-        delete: operations["delete_flow_api_v1_flows__flow_id__delete"];
+        delete: operations["delete_flow_api_v1_flows__id_or_slug__delete"];
         options?: never;
         head?: never;
         /** Update Flow */
-        patch: operations["update_flow_api_v1_flows__flow_id__patch"];
+        patch: operations["update_flow_api_v1_flows__id_or_slug__patch"];
         trace?: never;
     };
-    "/api/v1/flows/{flow_id}/validate": {
+    "/api/v1/flows/{id_or_slug}/lock": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Lock Flow */
+        post: operations["lock_flow_api_v1_flows__id_or_slug__lock_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/flows/{id_or_slug}/nodes/{node_id}/upgrade": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Upgrade Node */
+        post: operations["upgrade_node_api_v1_flows__id_or_slug__nodes__node_id__upgrade_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/flows/{id_or_slug}/validate": {
         parameters: {
             query?: never;
             header?: never;
@@ -51,14 +85,14 @@ export interface paths {
         get?: never;
         put?: never;
         /** Validate Flow */
-        post: operations["validate_flow_api_v1_flows__flow_id__validate_post"];
+        post: operations["validate_flow_api_v1_flows__id_or_slug__validate_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/v1/flows/{flow_id}/publish": {
+    "/api/v1/flows/{id_or_slug}/publish": {
         parameters: {
             query?: never;
             header?: never;
@@ -68,14 +102,14 @@ export interface paths {
         get?: never;
         put?: never;
         /** Publish Flow */
-        post: operations["publish_flow_api_v1_flows__flow_id__publish_post"];
+        post: operations["publish_flow_api_v1_flows__id_or_slug__publish_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/v1/flows/{flow_id}/versions": {
+    "/api/v1/flows/{id_or_slug}/versions": {
         parameters: {
             query?: never;
             header?: never;
@@ -83,7 +117,7 @@ export interface paths {
             cookie?: never;
         };
         /** List Versions */
-        get: operations["list_versions_api_v1_flows__flow_id__versions_get"];
+        get: operations["list_versions_api_v1_flows__id_or_slug__versions_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -92,7 +126,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/flows/{flow_id}/versions/{semver}": {
+    "/api/v1/flows/{id_or_slug}/versions/{semver}": {
         parameters: {
             query?: never;
             header?: never;
@@ -100,7 +134,7 @@ export interface paths {
             cookie?: never;
         };
         /** Get Version */
-        get: operations["get_version_api_v1_flows__flow_id__versions__semver__get"];
+        get: operations["get_version_api_v1_flows__id_or_slug__versions__semver__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -109,7 +143,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/flows/{flow_id}/versions/{semver}/rollback": {
+    "/api/v1/flows/{id_or_slug}/versions/{semver}/rollback": {
         parameters: {
             query?: never;
             header?: never;
@@ -119,14 +153,14 @@ export interface paths {
         get?: never;
         put?: never;
         /** Rollback */
-        post: operations["rollback_api_v1_flows__flow_id__versions__semver__rollback_post"];
+        post: operations["rollback_api_v1_flows__id_or_slug__versions__semver__rollback_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/v1/flows/{flow_id}/export": {
+    "/api/v1/flows/{id_or_slug}/export": {
         parameters: {
             query?: never;
             header?: never;
@@ -134,7 +168,7 @@ export interface paths {
             cookie?: never;
         };
         /** Export Flow */
-        get: operations["export_flow_api_v1_flows__flow_id__export_get"];
+        get: operations["export_flow_api_v1_flows__id_or_slug__export_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -194,7 +228,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/flows/{flow_ref}/run": {
+    "/api/v1/flows/{id_or_slug}/run": {
         parameters: {
             query?: never;
             header?: never;
@@ -204,7 +238,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** Run Flow Endpoint */
-        post: operations["run_flow_endpoint_api_v1_flows__flow_ref__run_post"];
+        post: operations["run_flow_endpoint_api_v1_flows__id_or_slug__run_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -371,6 +405,110 @@ export interface paths {
         post?: never;
         /** Delete Thread */
         delete: operations["delete_thread_api_v1_threads__thread_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/vectorstores/backends": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Backends */
+        get: operations["list_backends_api_v1_vectorstores_backends_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/vectorstores": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Connections */
+        get: operations["list_connections_api_v1_vectorstores_get"];
+        put?: never;
+        /** Create Connection */
+        post: operations["create_connection_api_v1_vectorstores_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/vectorstores/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Connection */
+        delete: operations["delete_connection_api_v1_vectorstores__name__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/vectorstores/{name}/collections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Collections */
+        get: operations["list_collections_api_v1_vectorstores__name__collections_get"];
+        put?: never;
+        /** Create Collection */
+        post: operations["create_collection_api_v1_vectorstores__name__collections_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/templates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Templates */
+        get: operations["list_templates_api_v1_templates_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/flows/from-template/{template_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create From Template */
+        post: operations["create_from_template_api_v1_flows_from_template__template_id__post"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -587,7 +725,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/webhook/{flow_ref}": {
+    "/api/v1/webhook/{id_or_slug}": {
         parameters: {
             query?: never;
             header?: never;
@@ -597,7 +735,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** Webhook */
-        post: operations["webhook_api_v1_webhook__flow_ref__post"];
+        post: operations["webhook_api_v1_webhook__id_or_slug__post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -674,6 +812,21 @@ export interface components {
             /** File */
             file: string;
         };
+        /** CollectionBody */
+        CollectionBody: {
+            /** Name */
+            name: string;
+            /**
+             * Dim
+             * @default 32
+             */
+            dim: number;
+            /**
+             * Metric
+             * @default cosine
+             */
+            metric: string;
+        };
         /** ConfigChangeBody */
         ConfigChangeBody: {
             /** Config */
@@ -684,6 +837,20 @@ export interface components {
             changed_field: string;
             /** Value */
             value?: unknown;
+        };
+        /** ConnectionBody */
+        ConnectionBody: {
+            /** Name */
+            name: string;
+            /**
+             * Backend
+             * @default local
+             */
+            backend: string;
+            /** Config */
+            config?: {
+                [key: string]: unknown;
+            };
         };
         /** FlowCreate */
         FlowCreate: {
@@ -703,6 +870,14 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /** LockBody */
+        LockBody: {
+            /**
+             * Locked
+             * @default true
+             */
+            locked: boolean;
         };
         /** McpServerBody */
         McpServerBody: {
@@ -766,6 +941,13 @@ export interface components {
              */
             stream: boolean;
             /**
+             * Background
+             * @default false
+             */
+            background: boolean;
+            /** Until Node */
+            until_node?: string | null;
+            /**
              * Mode
              * @default api
              */
@@ -807,7 +989,10 @@ export type $defs = Record<string, never>;
 export interface operations {
     list_flows_api_v1_flows_get: {
         parameters: {
-            query?: never;
+            query?: {
+                tag?: string | null;
+                q?: string | null;
+            };
             header?: {
                 "X-API-Key"?: string | null;
             };
@@ -875,14 +1060,14 @@ export interface operations {
             };
         };
     };
-    get_flow_api_v1_flows__flow_id__get: {
+    get_flow_api_v1_flows__id_or_slug__get: {
         parameters: {
             query?: never;
             header?: {
                 "X-API-Key"?: string | null;
             };
             path: {
-                flow_id: string;
+                id_or_slug: string;
             };
             cookie?: never;
         };
@@ -910,14 +1095,14 @@ export interface operations {
             };
         };
     };
-    delete_flow_api_v1_flows__flow_id__delete: {
+    delete_flow_api_v1_flows__id_or_slug__delete: {
         parameters: {
             query?: never;
             header?: {
                 "X-API-Key"?: string | null;
             };
             path: {
-                flow_id: string;
+                id_or_slug: string;
             };
             cookie?: never;
         };
@@ -941,14 +1126,14 @@ export interface operations {
             };
         };
     };
-    update_flow_api_v1_flows__flow_id__patch: {
+    update_flow_api_v1_flows__id_or_slug__patch: {
         parameters: {
             query?: never;
             header?: {
                 "X-API-Key"?: string | null;
             };
             path: {
-                flow_id: string;
+                id_or_slug: string;
             };
             cookie?: never;
         };
@@ -980,16 +1165,54 @@ export interface operations {
             };
         };
     };
-    validate_flow_api_v1_flows__flow_id__validate_post: {
+    lock_flow_api_v1_flows__id_or_slug__lock_post: {
         parameters: {
-            query?: {
-                deep?: boolean;
-            };
+            query?: never;
             header?: {
                 "X-API-Key"?: string | null;
             };
             path: {
-                flow_id: string;
+                id_or_slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LockBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upgrade_node_api_v1_flows__id_or_slug__nodes__node_id__upgrade_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                id_or_slug: string;
+                node_id: string;
             };
             cookie?: never;
         };
@@ -1017,14 +1240,51 @@ export interface operations {
             };
         };
     };
-    publish_flow_api_v1_flows__flow_id__publish_post: {
+    validate_flow_api_v1_flows__id_or_slug__validate_post: {
+        parameters: {
+            query?: {
+                deep?: boolean;
+            };
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                id_or_slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    publish_flow_api_v1_flows__id_or_slug__publish_post: {
         parameters: {
             query?: never;
             header?: {
                 "X-API-Key"?: string | null;
             };
             path: {
-                flow_id: string;
+                id_or_slug: string;
             };
             cookie?: never;
         };
@@ -1056,14 +1316,14 @@ export interface operations {
             };
         };
     };
-    list_versions_api_v1_flows__flow_id__versions_get: {
+    list_versions_api_v1_flows__id_or_slug__versions_get: {
         parameters: {
             query?: never;
             header?: {
                 "X-API-Key"?: string | null;
             };
             path: {
-                flow_id: string;
+                id_or_slug: string;
             };
             cookie?: never;
         };
@@ -1091,14 +1351,14 @@ export interface operations {
             };
         };
     };
-    get_version_api_v1_flows__flow_id__versions__semver__get: {
+    get_version_api_v1_flows__id_or_slug__versions__semver__get: {
         parameters: {
             query?: never;
             header?: {
                 "X-API-Key"?: string | null;
             };
             path: {
-                flow_id: string;
+                id_or_slug: string;
                 semver: string;
             };
             cookie?: never;
@@ -1127,14 +1387,14 @@ export interface operations {
             };
         };
     };
-    rollback_api_v1_flows__flow_id__versions__semver__rollback_post: {
+    rollback_api_v1_flows__id_or_slug__versions__semver__rollback_post: {
         parameters: {
             query?: never;
             header?: {
                 "X-API-Key"?: string | null;
             };
             path: {
-                flow_id: string;
+                id_or_slug: string;
                 semver: string;
             };
             cookie?: never;
@@ -1163,7 +1423,7 @@ export interface operations {
             };
         };
     };
-    export_flow_api_v1_flows__flow_id__export_get: {
+    export_flow_api_v1_flows__id_or_slug__export_get: {
         parameters: {
             query?: {
                 format?: string;
@@ -1172,7 +1432,7 @@ export interface operations {
                 "X-API-Key"?: string | null;
             };
             path: {
-                flow_id: string;
+                id_or_slug: string;
             };
             cookie?: never;
         };
@@ -1305,14 +1565,14 @@ export interface operations {
             };
         };
     };
-    run_flow_endpoint_api_v1_flows__flow_ref__run_post: {
+    run_flow_endpoint_api_v1_flows__id_or_slug__run_post: {
         parameters: {
             query?: never;
             header?: {
                 "X-API-Key"?: string | null;
             };
             path: {
-                flow_ref: string;
+                id_or_slug: string;
             };
             cookie?: never;
         };
@@ -1754,6 +2014,282 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_backends_api_v1_vectorstores_backends_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_connections_api_v1_vectorstores_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    }[];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_connection_api_v1_vectorstores_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConnectionBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_connection_api_v1_vectorstores__name__delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_collections_api_v1_vectorstores__name__collections_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    }[];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_collection_api_v1_vectorstores__name__collections_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CollectionBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_templates_api_v1_templates_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    }[];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_from_template_api_v1_flows_from_template__template_id__post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                template_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
             };
             /** @description Validation Error */
             422: {
@@ -2282,14 +2818,14 @@ export interface operations {
             };
         };
     };
-    webhook_api_v1_webhook__flow_ref__post: {
+    webhook_api_v1_webhook__id_or_slug__post: {
         parameters: {
             query?: never;
             header?: {
                 "X-API-Key"?: string | null;
             };
             path: {
-                flow_ref: string;
+                id_or_slug: string;
             };
             cookie?: never;
         };

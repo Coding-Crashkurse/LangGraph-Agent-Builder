@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from types import ModuleType
 
+from lga.errors import LgaRuntimeError
 from lga.sdk.component import Component
 
 logger = logging.getLogger("lga.registry")
@@ -27,7 +28,7 @@ logger = logging.getLogger("lga.registry")
 ENTRY_POINT_GROUP = "lga.components"
 
 
-class DuplicateComponentError(RuntimeError):
+class DuplicateComponentError(LgaRuntimeError):
     pass
 
 
@@ -121,7 +122,8 @@ class ComponentRegistry:
             mod_name = "lga_user_components." + ".".join(rel.parts)
             try:
                 spec = importlib.util.spec_from_file_location(mod_name, py)
-                assert spec and spec.loader
+                assert spec
+                assert spec.loader
                 module = importlib.util.module_from_spec(spec)
                 sys.modules[mod_name] = module
                 spec.loader.exec_module(module)

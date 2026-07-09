@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from lga.schema.flowspec import EdgeSpec, FlowSpec, NodeSpec
-from lga.sdk.component import BuildContext, Component
+from lga.sdk.component import BuildContext, Component, NodeKind
 from lga.sdk.outputs import Output
 from lga.sdk.ports import PortSpec
 
@@ -26,7 +26,7 @@ class NodeIR:
         return self.spec.id
 
     @property
-    def kind(self):
+    def kind(self) -> NodeKind:
         return self.component.node_kind
 
 

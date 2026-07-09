@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from lga.sdk import Component, Output, fields, ports
+from lga.sdk import BuildContext, Component, Output, fields, ports
+from lga.sdk.component import NodeFn
 from lga.sdk.templating import last_message_text, render_jinja
 
 
@@ -32,7 +33,7 @@ class SetData(Component):
     ]
     outputs = [Output(name="data", display_name="Data", port=ports.JSON)]
 
-    def build(self, ctx):
+    def build(self, ctx: BuildContext) -> NodeFn:
         async def node(state: dict[str, Any], config: Any) -> dict[str, Any]:
             variables = {
                 "data": dict(state.get("data") or {}),

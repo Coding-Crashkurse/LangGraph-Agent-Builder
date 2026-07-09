@@ -45,6 +45,34 @@ def json_to_text(value: Any) -> str:
         return str(value)
 
 
+def table_to_json(value: Any) -> dict[str, Any]:
+    return {"rows": list(value or [])}
+
+
+def table_to_text(value: Any) -> str:
+    """Render a list-of-dict Table as a GitHub-flavoured markdown table."""
+    rows = list(value or [])
+    if not rows:
+        return ""
+    columns: list[str] = []
+    for row in rows:
+        if isinstance(row, dict):
+            for key in row:
+                if key not in columns:
+                    columns.append(str(key))
+    if not columns:
+        return "\n".join(str(r) for r in rows)
+    header = "| " + " | ".join(columns) + " |"
+    sep = "| " + " | ".join("---" for _ in columns) + " |"
+    body = [
+        "| "
+        + " | ".join(str(row.get(c, "") if isinstance(row, dict) else "") for c in columns)
+        + " |"
+        for row in rows
+    ]
+    return "\n".join([header, sep, *body])
+
+
 def wrap_list(value: Any) -> list[Any]:
     return [value]
 
@@ -55,6 +83,8 @@ _EDGE_COERCIONS: dict[tuple[str, str], str] = {
     ("lga:Text", "lga:Message"): "text_to_message",
     ("lga:Documents", "lga:Text"): "documents_to_text",
     ("lga:Json", "lga:Text"): "json_to_text",
+    ("lga:Table", "lga:Json"): "table_to_json",
+    ("lga:Table", "lga:Text"): "table_to_text",
 }
 
 FUNCTIONS: dict[str, Callable[[Any], Any]] = {
@@ -62,6 +92,8 @@ FUNCTIONS: dict[str, Callable[[Any], Any]] = {
     "text_to_message": text_to_message,
     "documents_to_text": documents_to_text,
     "json_to_text": json_to_text,
+    "table_to_json": table_to_json,
+    "table_to_text": table_to_text,
     "wrap_list": wrap_list,
 }
 

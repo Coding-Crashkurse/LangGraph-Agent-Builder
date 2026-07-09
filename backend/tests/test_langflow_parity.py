@@ -5,14 +5,26 @@ from __future__ import annotations
 import asyncio
 import json
 from contextlib import asynccontextmanager
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
 from tests.conftest import hello_spec
 
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
+    from pathlib import Path
+
+    from fastapi import FastAPI
+
+    from lga.app import AppServices
+    from lga.services.settings import Settings
+
 
 @asynccontextmanager
-async def boot_app(settings):
+async def boot_app(
+    settings: Settings,
+) -> AsyncIterator[tuple[FastAPI, httpx.AsyncClient]]:
     """App + lifespan on a dedicated task (same pattern as the conftest fixture)."""
     from lga.app import create_app
     from lga.db.migrate import upgrade_async
@@ -52,7 +64,7 @@ async def boot_app(settings):
             task.cancel()
 
 
-def _settings(tmp_path, **kwargs):
+def _settings(tmp_path: Path, **kwargs: Any) -> Settings:
     from lga.services.settings import Settings
 
     settings = Settings(home=tmp_path / "lga-home", env="test", **kwargs)
@@ -61,7 +73,7 @@ def _settings(tmp_path, **kwargs):
 
 
 # ---------------------------------------------------------------- starter flows
-async def test_starter_flows_seeded_into_empty_db(tmp_path):
+async def test_starter_flows_seeded_into_empty_db(tmp_path: Path) -> None:
     settings = _settings(tmp_path, create_starter_flows=True)
     async with boot_app(settings) as (_app, client):
         flows = (await client.get("/api/v1/flows")).json()
@@ -71,7 +83,7 @@ async def test_starter_flows_seeded_into_empty_db(tmp_path):
         assert all(f["published_version"] is None for f in flows)
 
 
-async def test_starter_flows_not_reseeded_when_db_has_flows(tmp_path):
+async def test_starter_flows_not_reseeded_when_db_has_flows(tmp_path: Path) -> None:
     settings = _settings(tmp_path, create_starter_flows=True)
     async with boot_app(settings) as (_app, client):
         starter = next(
@@ -84,7 +96,7 @@ async def test_starter_flows_not_reseeded_when_db_has_flows(tmp_path):
 
 
 # ---------------------------------------------------------------- load flows path
-async def test_load_flows_path_with_auto_publish(tmp_path):
+async def test_load_flows_path_with_auto_publish(tmp_path: Path) -> None:
     flows_dir = tmp_path / "provision"
     flows_dir.mkdir()
     (flows_dir / "hello.json").write_text(
@@ -106,7 +118,7 @@ async def test_load_flows_path_with_auto_publish(tmp_path):
         assert card.status_code == 200
 
 
-async def test_load_flows_overwrite_flag(tmp_path):
+async def test_load_flows_overwrite_flag(tmp_path: Path) -> None:
     flows_dir = tmp_path / "provision"
     flows_dir.mkdir()
     spec = hello_spec("ovw-flow")
@@ -127,7 +139,7 @@ async def test_load_flows_overwrite_flag(tmp_path):
 
 
 # ---------------------------------------------------------------- priority (§18.2)
-async def test_priority_in_descriptor(client):
+async def test_priority_in_descriptor(client: httpx.AsyncClient) -> None:
     components = (await client.get("/api/v1/components")).json()
     start = next(c for c in components if c["component_id"] == "lga.io.start")
     assert start["priority"] == 0
@@ -137,7 +149,7 @@ async def test_priority_in_descriptor(client):
 
 
 # ---------------------------------------------------------------- limits
-async def test_max_file_size_env(client, svc):
+async def test_max_file_size_env(client: httpx.AsyncClient, svc: AppServices) -> None:
     svc.settings.max_file_size_mb = 0  # everything is too large now
     try:
         response = await client.post(
@@ -149,7 +161,7 @@ async def test_max_file_size_env(client, svc):
         svc.settings.max_file_size_mb = 50
 
 
-async def test_config_exposes_autosave(client):
+async def test_config_exposes_autosave(client: httpx.AsyncClient) -> None:
     config = (await client.get("/api/v1/config")).json()
     assert config["auto_saving"] is True
     assert config["auto_saving_interval_ms"] == 1000

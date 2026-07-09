@@ -126,6 +126,8 @@ class SliderInput(Field):
     min: float
     max: float
     step: float
+    min_label: str = ""  # e.g. "Precise" endpoint label (SPEC §4.2)
+    max_label: str = ""  # e.g. "Creative"
 
     def json_schema(self) -> dict[str, Any]:
         return {"type": "number", "minimum": self.min, "maximum": self.max}
@@ -270,6 +272,43 @@ class ModelInput(Field):
         }
 
 
+class EmbeddingModelInput(Field):
+    """Provider+model picker resolving to an Embedding handle (SPEC §4.2, §8b)."""
+
+    providers: list[str] | None = None
+
+    def json_schema(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "provider": {"type": "string"},
+                "model": {"type": "string"},
+            },
+            "required": ["provider", "model"],
+        }
+
+
+class VectorStoreInput(Field):
+    """Named Vector Store Connection + collection picker (SPEC §4.2, §8b).
+
+    Value: ``{"$vectorstore": "<connection>", "collection": "<name>"}``. The
+    collection dropdown is populated via ``options_source`` (list_collections).
+    """
+
+    allow_create_collection: bool = False
+    options_source: str | None = None  # server callback populating the collection dropdown
+
+    def json_schema(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "$vectorstore": {"type": "string"},
+                "connection": {"type": "string"},
+                "collection": {"type": "string"},
+            },
+        }
+
+
 class QueryInput(StrInput):
     tool_mode: bool = True
 
@@ -320,31 +359,32 @@ class ToolsInput(Field):
         return self
 
 
-FIELD_TYPES: dict[str, type[Field]] = {
-    cls.__name__: cls
-    for cls in [
-        StrInput,
-        MultilineInput,
-        IntInput,
-        FloatInput,
-        BoolInput,
-        SliderInput,
-        DropdownInput,
-        MultiselectInput,
-        TabInput,
-        SecretInput,
-        MultilineSecretInput,
-        DictInput,
-        NestedDictInput,
-        TableInput,
-        FileInput,
-        CodeInput,
-        PromptInput,
-        ModelInput,
-        QueryInput,
-        LinkInput,
-        McpInput,
-        HandleField,
-        ToolsInput,
-    ]
-}
+_FIELD_CLASSES: list[type[Field]] = [
+    StrInput,
+    MultilineInput,
+    IntInput,
+    FloatInput,
+    BoolInput,
+    SliderInput,
+    DropdownInput,
+    MultiselectInput,
+    TabInput,
+    SecretInput,
+    MultilineSecretInput,
+    DictInput,
+    NestedDictInput,
+    TableInput,
+    FileInput,
+    CodeInput,
+    PromptInput,
+    ModelInput,
+    EmbeddingModelInput,
+    VectorStoreInput,
+    QueryInput,
+    LinkInput,
+    McpInput,
+    HandleField,
+    ToolsInput,
+]
+
+FIELD_TYPES: dict[str, type[Field]] = {cls.__name__: cls for cls in _FIELD_CLASSES}

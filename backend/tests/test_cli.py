@@ -15,21 +15,23 @@ runner = CliRunner()
 
 
 @pytest.fixture
-def cli_env(tmp_path, monkeypatch):
+def cli_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setenv("LGA_HOME", str(tmp_path / "home"))
     monkeypatch.delenv("LGA_DATABASE_URL", raising=False)
     monkeypatch.chdir(tmp_path)
     return tmp_path
 
 
-def test_version_json(cli_env):
+def test_version_json(cli_env: Path) -> None:
     result = runner.invoke(app, ["version", "--json"])
     assert result.exit_code == 0, result.output
     info = json.loads(result.output)
-    assert info["lga"] and info["langgraph"] and info["db_backend"] == "sqlite"
+    assert info["lga"]
+    assert info["langgraph"]
+    assert info["db_backend"] == "sqlite"
 
 
-def test_init_scaffolds_workspace(cli_env):
+def test_init_scaffolds_workspace(cli_env: Path) -> None:
     result = runner.invoke(app, ["init", "ws"])
     assert result.exit_code == 0, result.output
     ws = cli_env / "ws"
@@ -44,7 +46,7 @@ def test_init_scaffolds_workspace(cli_env):
     assert result.exit_code == 0
 
 
-def test_flow_validate_exit_codes(cli_env):
+def test_flow_validate_exit_codes(cli_env: Path) -> None:
     good = cli_env / "good.json"
     good.write_text(json.dumps(hello_spec("cli-good")), encoding="utf-8")
     result = runner.invoke(app, ["flow", "validate", str(good)])
@@ -64,7 +66,7 @@ def test_flow_validate_exit_codes(cli_env):
     assert any(d["code"] == "E002" for d in diags)
 
 
-def test_flow_run_local(cli_env):
+def test_flow_run_local(cli_env: Path) -> None:
     flow = cli_env / "flow.json"
     flow.write_text(json.dumps(hello_spec("cli-run")), encoding="utf-8")
     result = runner.invoke(app, ["flow", "run", str(flow), "--local", "--input", "hi"])
@@ -72,7 +74,7 @@ def test_flow_run_local(cli_env):
     assert "Hello from LGA!" in result.output
 
 
-def test_component_new_scaffold(cli_env):
+def test_component_new_scaffold(cli_env: Path) -> None:
     result = runner.invoke(app, ["component", "new", "my_widget", "--category", "data"])
     assert result.exit_code == 0, result.output
     pkg = cli_env / "components" / "lga_my_widget"
@@ -83,7 +85,7 @@ def test_component_new_scaffold(cli_env):
     assert (pkg / "tests" / "test_my_widget.py").exists()
 
 
-def test_apikey_lifecycle_headless(cli_env):
+def test_apikey_lifecycle_headless(cli_env: Path) -> None:
     result = runner.invoke(
         app, ["apikey", "create", "--scopes", "a2a:invoke", "--name", "ci", "--json"]
     )
@@ -97,7 +99,7 @@ def test_apikey_lifecycle_headless(cli_env):
     assert result.exit_code == 0
 
 
-def test_config_masks_secret(cli_env, monkeypatch):
+def test_config_masks_secret(cli_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("LGA_SECRET_KEY", "super-secret-value")
     result = runner.invoke(app, ["config", "--json"])
     assert result.exit_code == 0
@@ -107,7 +109,7 @@ def test_config_masks_secret(cli_env, monkeypatch):
     assert secret_row["source"] == "env/.env"
 
 
-def test_migrate_creates_schema(cli_env):
+def test_migrate_creates_schema(cli_env: Path) -> None:
     result = runner.invoke(app, ["migrate"])
     assert result.exit_code == 0, result.output
     assert (Path(cli_env) / "home" / "lga.db").exists()

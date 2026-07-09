@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any, cast
 
 import httpx
 import typer
@@ -28,7 +28,7 @@ def _client(server: str, api_key: str | None) -> httpx.Client:
     return httpx.Client(base_url=server.rstrip("/"), headers=headers, timeout=60.0)
 
 
-def _request(client: httpx.Client, method: str, path: str, **kwargs):
+def _request(client: httpx.Client, method: str, path: str, **kwargs: Any) -> httpx.Response:
     try:
         response = client.request(method, path, **kwargs)
     except httpx.ConnectError as exc:
@@ -85,7 +85,7 @@ def _resolve_id(client: httpx.Client, ref: str) -> str:
     flows = _request(client, "GET", "/api/v1/flows").json()
     for flow in flows:
         if flow["id"] == ref or flow["slug"] == ref:
-            return flow["id"]
+            return cast(str, flow["id"])
     err_console.print(f"[red]flow {ref!r} not found on server[/red]")
     raise typer.Exit(EXIT_CONNECTION)
 
@@ -147,6 +147,9 @@ def run_flow_cmd(
     data: Annotated[str | None, typer.Option(help="JSON data payload")] = None,
     session: Annotated[str | None, typer.Option(help="Session/thread id")] = None,
     stream: Annotated[bool, typer.Option("--stream", help="Stream events (server mode)")] = False,
+    until: Annotated[
+        str | None, typer.Option("--until", help="Run only up to this node (partial run, §6.4)")
+    ] = None,
     local: Annotated[
         bool, typer.Option("--local", help="In-process compile+run, no server")
     ] = False,
@@ -181,6 +184,7 @@ def run_flow_cmd(
             "data": payload_data,
             "session_id": session,
             "stream": stream,
+            "until_node": until,
         }
         if stream:
             with client.stream(

@@ -9,7 +9,7 @@ import type { Diagnostic, FlowInfo } from "@/api/types";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Select, Switch, Tabs } from "@/components/ui/controls";
+import { Select, Tabs } from "@/components/ui/controls";
 import { toast } from "@/components/ui/toast";
 
 import { useBuilder } from "./store";
@@ -103,7 +103,6 @@ export function ShareDialog({
   onClose: () => void;
   flow: FlowInfo;
 }) {
-  const [tab, setTab] = useState<ShareTab>("a2a");
   const baseSpec = useBuilder((s) => s.baseSpec);
   const updateFlowMeta = useBuilder((s) => s.updateFlowMeta);
   const [card, setCard] = useState<Record<string, unknown> | null>(null);
@@ -111,6 +110,15 @@ export function ShareDialog({
   const origin = window.location.origin;
   const a2a = baseSpec?.flow.a2a ?? { enabled: false };
   const mcp = baseSpec?.flow.mcp ?? { enabled: false };
+  // The tabs ARE the serving surface, and surfaces are mutually exclusive
+  // (SPEC §7.1): choosing a tab serves the flow that way and turns the others
+  // off. A2A is the default for a new flow.
+  const mode: ShareTab = a2a.enabled ? "a2a" : mcp.enabled ? "mcp" : "api";
+  const setMode = (next: ShareTab) =>
+    updateFlowMeta({
+      a2a: { ...a2a, enabled: next === "a2a" },
+      mcp: { ...mcp, enabled: next === "mcp" },
+    });
   const endpoint = `${origin}/a2a/${flow.slug}/`;
 
   useEffect(() => {
@@ -164,22 +172,20 @@ export function ShareDialog({
     <Dialog open={open} onClose={onClose} title={`Share · ${flow.name}`} className="w-[760px]">
       <div className="space-y-3">
         <Tabs
-          value={tab}
-          onChange={setTab}
+          value={mode}
+          onChange={(m) => setMode(m as ShareTab)}
           items={[
             { value: "a2a", label: "A2A" },
             { value: "mcp", label: "MCP" },
             { value: "api", label: "API" },
           ]}
         />
-        {tab === "a2a" && (
+        <p className="text-[10px] text-zinc-500">
+          Serving surfaces are exclusive — this flow is served as{" "}
+          <span className="text-zinc-300">{mode.toUpperCase()}</span> and the others are off.
+        </p>
+        {mode === "a2a" && (
           <div className="space-y-3">
-            <Row label="Serve as A2A agent">
-              <Switch
-                checked={Boolean(a2a.enabled)}
-                onCheckedChange={(v) => updateFlowMeta({ a2a: { ...a2a, enabled: v } })}
-              />
-            </Row>
             <Row label="Agent name">
               <Input
                 value={a2a.agent_name ?? ""}
@@ -227,14 +233,8 @@ export function ShareDialog({
             </div>
           </div>
         )}
-        {tab === "mcp" && (
+        {mode === "mcp" && (
           <div className="space-y-3">
-            <Row label="Serve as MCP tool">
-              <Switch
-                checked={Boolean(mcp.enabled)}
-                onCheckedChange={(v) => updateFlowMeta({ mcp: { ...mcp, enabled: v } })}
-              />
-            </Row>
             <Row label="Tool name">
               <Input
                 value={mcp.tool_name ?? ""}
@@ -275,7 +275,7 @@ export function ShareDialog({
             />
           </div>
         )}
-        {tab === "api" && (
+        {mode === "api" && (
           <div className="space-y-3">
             <div className="flex items-center gap-2 rounded border border-surface-800 bg-surface-900 px-2.5 py-1.5">
               <span className="text-[10px] uppercase tracking-widest text-zinc-500">

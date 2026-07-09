@@ -5,7 +5,8 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
-from lga.sdk import Component, Output, fields, ports
+from lga.sdk import BuildContext, Component, Output, fields, ports
+from lga.sdk.component import NodeFn
 from lga.sdk.runtime import get_run_context
 
 
@@ -22,7 +23,7 @@ class SlowNode(Component):
     ]
     outputs = [Output(name="message", display_name="Message", port=ports.MESSAGE)]
 
-    def build(self, ctx):
+    def build(self, ctx: BuildContext) -> NodeFn:
         async def node(state: dict[str, Any], config: Any) -> dict[str, Any]:
             rc = get_run_context(config)
             seconds = float(ctx.get_field("seconds") or 0.0)
@@ -59,7 +60,7 @@ class FailingNode(Component):
     ]
     outputs = [Output(name="message", display_name="Message", port=ports.MESSAGE)]
 
-    def build(self, ctx):
+    def build(self, ctx: BuildContext) -> NodeFn:
         async def node(state: dict[str, Any], config: Any) -> dict[str, Any]:
             if ctx.get_field("fail"):
                 raise RuntimeError(str(ctx.get_field("error_message") or "intentional failure"))
@@ -78,7 +79,7 @@ class EchoData(Component):
     inputs = [fields.HandleField(name="input", display_name="Input", as_port=ports.JSON)]
     outputs = [Output(name="json", display_name="Json", port=ports.JSON)]
 
-    def build(self, ctx):
+    def build(self, ctx: BuildContext) -> NodeFn:
         async def node(state: dict[str, Any], config: Any) -> dict[str, Any]:
             value = ctx.get_input(state, "input") or {}
             return {"json": value, "data": {"echo": value}}

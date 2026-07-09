@@ -131,9 +131,11 @@ export interface CompileReport {
 export type PortFamily =
   | "MESSAGE"
   | "DATA"
+  | "TABLE"
   | "DOCUMENTS"
   | "EMBEDDING"
   | "MODEL"
+  | "VECTORSTORE"
   | "TOOLSET"
   | "ROUTE"
   | "FILE"
@@ -290,14 +292,18 @@ export interface ThreadInfo {
   last_status: string;
 }
 
+// Port family colours resolve to the Appendix C theme tokens — the token file
+// is the single source of colour (SPEC §11.1/§11.5).
 export const PORT_FAMILY_COLORS: Record<PortFamily, string> = {
-  MESSAGE: "#6366f1", // indigo
-  DATA: "#64748b", // slate
-  DOCUMENTS: "#10b981", // emerald
-  EMBEDDING: "#8b5cf6", // violet
-  MODEL: "#06b6d4", // cyan
-  TOOLSET: "#0ea5e9", // sky
-  ROUTE: "#f59e0b", // amber
-  FILE: "#f97316", // orange
-  ANY: "#9ca3af", // gray (dashed)
+  MESSAGE: "var(--color-port-message)",
+  DATA: "var(--color-port-data)",
+  TABLE: "var(--color-port-table)",
+  DOCUMENTS: "var(--color-port-documents)",
+  EMBEDDING: "var(--color-port-embedding)",
+  MODEL: "var(--color-port-model)",
+  VECTORSTORE: "var(--color-port-vectorstore)",
+  TOOLSET: "var(--color-port-toolset)",
+  ROUTE: "var(--color-port-route)",
+  FILE: "var(--color-port-file)",
+  ANY: "var(--color-port-any)",
 };

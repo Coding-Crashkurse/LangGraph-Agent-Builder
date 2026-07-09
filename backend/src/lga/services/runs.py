@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import builtins
+import contextlib
 import json
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, cast
 
-from sqlalchemy import delete, select
+from sqlalchemy import CursorResult, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from lga.db.models import RunEventRow, RunRow
@@ -81,7 +83,7 @@ class RunService:
                 stmt = stmt.where(RunRow.flow_id == flow_id)
             return list((await session.execute(stmt)).scalars().all())
 
-    async def list_threads(self, flow_slug: str | None = None) -> list[dict[str, Any]]:
+    async def list_threads(self, flow_slug: str | None = None) -> builtins.list[dict[str, Any]]:
         runs = await self.list(limit=1000)
         threads: dict[str, dict[str, Any]] = {}
         for run in runs:
@@ -112,7 +114,7 @@ class RunService:
             )
             await session.commit()
 
-    async def load_events(self, run_id: str, after_seq: int = 0) -> list[RunEvent]:
+    async def load_events(self, run_id: str, after_seq: int = 0) -> builtins.list[RunEvent]:
         async with self._sessions() as session:
             rows = (
                 (
@@ -168,4 +170,30 @@ class RunService:
                 delete(RunEventRow).where(RunEventRow.created_at < cutoff)
             )
             await session.commit()
-            return int(result.rowcount or 0)
+            return int(cast("CursorResult[Any]", result).rowcount or 0)
+
+    async def sweep_checkpoints(self, checkpointer: Any, ttl_days: int) -> int:
+        """Delete durable checkpoints for threads idle past the TTL (SPEC §6.3).
+
+        The run_events sweeper only trims events; without this the LangGraph
+        checkpoint state grows unbounded. A thread is stale when its most-recent
+        run started before the cutoff AND it has no non-terminal run — an
+        interrupted HITL task is left alone until it, too, ages out, so a paused
+        approval is never swept out from under a slow human.
+        """
+        cutoff = datetime.now(UTC) - timedelta(days=ttl_days)
+        active = select(RunRow.thread_id).where(RunRow.status.not_in(TERMINAL_STATUSES))
+        async with self._sessions() as session:
+            result = await session.execute(
+                select(RunRow.thread_id)
+                .where(RunRow.thread_id.not_in(active))
+                .group_by(RunRow.thread_id)
+                .having(func.max(RunRow.started_at) < cutoff)
+            )
+            stale = [row[0] for row in result.all()]
+        removed = 0
+        for thread_id in stale:
+            with contextlib.suppress(Exception):
+                await checkpointer.adelete_thread(thread_id)
+                removed += 1
+        return removed

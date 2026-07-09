@@ -6,6 +6,8 @@ from enum import StrEnum
 
 from pydantic import BaseModel
 
+from lga.errors import LgaError
+
 
 class Severity(StrEnum):
     ERROR = "error"
@@ -22,6 +24,8 @@ class DiagnosticCode(StrEnum):
     E010 = "E010"  # Required field empty (and not tweakable-at-run)
     E011 = "E011"  # Field value fails JSON schema
     E012 = "E012"  # $secret/$var reference does not exist
+    E013 = "E013"  # Vector store connection referenced by node does not exist
+    E014 = "E014"  # Credential ($secret) assigned to a non-credential (non-Secret) field
     # edges
     E020 = "E020"  # Edge type-incompatible
     E021 = "E021"  # Tool edge into non-Tools port / from non-Toolset output
@@ -39,12 +43,17 @@ class DiagnosticCode(StrEnum):
     E062 = "E062"  # MissingMCPDescription
     E063 = "E063"  # Interrupt nodes exposed over MCP without auto_resolve policy
     # deep validate / runtime preflight
-    E901 = "E901"  # RequiresPostgres
-    E902 = "E902"  # health_check failed
+    E901 = "E901"  # BackendExtraMissing (vendor client extra not installed)
+    E902 = "E902"  # VectorStoreUnreachable (health_check failed)
+    E903 = "E903"  # CollectionMissing
+    E904 = "E904"  # EmbeddingDimensionMismatch (collection dim ≠ embedding dim)
+    E905 = "E905"  # McpServerUnreachable
+    E906 = "E906"  # ModelProviderAuthFailed
     # warnings
     W201 = "W201"  # ANY-typed edge
     W202 = "W202"  # Auto list-wrap coercion inserted
     W203 = "W203"  # Implicit coercion inserted
+    W204 = "W204"  # BackendSpecificFilter (raw_filter passthrough)
     W301 = "W301"  # Deprecated field/output in use
     W302 = "W302"  # Component version migrated
     W401 = "W401"  # Node unreachable from start
@@ -110,9 +119,10 @@ class RuntimeErrorCode(StrEnum):
     RT104 = "RT104"  # Cancelled
     RT105 = "RT105"  # RecursionLimit
     RT106 = "RT106"  # SecretResolutionFailed
+    RT107 = "RT107"  # VectorStoreError(backend, detail)
 
 
-class RuntimeError_(Exception):
+class RuntimeError_(LgaError):
     """Runtime error with a normative RT code and node attribution."""
 
     def __init__(self, code: RuntimeErrorCode, message: str, node_id: str | None = None) -> None:

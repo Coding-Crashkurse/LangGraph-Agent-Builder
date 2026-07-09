@@ -4,15 +4,32 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from mcp.server.fastmcp import FastMCP
+from mcp.types import CallToolResult, TextContent
 from starlette.responses import JSONResponse
 
 if TYPE_CHECKING:
+    from collections.abc import Callable, Coroutine
+
     from lga.app import AppServices
 
 logger = logging.getLogger("lga.mcp.server")
+
+
+def _start_input_schema(spec: dict[str, Any]) -> dict[str, Any] | None:
+    """The declared structured-input JSON Schema of the flow's `start` node.
+
+    SPEC §8.1: the MCP tool's `data` argument is typed from io.start.input_schema
+    so clients see a typed tool instead of an opaque dict.
+    """
+    for node in spec.get("nodes", []):
+        if node.get("component_id") == "lga.io.start":
+            schema = (node.get("config") or {}).get("input_schema")
+            if isinstance(schema, dict) and schema.get("properties"):
+                return schema
+    return None
 
 
 class McpManager:
@@ -48,15 +65,25 @@ class McpManager:
             policy = spec.flow.mcp.auto_resolve_interrupts
             timeout = spec.flow.mcp.timeout_s or svc.settings.mcp_timeout_s
 
-            def make_tool(_spec: dict[str, Any], _slug: str, _policy: str | None, _timeout: float):
+            def make_tool(
+                _spec: dict[str, Any], _slug: str, _policy: str | None, _timeout: float
+            ) -> Callable[[str, dict[str, Any] | None, str | None], Coroutine[Any, Any, Any]]:
                 async def run_flow_tool(
                     input_text: str,
                     data: dict[str, Any] | None = None,
                     session_id: str | None = None,
-                ) -> str:
-                    """Run the published flow; returns the terminal text result."""
-                    return await self._run(
+                ) -> Any:
+                    """Run the published flow.
+
+                    Returns the terminal message as text content plus the
+                    Json/Table result as MCP structuredContent when present (§8.1).
+                    """
+                    text, structured = await self._run(
                         _spec, _slug, input_text, data, session_id, _policy, _timeout
+                    )
+                    return CallToolResult(
+                        content=[TextContent(type="text", text=text)],
+                        structuredContent=structured,
                     )
 
                 return run_flow_tool
@@ -67,6 +94,13 @@ class McpManager:
                 description=description,
             )
             self._tool_names.add(tool_name)
+            # type the generic `data` arg from the flow's declared input schema (§8.1)
+            start_schema = _start_input_schema(spec_dict)
+            if start_schema is not None:
+                tool = self.mcp._tool_manager._tools.get(tool_name)
+                if tool is not None and isinstance(tool.parameters, dict):
+                    props = tool.parameters.setdefault("properties", {})
+                    props["data"] = {**start_schema, "description": "Structured flow input."}
         logger.info("MCP tools mounted: %s", ", ".join(sorted(self._tool_names)) or "(none)")
 
     async def _run(
@@ -78,10 +112,10 @@ class McpManager:
         session_id: str | None,
         policy: str | None,
         timeout_s: float,
-    ) -> str:
+    ) -> tuple[str, dict[str, Any] | None]:
         svc = self._svc
 
-        async def _execute() -> str:
+        async def _execute() -> tuple[str, dict[str, Any] | None]:
             run_id, _thread_id, result = await svc.orchestrator.start_run(
                 spec=spec,
                 flow_row=await svc.flows.get_by_slug(slug),
@@ -111,7 +145,7 @@ class McpManager:
                     f"run {result.status}: {result.error_code or ''} "
                     f"{result.error_message or ''}".strip()
                 )
-            return result.result_text
+            return cast(str, result.result_text), result.result_json
 
         return await asyncio.wait_for(_execute(), timeout=timeout_s)
 
@@ -130,7 +164,7 @@ class McpAuthMiddleware:
         self._app = app
         self._svc = svc
 
-    async def __call__(self, scope: dict, receive: Any, send: Any) -> None:
+    async def __call__(self, scope: dict[str, Any], receive: Any, send: Any) -> None:
         if scope["type"] != "http" or not self._svc.settings.auth_enabled:
             await self._app(scope, receive, send)
             return

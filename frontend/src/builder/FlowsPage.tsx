@@ -26,6 +26,26 @@ export function FlowsPage() {
 
   const flows = useQuery({ queryKey: ["flows"], queryFn: api.flows.list });
   const runs = useQuery({ queryKey: ["runs"], queryFn: () => api.runs.list() });
+  const templates = useQuery({
+    queryKey: ["templates"],
+    queryFn: async (): Promise<{ id: string; name: string; description: string }[]> => {
+      const r = await fetch("/api/v1/templates");
+      return r.ok ? r.json() : [];
+    },
+  });
+
+  const fromTemplate = useMutation({
+    mutationFn: async (templateId: string) => {
+      const r = await fetch(`/api/v1/flows/from-template/${templateId}`, { method: "POST" });
+      if (!r.ok) throw new Error(await r.text());
+      return r.json();
+    },
+    onSuccess: (flow: { id: string }) => {
+      queryClient.invalidateQueries({ queryKey: ["flows"] });
+      navigate(`/flows/${flow.id}`);
+    },
+    onError: (error) => toast.error((error as Error).message),
+  });
 
   const createFlow = useMutation({
     mutationFn: () => api.flows.create(emptyFlowSpec(name, slugify(name))),
@@ -91,6 +111,31 @@ export function FlowsPage() {
           <Button onClick={() => setCreateOpen(true)}>New flow</Button>
         </div>
       </header>
+
+      {(templates.data ?? []).length > 0 && (
+        <div className="mb-6">
+          <h2 className="mb-2 text-xs font-semibold uppercase tracking-widest text-zinc-500">
+            Start from a template
+          </h2>
+          <div className="flex flex-wrap gap-2">
+            {(templates.data ?? []).map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                disabled={fromTemplate.isPending}
+                onClick={() => fromTemplate.mutate(t.id)}
+                title={t.description}
+                className="gf-card px-3 py-2 text-left hover:border-accent-700"
+              >
+                <span className="block text-sm font-medium text-zinc-100">{t.name}</span>
+                <span className="line-clamp-1 block max-w-[220px] text-[11px] text-zinc-500">
+                  {t.description}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
         {(flows.data ?? []).map((flow) => (

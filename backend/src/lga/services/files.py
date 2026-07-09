@@ -10,10 +10,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from lga.db.models import FileRow
+from lga.errors import LgaValueError
 from lga.services.settings import Settings
 
 
-class FileTooLargeError(ValueError):
+class FileTooLargeError(LgaValueError):
     pass
 
 

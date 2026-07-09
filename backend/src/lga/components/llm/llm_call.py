@@ -8,11 +8,14 @@ from typing import Any
 from langchain_core.messages import AIMessage, SystemMessage
 
 from lga.sdk import Component, Output, fields, ports
+from lga.sdk.component import BuildContext, NodeFn
 from lga.sdk.runtime import get_run_context
 from lga.sdk.templating import PROMPT_VAR_RE, render_prompt
 
 
-def collect_prompt_values(ctx, state: dict[str, Any], template: str) -> dict[str, Any]:
+def collect_prompt_values(
+    ctx: BuildContext, state: dict[str, Any], template: str
+) -> dict[str, Any]:
     """Resolve {var} values: connected port > shared data key > config field."""
     values: dict[str, Any] = {}
     data = state.get("data") or {}
@@ -63,7 +66,7 @@ class LLMCall(Component):
         Output(name="json", display_name="Json", port=ports.JSON),
     ]
 
-    def build(self, ctx):
+    def build(self, ctx: BuildContext) -> NodeFn:
         from lga.components.llm._models import resolve_model
 
         async def node(state: dict[str, Any], config: Any) -> dict[str, Any]:

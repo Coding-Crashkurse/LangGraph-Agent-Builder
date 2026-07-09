@@ -13,6 +13,8 @@ from pathlib import Path
 from typing import Any
 
 from langgraph.graph import StateGraph
+from langgraph.graph.state import CompiledStateGraph
+from langgraph.types import All, Checkpointer
 from pydantic import BaseModel, Field
 
 from lga.compiler import emit as emit_pass
@@ -23,7 +25,8 @@ from lga.compiler import wire as wire_pass
 from lga.compiler.ir import FlowIR
 from lga.compiler.resolve import EnvVariablesProvider, VariablesProvider
 from lga.schema.diagnostics import Diagnostic, has_errors
-from lga.schema.flowspec import FlowSpec
+from lga.schema.flowspec import FlowMeta, FlowSpec
+from lga.schema.state import FlowState
 from lga.sdk.component import BuildContext, NodeKind, SecretsResolver
 from lga.sdk.registry import ComponentRegistry, get_registry
 
@@ -48,18 +51,18 @@ class CompiledFlow:
     spec: FlowSpec
     diagnostics: list[Diagnostic]
     report: CompileReport
-    builder: StateGraph | None = None  # uncompiled StateGraph builder
+    builder: StateGraph[FlowState] | None = None  # uncompiled StateGraph builder
     ir: FlowIR | None = None
     node_contexts: dict[str, BuildContext] = field(default_factory=dict)
     fingerprint: str = ""
-    _plain_graph: Any = None
+    _plain_graph: CompiledStateGraph[FlowState] | None = None
 
     @property
     def ok(self) -> bool:
         return self.builder is not None and not has_errors(self.diagnostics)
 
     @property
-    def graph(self):
+    def graph(self) -> CompiledStateGraph[FlowState]:
         """Vanilla compiled LangGraph — no checkpointer, usable without lga."""
         if self.builder is None:
             raise ValueError("flow has compile errors; no graph available")
@@ -67,7 +70,11 @@ class CompiledFlow:
             self._plain_graph = self.builder.compile()
         return self._plain_graph
 
-    def compile(self, checkpointer: Any = None, interrupt_before: Any = None):
+    def compile(
+        self,
+        checkpointer: Checkpointer = None,
+        interrupt_before: All | list[str] | None = None,
+    ) -> CompiledStateGraph[FlowState]:
         """Compile with a checkpointer (runtime path; required for interrupts)."""
         if self.builder is None:
             raise ValueError("flow has compile errors; no graph available")
@@ -132,6 +139,7 @@ def compile_flow(
     tweaks: dict[str, dict[str, Any]] | None = None,
     constants: dict[str, dict[str, Any]] | None = None,
     settings: Any = None,
+    vectorstore_names: set[str] | None = None,
     use_cache: bool = True,
 ) -> CompiledFlow:
     registry = registry or get_registry()
@@ -141,7 +149,7 @@ def compile_flow(
     spec, diagnostics = parse_pass.parse(source)
     if spec is None:
         return CompiledFlow(
-            spec=FlowSpec(flow={"name": "invalid", "slug": "invalid"}),
+            spec=FlowSpec(flow=FlowMeta(name="invalid", slug="invalid")),
             diagnostics=diagnostics,
             report=CompileReport(),
         )
@@ -154,7 +162,9 @@ def compile_flow(
         return _cache[(fingerprint, registry.fingerprint())]
 
     # P2 resolve
-    ir, d2 = resolve_pass.resolve(spec, registry, variables, tweaks=tweaks)
+    ir, d2 = resolve_pass.resolve(
+        spec, registry, variables, tweaks=tweaks, vectorstore_names=vectorstore_names
+    )
     diagnostics += d2
 
     # P3 validate

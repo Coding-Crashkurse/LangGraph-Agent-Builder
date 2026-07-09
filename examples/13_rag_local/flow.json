@@ -1,0 +1,24 @@
+{
+  "schema_version": "2",
+  "flow": {
+    "name": "RAG (local vector store)",
+    "slug": "rag-local",
+    "description": "Retrieval over the zero-config local vector store — runs with no API keys and no external services (SPEC §8b). The retriever defaults to deterministic fake embeddings when no Embedding port is wired.",
+    "a2a": { "enabled": true, "description": "Answers from the seeded local knowledge base." }
+  },
+  "nodes": [
+    { "id": "start", "component_id": "lga.io.start", "component_version": "1.0.0", "config": {}, "position": { "x": 0, "y": 160 } },
+    {
+      "id": "retriever",
+      "component_id": "lga.rag.retriever",
+      "component_version": "1.0.0",
+      "config": { "vector_store": { "$vectorstore": "local", "collection": "kb" }, "k": 2 },
+      "position": { "x": 320, "y": 160 }
+    },
+    { "id": "end", "component_id": "lga.io.end", "component_version": "1.0.0", "config": {}, "position": { "x": 680, "y": 160 } }
+  ],
+  "edges": [
+    { "id": "e0", "kind": "data", "source": { "node": "start", "output": "message" }, "target": { "node": "retriever", "input": "query_port" } },
+    { "id": "e1", "kind": "data", "source": { "node": "retriever", "output": "documents" }, "target": { "node": "end", "input": "text" } }
+  ]
+}

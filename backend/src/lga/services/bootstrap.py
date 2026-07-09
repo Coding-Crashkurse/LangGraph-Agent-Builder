@@ -17,7 +17,7 @@ logger = logging.getLogger("lga.bootstrap")
 
 STARTER_FLOWS: list[dict[str, Any]] = [
     {
-        "schema_version": "1",
+        "schema_version": "2",
         "flow": {
             "name": "Starter: Hello",
             "slug": "starter-hello",
@@ -63,7 +63,7 @@ STARTER_FLOWS: list[dict[str, Any]] = [
         ],
     },
     {
-        "schema_version": "1",
+        "schema_version": "2",
         "flow": {
             "name": "Starter: Human Approval",
             "slug": "starter-approval",

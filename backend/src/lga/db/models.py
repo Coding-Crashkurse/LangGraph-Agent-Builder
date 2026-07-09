@@ -33,6 +33,7 @@ class FlowRow(Base):
     name: Mapped[str] = mapped_column(sa.String(200))
     description: Mapped[str] = mapped_column(sa.Text, default="")
     spec: Mapped[dict[str, Any]] = mapped_column(JSONVariant)  # draft FlowSpec
+    locked: Mapped[bool] = mapped_column(sa.Boolean, default=False)  # SPEC §9.1
     serve_version: Mapped[str] = mapped_column(sa.String(32), default="latest_published")
     created_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
@@ -175,6 +176,27 @@ class McpServerRow(Base):
     name: Mapped[str] = mapped_column(sa.String(120), unique=True, index=True)
     transport: Mapped[str] = mapped_column(sa.String(24), default="streamable_http")
     config: Mapped[dict[str, Any]] = mapped_column(JSONVariant, default=dict)
+    created_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+
+class VectorStoreConnectionRow(Base):
+    """Named, server-managed vector store connection (SPEC §8b.3).
+
+    ``config`` holds ``{backend, params}``; credential params are ``$secret``
+    refs — never plaintext. Local backend data lives outside the app DB
+    (``LGA_HOME/vectors/*.db``).
+    """
+
+    __tablename__ = "vector_store_connections"
+
+    id: Mapped[str] = mapped_column(sa.String(36), primary_key=True, default=new_id)
+    name: Mapped[str] = mapped_column(sa.String(120), unique=True, index=True)
+    backend: Mapped[str] = mapped_column(sa.String(24), default="local")
+    config: Mapped[dict[str, Any]] = mapped_column(JSONVariant, default=dict)
+    managed: Mapped[bool] = mapped_column(sa.Boolean, default=False)  # env/auto-provisioned
     created_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         sa.DateTime(timezone=True), default=utcnow, onupdate=utcnow

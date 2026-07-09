@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 from contextlib import AsyncExitStack
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from lga.services.settings import Settings
 
+if TYPE_CHECKING:
+    from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 
-def _serde():
+
+def _serde() -> JsonPlusSerializer:
     """Serializer that trusts our own port payload types in checkpoints."""
     from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 

@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
-from sqlalchemy import delete, select
+from sqlalchemy import CursorResult, delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from lga.db.models import McpServerRow
@@ -44,7 +44,7 @@ class McpServersService:
         async with self._sessions() as session:
             result = await session.execute(delete(McpServerRow).where(McpServerRow.name == name))
             await session.commit()
-            return bool(result.rowcount)
+            return bool(cast("CursorResult[Any]", result).rowcount)
 
     @staticmethod
     def _info(row: McpServerRow) -> dict[str, Any]:

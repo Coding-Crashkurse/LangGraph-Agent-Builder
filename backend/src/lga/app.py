@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -41,10 +42,11 @@ class AppServices:
     apikeys: Any
     files: Any
     mcp_servers: Any
+    vectorstores: Any
     orchestrator: Any
     a2a: Any = None
     mcp: Any = None
-    _tasks: list[asyncio.Task] = field(default_factory=list)
+    _tasks: list[asyncio.Task[None]] = field(default_factory=list)
 
     async def remount(self) -> None:
         """Re-mount published flows after publish/unpublish/delete."""
@@ -63,6 +65,7 @@ async def build_services(settings: Settings) -> AppServices:
     from lga.services.orchestrator import Orchestrator
     from lga.services.runs import RunService
     from lga.services.secrets import SecretsService
+    from lga.services.vectorstores import VectorStoreService
 
     settings.ensure_dirs()
     engine = create_engine(settings)
@@ -81,8 +84,14 @@ async def build_services(settings: Settings) -> AppServices:
     for directory in settings.component_dirs():
         registry._scan_dir(directory)
     secrets = SecretsService(settings, sessions)
+    vectorstores = VectorStoreService(settings, sessions, secrets)
     orchestrator = Orchestrator(
-        settings=settings, registry=registry, secrets=secrets, runs=runs, executor=executor
+        settings=settings,
+        registry=registry,
+        secrets=secrets,
+        runs=runs,
+        executor=executor,
+        vectorstores=vectorstores,
     )
     services = AppServices(
         settings=settings,
@@ -98,6 +107,7 @@ async def build_services(settings: Settings) -> AppServices:
         apikeys=ApiKeyService(sessions, track_usage=settings.track_apikey_usage),
         files=FilesService(settings, sessions),
         mcp_servers=McpServersService(sessions),
+        vectorstores=vectorstores,
         orchestrator=orchestrator,
     )
     from lga.services.locator import set_services
@@ -118,10 +128,15 @@ def create_app(settings: Settings | None = None, *, backend_only: bool = False) 
     settings = settings or get_settings()
 
     @asynccontextmanager
-    async def lifespan(app: FastAPI):
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         from lga.a2a.mount import A2AManager
         from lga.db.migrate import upgrade_async
         from lga.mcp.server import McpAuthMiddleware, McpManager
+        from lga.schema.scrub import install_log_scrubbing
+
+        # runs after uvicorn has configured its handlers → scrubs console + file
+        # logs. Event scrubbing (the hard guarantee) lives in the event bus (§10.5)
+        install_log_scrubbing()
 
         if getattr(app.state, "auto_migrate", True):
             await upgrade_async(settings)
@@ -133,6 +148,7 @@ def create_app(settings: Settings | None = None, *, backend_only: bool = False) 
         # boot provisioning (SPEC §18.1) before mounting: published imports serve
         from lga.services import bootstrap
 
+        await svc.vectorstores.provision()  # default `local` + LGA_VECTORSTORE_* (§8b.3)
         await bootstrap.seed_starter_flows(svc)
         await bootstrap.load_flows_from_path(svc)
         await svc.remount()
@@ -149,6 +165,13 @@ def create_app(settings: Settings | None = None, *, backend_only: bool = False) 
                     removed = await svc.runs.sweep_expired()
                     if removed:
                         logger.info("swept %d expired run events", removed)
+                with contextlib.suppress(Exception):
+                    # checkpoint TTL (SPEC §6.3): drop LangGraph state for idle
+                    # threads so durable checkpoints don't grow without bound
+                    cp = await svc.checkpointers.get()
+                    gone = await svc.runs.sweep_checkpoints(cp, settings.checkpoint_ttl_days)
+                    if gone:
+                        logger.info("swept %d idle checkpoint threads", gone)
 
         svc._tasks.append(asyncio.get_running_loop().create_task(sweeper()))
         if settings.env == "dev" and settings.component_dirs():
@@ -179,11 +202,13 @@ def create_app(settings: Settings | None = None, *, backend_only: bool = False) 
         allow_headers=["*"],
     )
 
-    from lga.api import components, flows, runs, settings_api, webhook
+    from lga.api import components, flows, runs, settings_api, templates, vectorstores, webhook
 
     app.include_router(flows.router, prefix="/api/v1")
     app.include_router(components.router, prefix="/api/v1")
     app.include_router(runs.router, prefix="/api/v1")
+    app.include_router(vectorstores.router, prefix="/api/v1")
+    app.include_router(templates.router, prefix="/api/v1")
     app.include_router(settings_api.router, prefix="/api/v1")
     app.include_router(settings_api.misc_router, prefix="/api/v1")
     app.include_router(settings_api.public_files_router, prefix="/api/v1")
