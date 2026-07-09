@@ -1,27 +1,52 @@
-# Python
+# ---------------------------------------------------------------- Python
 __pycache__/
 *.py[cod]
-.venv/
 *.egg-info/
+.venv/
+.eggs/
+build/
+dist/
+
+# ---------------------------------------------------------------- Tooling caches
 .pytest_cache/
 .ruff_cache/
-.coverage
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.import_linter_cache/
+.hypothesis/
 
-# Node
+# ---------------------------------------------------------------- Coverage
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
+# ---------------------------------------------------------------- Node / frontend
 node_modules/
-dist/
 *.tsbuildinfo
 
-# Env & local
+# ---------------------------------------------------------------- Env & local state
 .env
-.env.local
+.env.*
+!.env.example
 *.local.json
+*.db
+*.sqlite
+*.sqlite3
+.lga/
 
-# OS / editor
+# ---------------------------------------------------------------- OS / editor
 .DS_Store
 Thumbs.db
 .idea/
 .vscode/settings.json
 
-# built frontend bundled into the wheel at build time (SPEC 2.2)
+# ---------------------------------------------------------------- Build output
+# Frontend bundle is generated into the wheel at build time (SPEC §2.2), never committed.
 backend/src/lga/_static/
+
+# ---------------------------------------------------------------- Internal working docs
+# Kept local, out of the published repo (SPEC.md remains the authoritative spec).
+/SPEC2.md
+/REFACTOR.md

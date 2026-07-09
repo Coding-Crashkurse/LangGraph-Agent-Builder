@@ -1,5 +1,14 @@
 # lga — LangGraph-native visual agent builder
 
+> Build agent flows on a canvas, compile them to real LangGraph `StateGraph`s,
+> and serve every flow as an **A2A agent** and an **MCP tool** — no glue code.
+
+![license](https://img.shields.io/badge/license-MIT-green.svg)
+![python](https://img.shields.io/badge/python-3.12%2B-blue.svg)
+![engine](https://img.shields.io/badge/engine-LangGraph%201.x-orange.svg)
+![A2A](https://img.shields.io/badge/A2A-protocol%200.3.x-8A2BE2.svg)
+![MCP](https://img.shields.io/badge/MCP-streamable--http-0aa.svg)
+
 Langflow-class UX, LangGraph-class engine (see `SPEC.md`, the authoritative
 specification). Flows are composed on a typed react-flow canvas, **compiled**
 to real LangGraph `StateGraph`s (all errors at validate time, never mid-run),
@@ -39,7 +48,7 @@ lga run                    # zero config: SQLite under ~/.lga, browser opens
 | `SPEC.md` | the authoritative product/architecture spec |
 | `backend/` | the `lga` package (SDK, compiler, runtime, A2A, MCP, Studio API, CLI) |
 | `frontend/` | React Studio (bundled into the wheel at build time) |
-| `examples/01…10` | runnable examples incl. A2A HITL client, multi-agent, MCP both ways |
+| `examples/` | numbered, runnable examples incl. A2A HITL client, multi-agent, MCP both ways |
 
 ## A2A endpoints per published agent
 
@@ -77,3 +86,7 @@ cd backend  && uv run pytest ../examples          # the example matrix stays gre
 Windows note: start the backend via `lga run` (it installs a selector event
 loop; psycopg async cannot run on the Proactor loop). Consequence: `stdio` MCP
 toolsets are unavailable on Windows — use `streamable_http`.
+
+## License
+
+[MIT](LICENSE).
