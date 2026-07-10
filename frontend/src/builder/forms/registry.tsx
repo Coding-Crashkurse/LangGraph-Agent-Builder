@@ -103,12 +103,14 @@ const VarPicker: FC<{
               <div className="space-y-1 p-0.5">
                 <Input
                   autoFocus
+                  className="bg-surface-800 placeholder:text-zinc-500"
                   placeholder="NAME (e.g. OPENAI_API_KEY)"
                   value={newName}
                   onChange={(e) => setNewName(e.target.value)}
                 />
                 <Input
                   type={kind === "$secret" ? "password" : "text"}
+                  className="bg-surface-800 placeholder:text-zinc-500"
                   placeholder="value (stored server-side)"
                   value={newValue}
                   onChange={(e) => setNewValue(e.target.value)}
@@ -558,6 +560,16 @@ const PromptWidget: FC<WidgetProps> = (props) => (
   </div>
 );
 
+// Nobody memorizes model ids — surface a concrete example per provider as the
+// placeholder + tooltip for the free-text "model id" field.
+const MODEL_ID_EXAMPLES: Record<string, string> = {
+  openai: "gpt-4o-mini",
+  anthropic: "claude-3-5-sonnet-latest",
+  ollama: "llama3.1",
+  fake: "any (uses scripted replies)",
+  echo: "optional prefix",
+};
+
 const ModelWidget: FC<WidgetProps> = ({ field, value, onChange }) => {
   const model = (value as { provider?: string; model?: string; temperature?: number }) ?? {};
   const providers = (field.providers as string[] | null) ?? [
@@ -566,6 +578,7 @@ const ModelWidget: FC<WidgetProps> = ({ field, value, onChange }) => {
     "ollama",
     "fake",
   ];
+  const example = MODEL_ID_EXAMPLES[model.provider ?? ""];
   return (
     <div className="flex gap-1">
       <Select
@@ -582,7 +595,14 @@ const ModelWidget: FC<WidgetProps> = ({ field, value, onChange }) => {
       </Select>
       <Input
         value={model.model ?? ""}
-        placeholder="model id"
+        placeholder={example ? `e.g. ${example}` : "model id"}
+        title={
+          model.provider
+            ? `Model name for ${model.provider}` +
+              (example ? ` — e.g. ${example}` : "") +
+              ". See the provider's model list."
+            : "Pick a provider, then enter its model name (e.g. gpt-4o-mini)."
+        }
         onChange={(e) => onChange({ ...model, model: e.target.value })}
       />
       {/* ModelInput's value carries temperature (§4.2); expose it so a model
