@@ -60,6 +60,10 @@ class A2ASettings(BaseModel):
     auth: Literal["public", "api-key"] = "public"
     stream_tokens: bool = True
     push_notifications: bool = True
+    # §5.4 A2A-door transport. HTTP+JSON/REST is always served; "grpc" additionally
+    # exposes the flow on the shared gRPC server (only when a2a-sdk[grpc] is installed
+    # — /config.a2a_grpc_available gates the wizard option).
+    transport: Literal["http_json", "grpc"] = "http_json"
 
 
 class McpSettings(BaseModel):

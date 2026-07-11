@@ -8,9 +8,16 @@ import { ApiError, raw } from "@/api/client";
 export interface ServerConfig {
   auto_saving: boolean;
   auto_saving_interval_ms: number;
+  /** True when the a2a-sdk[grpc] extra is installed — gates the gRPC transport
+   * option in the publish wizard's A2A door (SPEC §5.4). */
+  a2a_grpc_available: boolean;
 }
 
-const DEFAULTS: ServerConfig = { auto_saving: false, auto_saving_interval_ms: 1000 };
+const DEFAULTS: ServerConfig = {
+  auto_saving: false,
+  auto_saving_interval_ms: 1000,
+  a2a_grpc_available: false,
+};
 
 export async function fetchServerConfig(): Promise<ServerConfig> {
   const result = await raw.GET("/api/v1/config");
@@ -22,6 +29,7 @@ export async function fetchServerConfig(): Promise<ServerConfig> {
     auto_saving: Boolean(cfg.auto_saving),
     auto_saving_interval_ms:
       Number(cfg.auto_saving_interval_ms) || DEFAULTS.auto_saving_interval_ms,
+    a2a_grpc_available: Boolean(cfg.a2a_grpc_available),
   };
 }
 

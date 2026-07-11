@@ -1,19 +1,46 @@
-/** Publish (semver bump + changelog + blocking diagnostics) and Share dialog
- * with A2A / MCP / API tabs incl. live card preview + snippets (SPEC §11.6). */
+/** Publish (semver bump + changelog + blocking diagnostics), and the two-step
+ * publish wizard (REFACTOR.md §5.3 — "one contract, three doors; a wizard,
+ * never raw JSON"):
+ *   step 1  pick the serving door (MCP Tool / A2A Agent / HTTP API) as explicit
+ *           cards — the pick writes serving.mode + the derived a2a/mcp booleans;
+ *   step 2  the per-door form — ONLY named fields with live publish-guard
+ *           validation (E060–E065). The A2A card / MCP tool schema is generated
+ *           server-side; AgentCardPreview is display-only.
+ */
 
 import { useQueryClient } from "@tanstack/react-query";
-import { Bot, ChevronDown, ChevronRight, Download, TriangleAlert } from "lucide-react";
+import {
+  ArrowLeft,
+  ArrowRight,
+  Bot,
+  ChevronDown,
+  ChevronRight,
+  Download,
+  Globe,
+  TriangleAlert,
+  Users,
+  Wrench,
+  type LucideIcon,
+} from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { fetchAgentCard } from "@/api/a2a";
 import { api } from "@/api/client";
-import type { Diagnostic, FlowInfo } from "@/api/types";
+import type {
+  A2ASettings,
+  Diagnostic,
+  FlowInfo,
+  FlowMeta,
+  McpSettings,
+} from "@/api/types";
 import { Button } from "@/components/ui/button";
+import { Checkbox, Select, Switch, Tabs } from "@/components/ui/controls";
 import { Dialog } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Select, Tabs } from "@/components/ui/controls";
 import { toast } from "@/components/ui/toast";
+import { cn } from "@/lib/utils";
 
+import { useServerConfig } from "./hooks/useServerConfig";
 import { CopyButton } from "./playground/CopyButton";
 import { useBuilder } from "./store";
 
@@ -115,7 +142,125 @@ export function PublishDialog({
   );
 }
 
-type ShareTab = "a2a" | "mcp" | "api";
+// ---------------------------------------------------------------- publish wizard
+type Door = "mcp" | "a2a" | "api";
+
+interface DoorDef {
+  value: Door;
+  label: string;
+  icon: LucideIcon;
+  blurb: string;
+}
+
+/** Order is intentional: MCP · A2A · HTTP (REFACTOR.md §5.3). */
+const DOORS: DoorDef[] = [
+  {
+    value: "mcp",
+    label: "MCP Tool",
+    icon: Wrench,
+    blurb: "Expose this flow as a callable tool for MCP clients like Claude Code or Cursor.",
+  },
+  {
+    value: "a2a",
+    label: "A2A Agent",
+    icon: Bot,
+    blurb: "Publish as an A2A agent that other agents can discover and delegate tasks to.",
+  },
+  {
+    value: "api",
+    label: "HTTP API",
+    icon: Globe,
+    blurb: "Call the flow directly over HTTP/JSON, or export it to run headless.",
+  },
+];
+
+const DOOR_LABEL: Record<Door, string> = {
+  mcp: "MCP Tool",
+  a2a: "A2A Agent",
+  api: "HTTP API",
+};
+
+/** Interrupt (human-in-the-loop) components — power E063 + the HITL A2A note. */
+const INTERRUPT_IDS = new Set(["lab.flow.human_approval", "lab.flow.human_input"]);
+/** Prefilled A2A input/output modes — mirror the FlowSpec contract defaults. */
+const DEFAULT_MODES = ["text/plain", "application/json"];
+const MODE_OPTIONS = ["text/plain", "application/json", "text/markdown"];
+/** Publish-guard codes surfaced by the wizard (SPEC §7.4/§8.1). */
+const GUARD_CODES = new Set(["E060", "E061", "E062", "E063", "E064", "E065"]);
+/** Guards that map to a visible named field (rendered inline, not in the summary). */
+const NAMED_GUARD_FIELDS = new Set([
+  "a2a.description",
+  "a2a.examples",
+  "mcp.description",
+  "mcp.auto_resolve_interrupts",
+]);
+
+interface PublishGuard {
+  code: string;
+  severity: Diagnostic["severity"];
+  message: string;
+  field?: string;
+  node_id?: string;
+}
+
+/** Client-side mirror of the backend `publish_guards` for the door-scoped,
+ * named-field checks (E060–E063). The /validate endpoint only runs these at
+ * publish time (server-side), so deriving them here is what makes them *live*
+ * as the user types. E064/E065 (end-node output_schema) come from the store's
+ * validation and are merged in by the caller. */
+function deriveGuards(
+  flow: FlowMeta | undefined,
+  a2a: A2ASettings,
+  mcp: McpSettings,
+  mode: Door,
+  interruptCount: number,
+): PublishGuard[] {
+  const guards: PublishGuard[] = [];
+  const flowDesc = (flow?.description ?? "").trim();
+  if (mode === "a2a") {
+    if (!(a2a.description ?? "").trim() && !flowDesc) {
+      guards.push({
+        code: "E060",
+        severity: "error",
+        field: "a2a.description",
+        message: "An A2A skill description is required before publishing.",
+      });
+    }
+    if (!(a2a.examples?.length ?? 0)) {
+      guards.push({
+        code: "E061",
+        severity: "warning",
+        field: "a2a.examples",
+        message: "Skill examples are recommended — agents route better with examples.",
+      });
+    }
+  } else if (mode === "mcp") {
+    if (!(mcp.description ?? "").trim() && !flowDesc) {
+      guards.push({
+        code: "E062",
+        severity: "error",
+        field: "mcp.description",
+        message: "An MCP tool description is required before publishing.",
+      });
+    }
+    if (interruptCount > 0 && (mcp.auto_resolve_interrupts ?? null) === null) {
+      guards.push({
+        code: "E063",
+        severity: "error",
+        field: "mcp.auto_resolve_interrupts",
+        message:
+          "This flow has interrupt nodes; MCP has no input-required concept — set an interrupt policy.",
+      });
+    }
+  }
+  return guards;
+}
+
+const splitList = (value: string) =>
+  value
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
 
 export function ShareDialog({
   open,
@@ -127,25 +272,77 @@ export function ShareDialog({
   flow: FlowInfo;
 }) {
   const baseSpec = useBuilder((s) => s.baseSpec);
+  const nodes = useBuilder((s) => s.nodes);
+  const descriptors = useBuilder((s) => s.descriptors);
+  const storeDiagnostics = useBuilder((s) => s.diagnostics);
   const updateFlowMeta = useBuilder((s) => s.updateFlowMeta);
+  const grpcAvailable = useServerConfig().a2a_grpc_available;
+
+  const [step, setStep] = useState<1 | 2>(1);
   const [card, setCard] = useState<Record<string, unknown> | null>(null);
 
   const origin = window.location.origin;
-  const a2a = baseSpec?.flow.a2a ?? { enabled: false };
-  const mcp = baseSpec?.flow.mcp ?? { enabled: false };
-  // The tabs ARE the serving surface, and surfaces are mutually exclusive
-  // (SPEC §7.1): choosing a tab serves the flow that way and turns the others
+  const flowMeta = baseSpec?.flow;
+  // Memoised so the guard useMemo below has stable deps (not fresh objects each render).
+  const a2a: A2ASettings = useMemo(() => flowMeta?.a2a ?? { enabled: false }, [flowMeta]);
+  const mcp: McpSettings = useMemo(() => flowMeta?.mcp ?? { enabled: false }, [flowMeta]);
+  // The door choice IS the serving surface, and surfaces are mutually exclusive
+  // (SPEC §7.1): picking a door serves the flow that way and turns the others
   // off. serving.mode is authoritative (SPEC §5.2) — persisted specs carry it,
-  // so it MUST be written here too or the backend reverts the boolean toggle.
-  const mode: ShareTab =
-    baseSpec?.flow.serving?.mode ?? (a2a.enabled ? "a2a" : mcp.enabled ? "mcp" : "api");
-  const setMode = (next: ShareTab) =>
+  // so it MUST be written here alongside the legacy enabled booleans.
+  const mode: Door =
+    flowMeta?.serving?.mode ?? (a2a.enabled ? "a2a" : mcp.enabled ? "mcp" : "api");
+  const setMode = (next: Door) =>
     updateFlowMeta({
       serving: { mode: next },
       a2a: { ...a2a, enabled: next === "a2a" },
       mcp: { ...mcp, enabled: next === "mcp" },
     });
+
+  // Reset to the door picker each time the wizard opens.
+  useEffect(() => {
+    if (open) setStep(1);
+  }, [open]);
+
+  // Interrupt nodes drive the E063 guard and the HITL marketing note (§5.3).
+  const interruptCount = useMemo(
+    () =>
+      nodes.filter((node) => {
+        if (INTERRUPT_IDS.has(node.data.componentId)) return true;
+        return descriptors.get(node.data.componentId)?.node_kind === "interrupt";
+      }).length,
+    [nodes, descriptors],
+  );
+
+  const guards = useMemo<PublishGuard[]>(() => {
+    const derived = deriveGuards(flowMeta, a2a, mcp, mode, interruptCount);
+    const seen = new Set(derived.map((g) => `${g.code}:${g.field ?? ""}`));
+    // Merge any E06x the builder's validation has already surfaced (E064/E065
+    // on the end node) without duplicating the client-derived ones.
+    for (const d of storeDiagnostics) {
+      if (!GUARD_CODES.has(d.code)) continue;
+      const key = `${d.code}:${d.field ?? ""}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      derived.push({
+        code: d.code,
+        severity: d.severity,
+        message: d.message,
+        field: d.field ?? undefined,
+        node_id: d.node_id ?? undefined,
+      });
+    }
+    return derived;
+  }, [flowMeta, a2a, mcp, mode, interruptCount, storeDiagnostics]);
+
+  const guardFor = (field: string) => guards.find((g) => g.field === field);
+  const errorGuards = guards.filter((g) => g.severity === "error");
+  const summaryGuards = errorGuards.filter(
+    (g) => !g.field || !NAMED_GUARD_FIELDS.has(g.field),
+  );
+
   const endpoint = `${origin}/a2a/${flow.slug}/`;
+  const runUrl = `${origin}/api/v1/flows/${flow.slug}/run`;
 
   useEffect(() => {
     if (!open || !a2a.enabled) return;
@@ -157,12 +354,6 @@ export function ShareDialog({
       `curl -X POST ${endpoint} \\\n  -H 'Content-Type: application/json' \\\n  -d '{"jsonrpc":"2.0","id":1,"method":"message/send","params":{"message":{"role":"user","messageId":"m1","parts":[{"kind":"text","text":"hello"}]}}}'`,
     [endpoint],
   );
-  const python = useMemo(
-    () =>
-      `import httpx\n\nresp = httpx.post("${endpoint}", json={\n    "jsonrpc": "2.0", "id": 1, "method": "message/send",\n    "params": {"message": {"role": "user", "messageId": "m1",\n               "parts": [{"kind": "text", "text": "hello"}]}},\n})\nprint(resp.json()["result"]["status"]["state"])`,
-    [endpoint],
-  );
-  const runUrl = `${origin}/api/v1/flows/${flow.slug}/run`;
   const apiCurl = useMemo(
     () =>
       `curl -X POST ${runUrl} \\\n  -H 'Content-Type: application/json' \\\n  -d '{"input_text": "hello", "tweaks": {"<node_id>": {"<field>": "value"}}}'`,
@@ -172,6 +363,15 @@ export function ShareDialog({
     () =>
       `import json\n\nfrom langgraph_agent_builder.compiler import compile_flow   # json -> LangGraph\nfrom langgraph_agent_builder.runtime import arun_flow\n\nspec = json.load(open("${flow.slug}.flow.json"))\ngraph = compile_flow(spec).graph        # vanilla StateGraph, no server needed\nresult = await arun_flow(spec, input_text="hello")\nprint(result.result_text)`,
     [flow.slug],
+  );
+  const mcpClientConfig = useMemo(
+    () =>
+      JSON.stringify(
+        { mcpServers: { "langgraph-agent-builder": { type: "http", url: `${origin}/mcp` } } },
+        null,
+        2,
+      ),
+    [origin],
   );
 
   const download = async (format: "json" | "python") => {
@@ -197,156 +397,468 @@ export function ShareDialog({
 
   return (
     <Dialog open={open} onClose={onClose} title={`Share · ${flow.name}`} className="w-[760px]">
-      <div className="space-y-3">
-        <Tabs
-          value={mode}
-          onChange={(m) => setMode(m)}
-          items={[
-            { value: "a2a", label: "A2A" },
-            { value: "mcp", label: "MCP" },
-            { value: "api", label: "API" },
-          ]}
-        />
-        <p className="text-[11px] text-text-3">
-          Serving surfaces are exclusive — this flow is served as{" "}
-          <span className="text-text-2">{mode.toUpperCase()}</span> and the others are off.
+      <div className="space-y-4">
+        <p className="text-[11px] uppercase tracking-widest text-text-3">
+          Step {step} of 2 · {step === 1 ? "Choose the door" : DOOR_LABEL[mode]}
         </p>
-        {mode === "a2a" && (
-          <div className="space-y-3">
-            <Row label="Agent name">
-              <Input
-                value={a2a.agent_name ?? ""}
-                placeholder={flow.name}
-                onChange={(e) => updateFlowMeta({ a2a: { ...a2a, agent_name: e.target.value } })}
-              />
-            </Row>
-            <Row label="Skill description (E060: required)">
-              <Input
-                value={a2a.description ?? ""}
-                onChange={(e) => updateFlowMeta({ a2a: { ...a2a, description: e.target.value } })}
-              />
-            </Row>
-            <Row label="Examples (comma-separated)">
-              <Input
-                value={(a2a.examples ?? []).join(", ")}
-                onChange={(e) =>
-                  updateFlowMeta({
-                    a2a: {
-                      ...a2a,
-                      examples: e.target.value.split(",").map((s) => s.trim()).filter(Boolean),
-                    },
-                  })
-                }
-              />
-            </Row>
-            <Row label="Auth">
-              <Select
-                value={a2a.auth ?? "public"}
-                onChange={(e) =>
-                  updateFlowMeta({ a2a: { ...a2a, auth: e.target.value as "public" | "api-key" } })
-                }
-              >
-                <option value="public">public (session-namespaced)</option>
-                <option value="api-key">api-key (X-API-Key, scope a2a:invoke)</option>
-              </Select>
-            </Row>
-            <Snippet label={`Endpoint · ${endpoint}`} text={curl} />
-            <Snippet label="Python (JSON-RPC)" text={python} />
-            <div>
-              <p className="mb-1 text-xs font-medium text-text-2">Live Agent Card</p>
-              <AgentCardPreview card={card} />
+
+        {step === 1 && (
+          <div className="space-y-4">
+            <p className="text-xs text-text-2">
+              Choose how this flow is served. Surfaces are exclusive (SPEC §7.1) — picking one
+              turns the others off.
+            </p>
+            <div className="grid grid-cols-3 gap-2.5">
+              {DOORS.map((door) => (
+                <DoorCard
+                  key={door.value}
+                  door={door}
+                  selected={mode === door.value}
+                  onSelect={() => setMode(door.value)}
+                />
+              ))}
             </div>
-          </div>
-        )}
-        {mode === "mcp" && (
-          <div className="space-y-3">
-            <Row label="Tool name">
-              <Input
-                value={mcp.tool_name ?? ""}
-                placeholder={flow.slug.replace(/-/g, "_")}
-                onChange={(e) => updateFlowMeta({ mcp: { ...mcp, tool_name: e.target.value } })}
-              />
-            </Row>
-            <Row label="Tool description (E062: required)">
-              <Input
-                value={mcp.description ?? ""}
-                onChange={(e) => updateFlowMeta({ mcp: { ...mcp, description: e.target.value } })}
-              />
-            </Row>
-            <Row label="Interrupt policy (E063)">
-              <Select
-                value={mcp.auto_resolve_interrupts ?? ""}
-                onChange={(e) =>
-                  updateFlowMeta({
-                    mcp: {
-                      ...mcp,
-                      auto_resolve_interrupts: (e.target.value || null) as never,
-                    },
-                  })
-                }
-              >
-                <option value="">reject flows with interrupts</option>
-                <option value="approve">auto-approve interrupts</option>
-                <option value="reject">auto-reject interrupts</option>
-              </Select>
-            </Row>
-            <Snippet
-              label="Client config (Claude Code / Cursor)"
-              text={JSON.stringify(
-                { mcpServers: { "langgraph-agent-builder": { type: "http", url: `${origin}/mcp` } } },
-                null,
-                2,
-              )}
-            />
-          </div>
-        )}
-        {mode === "api" && (
-          <div className="space-y-3">
-            <div className="flex items-center gap-2 rounded-lg border border-border bg-surface-2 px-2.5 py-1.5">
-              <span className="text-[11px] uppercase tracking-widest text-text-3">
-                base url
-              </span>
-              <code className="truncate font-mono text-xs text-text-1">{runUrl}</code>
-              <CopyButton text={runUrl} label="Copy base url" className="ml-auto" />
-            </div>
-            <Snippet label="Run (blocking; tweaks are one-time overrides)" text={apiCurl} />
-            <Snippet
-              label="Webhook (fire-and-forget; body → data.webhook_payload)"
-              text={`curl -X POST ${origin}/api/v1/webhook/${flow.slug} \\\n  -H 'X-API-Key: <key with webhook:invoke>' \\\n  -d '{"event": "ticket.created"}'`}
-            />
-            <Snippet
-              label="Headless Python (compile_flow = json → LangGraph)"
-              text={headlessSnippet}
-            />
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-medium text-text-2">Export:</span>
-              <Button variant="ghost" className="!h-7 !text-xs" onClick={() => download("json")}>
-                <Download className="h-3.5 w-3.5" strokeWidth={1.75} />
-                flow.json
+            <div className="flex justify-end gap-2">
+              <Button variant="ghost" onClick={onClose}>
+                Cancel
               </Button>
-              <Button variant="ghost" className="!h-7 !text-xs" onClick={() => download("python")}>
-                <Download className="h-3.5 w-3.5" strokeWidth={1.75} />
-                standalone flow.py
+              <Button onClick={() => setStep(2)}>
+                Next
+                <ArrowRight className="h-3.5 w-3.5" strokeWidth={1.75} />
               </Button>
-              <span className="text-[11px] text-text-3">
-                flow.py runs under vanilla LangGraph
-              </span>
             </div>
           </div>
         )}
-        <p className="text-[11px] text-text-3">
-          Settings live in the FlowSpec — hit Save, then Publish to serve the new version.
-        </p>
+
+        {step === 2 && (
+          <div className="space-y-3">
+            {summaryGuards.length > 0 && (
+              <div
+                role="alert"
+                className="space-y-1.5 rounded-lg border-l-2 border-danger bg-danger/10 p-2.5"
+              >
+                <p className="flex items-center gap-1.5 text-xs font-semibold text-danger">
+                  <TriangleAlert className="h-3.5 w-3.5 shrink-0" strokeWidth={1.75} />
+                  {summaryGuards.length} publish guard{summaryGuards.length === 1 ? "" : "s"} to
+                  resolve
+                </p>
+                {summaryGuards.map((g, i) => (
+                  <p key={i} className="text-[11px] text-danger">
+                    <span className="font-mono">{g.code}</span>
+                    {g.node_id ? ` · ${g.node_id}` : ""} · {g.message}
+                  </p>
+                ))}
+              </div>
+            )}
+
+            {mode === "a2a" && (
+              <div className="space-y-3">
+                <Field label="Agent name">
+                  <Input
+                    value={a2a.agent_name ?? ""}
+                    placeholder={flow.name}
+                    onChange={(e) => updateFlowMeta({ a2a: { ...a2a, agent_name: e.target.value } })}
+                  />
+                </Field>
+                <Field label="Description" hint="required (E060)" guard={guardFor("a2a.description")}>
+                  <Input
+                    value={a2a.description ?? ""}
+                    placeholder="One sentence: what can this agent do?"
+                    onChange={(e) => updateFlowMeta({ a2a: { ...a2a, description: e.target.value } })}
+                  />
+                </Field>
+                <Field label="Skill examples" hint="comma-separated" guard={guardFor("a2a.examples")}>
+                  <Input
+                    value={(a2a.examples ?? []).join(", ")}
+                    placeholder="Summarise this ticket, Draft a reply…"
+                    onChange={(e) =>
+                      updateFlowMeta({ a2a: { ...a2a, examples: splitList(e.target.value) } })
+                    }
+                  />
+                </Field>
+                <Field label="Tags" hint="comma-separated">
+                  <Input
+                    value={(a2a.tags ?? []).join(", ")}
+                    placeholder="support, summarisation"
+                    onChange={(e) =>
+                      updateFlowMeta({ a2a: { ...a2a, tags: splitList(e.target.value) } })
+                    }
+                  />
+                </Field>
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label="Input modes">
+                    <ModeMultiSelect
+                      name="a2a-in"
+                      selected={a2a.input_modes ?? DEFAULT_MODES}
+                      onChange={(v) => updateFlowMeta({ a2a: { ...a2a, input_modes: v } })}
+                    />
+                  </Field>
+                  <Field label="Output modes">
+                    <ModeMultiSelect
+                      name="a2a-out"
+                      selected={a2a.output_modes ?? DEFAULT_MODES}
+                      onChange={(v) => updateFlowMeta({ a2a: { ...a2a, output_modes: v } })}
+                    />
+                  </Field>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label="Auth">
+                    <Select
+                      value={a2a.auth ?? "public"}
+                      onChange={(e) =>
+                        updateFlowMeta({
+                          a2a: { ...a2a, auth: e.target.value as "public" | "api-key" },
+                        })
+                      }
+                    >
+                      <option value="public">public (session-namespaced)</option>
+                      <option value="api-key">api-key (X-API-Key · a2a:invoke)</option>
+                    </Select>
+                  </Field>
+                  <Field label="Push notifications">
+                    <div className="flex h-8.5 items-center gap-2">
+                      <Switch
+                        checked={a2a.push_notifications ?? true}
+                        onCheckedChange={(v) =>
+                          updateFlowMeta({ a2a: { ...a2a, push_notifications: v } })
+                        }
+                        label="Push notifications"
+                      />
+                      <span className="text-xs text-text-2">
+                        {(a2a.push_notifications ?? true) ? "on" : "off"}
+                      </span>
+                    </div>
+                  </Field>
+                </div>
+                <Field label="Transport">
+                  <div role="radiogroup" aria-label="A2A transport" className="space-y-1.5">
+                    <TransportOption
+                      name="a2a-transport"
+                      checked={(a2a.transport ?? "http_json") === "http_json"}
+                      onSelect={() => updateFlowMeta({ a2a: { ...a2a, transport: "http_json" } })}
+                      label="HTTP + JSON"
+                      hint="REST / JSON-RPC — always served"
+                    />
+                    <TransportOption
+                      name="a2a-transport"
+                      checked={(a2a.transport ?? "http_json") === "grpc"}
+                      disabled={!grpcAvailable}
+                      onSelect={() => updateFlowMeta({ a2a: { ...a2a, transport: "grpc" } })}
+                      label="gRPC"
+                      hint={
+                        grpcAvailable
+                          ? "high-throughput binary transport"
+                          : "requires the a2a-sdk[grpc] extra"
+                      }
+                    />
+                  </div>
+                </Field>
+                {interruptCount > 0 && (
+                  <div className="flex items-start gap-2 rounded-lg border border-border bg-surface-2 p-2.5">
+                    <Users className="mt-px h-4 w-4 shrink-0 text-accent" strokeWidth={1.75} />
+                    <p className="text-[11px] leading-relaxed text-text-2">
+                      This flow has {interruptCount} human-in-the-loop step
+                      {interruptCount === 1 ? "" : "s"}; as an A2A agent the task pauses natively in{" "}
+                      <code className="font-mono text-text-1">input-required</code>.
+                    </p>
+                  </div>
+                )}
+                <div>
+                  <p className="mb-1 text-xs font-medium text-text-2">
+                    Live Agent Card (generated server-side)
+                  </p>
+                  <AgentCardPreview card={card} />
+                </div>
+                <Snippet label={`Endpoint · ${endpoint}`} text={curl} />
+              </div>
+            )}
+
+            {mode === "mcp" && (
+              <div className="space-y-3">
+                <Field label="Tool name" hint="default: flow slug">
+                  <Input
+                    value={mcp.tool_name ?? ""}
+                    placeholder={flow.slug.replace(/-/g, "_")}
+                    onChange={(e) => updateFlowMeta({ mcp: { ...mcp, tool_name: e.target.value } })}
+                  />
+                </Field>
+                <Field
+                  label="Tool description"
+                  hint="required (E062)"
+                  guard={guardFor("mcp.description")}
+                >
+                  <Input
+                    value={mcp.description ?? ""}
+                    placeholder="One sentence the calling model sees."
+                    onChange={(e) => updateFlowMeta({ mcp: { ...mcp, description: e.target.value } })}
+                  />
+                </Field>
+                <Field
+                  label="Interrupt policy"
+                  hint="how HITL steps resolve (E063)"
+                  guard={guardFor("mcp.auto_resolve_interrupts")}
+                >
+                  <Select
+                    value={mcp.auto_resolve_interrupts ?? ""}
+                    onChange={(e) =>
+                      updateFlowMeta({
+                        mcp: {
+                          ...mcp,
+                          auto_resolve_interrupts: (e.target.value ||
+                            null) as McpSettings["auto_resolve_interrupts"],
+                        },
+                      })
+                    }
+                  >
+                    <option value="">none — reject flows with interrupts</option>
+                    <option value="approve">auto-approve interrupts</option>
+                    <option value="reject">auto-reject interrupts</option>
+                  </Select>
+                </Field>
+                <Field label="Timeout" hint="seconds — blank = server default">
+                  <Input
+                    type="number"
+                    min={1}
+                    value={mcp.timeout_s ?? ""}
+                    placeholder="e.g. 120"
+                    onChange={(e) => {
+                      const n = Number(e.target.value);
+                      updateFlowMeta({
+                        mcp: {
+                          ...mcp,
+                          timeout_s: e.target.value !== "" && Number.isFinite(n) ? n : undefined,
+                        },
+                      });
+                    }}
+                  />
+                </Field>
+                <div className="flex items-start gap-2 rounded-lg border border-border bg-surface-2 p-2.5">
+                  <Wrench className="mt-px h-4 w-4 shrink-0 text-text-3" strokeWidth={1.75} />
+                  <p className="text-[11px] leading-relaxed text-text-2">
+                    Served over streamable HTTP only — MCP has no transport choice. Add it to a
+                    client at <code className="font-mono text-text-1">{origin}/mcp</code>.
+                  </p>
+                </div>
+                <Snippet label="Client config (Claude Code / Cursor)" text={mcpClientConfig} />
+              </div>
+            )}
+
+            {mode === "api" && (
+              <div className="space-y-3">
+                <div className="flex items-center gap-2 rounded-lg border border-border bg-surface-2 px-2.5 py-1.5">
+                  <span className="text-[11px] uppercase tracking-widest text-text-3">base url</span>
+                  <code className="truncate font-mono text-xs text-text-1">{runUrl}</code>
+                  <CopyButton text={runUrl} label="Copy base url" className="ml-auto" />
+                </div>
+                <div className="grid gap-2 rounded-lg border border-border bg-surface-2 p-2.5 text-[11px] leading-relaxed text-text-2">
+                  <p>
+                    <span className="font-medium text-text-1">Auth.</span> Public unless your gateway
+                    requires a key; protected routes check{" "}
+                    <code className="font-mono">X-API-Key</code> with scope{" "}
+                    <code className="font-mono">flow:run</code>.
+                  </p>
+                  <p>
+                    <span className="font-medium text-text-1">Sync / async.</span>{" "}
+                    <code className="font-mono">POST …/run</code> blocks until the flow finishes;
+                    pass <code className="font-mono">{`"stream": true`}</code> for incremental SSE,
+                    or use the webhook door for fire-and-forget.
+                  </p>
+                </div>
+                <Snippet label="Run (blocking; tweaks are one-time overrides)" text={apiCurl} />
+                <Snippet
+                  label="Webhook (fire-and-forget; body → data.webhook_payload)"
+                  text={`curl -X POST ${origin}/api/v1/webhook/${flow.slug} \\\n  -H 'X-API-Key: <key with webhook:invoke>' \\\n  -d '{"event": "ticket.created"}'`}
+                />
+                <Snippet
+                  label="Headless Python (compile_flow = json → LangGraph)"
+                  text={headlessSnippet}
+                />
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs font-medium text-text-2">Export:</span>
+                  <Button variant="ghost" className="!h-7 !text-xs" onClick={() => download("json")}>
+                    <Download className="h-3.5 w-3.5" strokeWidth={1.75} />
+                    flow.json
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    className="!h-7 !text-xs"
+                    onClick={() => download("python")}
+                  >
+                    <Download className="h-3.5 w-3.5" strokeWidth={1.75} />
+                    standalone flow.py
+                  </Button>
+                  <span className="text-[11px] text-text-3">flow.py runs under vanilla LangGraph</span>
+                </div>
+              </div>
+            )}
+
+            <div className="flex items-center justify-between gap-2 border-t border-border pt-3">
+              <Button variant="ghost" onClick={() => setStep(1)}>
+                <ArrowLeft className="h-3.5 w-3.5" strokeWidth={1.75} />
+                Back
+              </Button>
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] text-text-3">
+                  Settings save into the FlowSpec — Save, then Publish.
+                </span>
+                <Button onClick={onClose}>Done</Button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </Dialog>
   );
 }
 
-function Row({ label, children }: { label: string; children: React.ReactNode }) {
+/** Explicit serving-surface card (step 1) — not a tab with a side effect. */
+function DoorCard({
+  door,
+  selected,
+  onSelect,
+}: {
+  door: DoorDef;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  const Icon = door.icon;
   return (
-    <label className="block">
-      <span className="mb-1 block text-xs font-medium text-text-2">{label}</span>
+    <button
+      type="button"
+      onClick={onSelect}
+      aria-pressed={selected}
+      className={cn(
+        "flex flex-col items-start gap-2 rounded-[10px] border p-3 text-left transition-colors duration-150",
+        "focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent",
+        selected
+          ? "border-accent bg-accent/10"
+          : "border-border bg-surface-2 hover:border-border-strong hover:bg-surface-3",
+      )}
+    >
+      <span
+        className={cn(
+          "flex h-8 w-8 items-center justify-center rounded-lg",
+          selected ? "bg-accent/15 text-accent" : "bg-surface-3 text-text-2",
+        )}
+      >
+        <Icon className="h-4 w-4" strokeWidth={1.75} />
+      </span>
+      <span className="text-sm font-semibold text-text-1">{door.label}</span>
+      <span className="text-[11px] leading-relaxed text-text-3">{door.blurb}</span>
+    </button>
+  );
+}
+
+/** Labelled form field with an optional hint and an inline publish-guard error. */
+function Field({
+  label,
+  hint,
+  guard,
+  children,
+}: {
+  label: string;
+  hint?: string;
+  guard?: PublishGuard;
+  children: React.ReactNode;
+}) {
+  return (
+    <div>
+      <div className="mb-1 flex items-baseline justify-between gap-2">
+        <span className="text-xs font-medium text-text-2">{label}</span>
+        {hint ? <span className="text-[11px] text-text-3">{hint}</span> : null}
+      </div>
       {children}
+      {guard ? (
+        <p
+          role="alert"
+          className={cn(
+            "mt-1 flex items-start gap-1 text-[11px]",
+            guard.severity === "error" ? "text-danger" : "text-warning",
+          )}
+        >
+          <TriangleAlert className="mt-px h-3 w-3 shrink-0" strokeWidth={1.75} />
+          <span>
+            <span className="font-mono">{guard.code}</span> · {guard.message}
+          </span>
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+/** Multiselect of A2A content modes as a small checkbox list. */
+function ModeMultiSelect({
+  name,
+  selected,
+  onChange,
+}: {
+  name: string;
+  selected: string[];
+  onChange: (value: string[]) => void;
+}) {
+  const toggle = (mode: string) => {
+    const set = new Set(selected);
+    if (set.has(mode)) set.delete(mode);
+    else set.add(mode);
+    onChange(MODE_OPTIONS.filter((m) => set.has(m)));
+  };
+  return (
+    <div className="space-y-1.5 rounded-lg border border-border-strong bg-surface-2 p-2">
+      {MODE_OPTIONS.map((mode) => (
+        <label key={mode} className="flex cursor-pointer items-center gap-2">
+          <Checkbox
+            checked={selected.includes(mode)}
+            onCheckedChange={() => toggle(mode)}
+            label={`${name} ${mode}`}
+          />
+          <span className="font-mono text-[11px] text-text-2">{mode}</span>
+        </label>
+      ))}
+    </div>
+  );
+}
+
+/** One transport radio; the row shows selection state and disables gRPC when
+ * the a2a-sdk[grpc] extra is missing. */
+function TransportOption({
+  name,
+  checked,
+  onSelect,
+  disabled,
+  label,
+  hint,
+}: {
+  name: string;
+  checked: boolean;
+  onSelect: () => void;
+  disabled?: boolean;
+  label: string;
+  hint: string;
+}) {
+  return (
+    <label
+      className={cn(
+        "flex items-start gap-2 rounded-lg border p-2 transition-colors duration-150",
+        disabled
+          ? "cursor-not-allowed border-border bg-surface-2 opacity-45"
+          : checked
+            ? "cursor-pointer border-accent bg-accent/10"
+            : "cursor-pointer border-border-strong bg-surface-2 hover:border-accent/60",
+      )}
+    >
+      <input
+        type="radio"
+        name={name}
+        checked={checked}
+        disabled={disabled}
+        onChange={onSelect}
+        style={{ accentColor: "var(--color-accent)" }}
+        className="mt-0.5"
+      />
+      <span className="min-w-0">
+        <span className="block text-xs font-medium text-text-1">{label}</span>
+        <span className="block text-[11px] text-text-3">{hint}</span>
+      </span>
     </label>
   );
 }

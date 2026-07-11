@@ -221,12 +221,25 @@ async def version(svc: Services) -> dict[str, Any]:
     }
 
 
+def _a2a_grpc_available() -> bool:
+    """True when the a2a-sdk[grpc] extra is installed — gates the publish wizard's
+    gRPC A2A-transport option (§5.4). HTTP+JSON is always available; the gRPC
+    runtime server is opt-in on that extra."""
+    try:
+        import grpc  # type: ignore[import-untyped]  # noqa: F401  # grpcio, a2a-sdk[grpc] extra
+
+        return True
+    except Exception:
+        return False
+
+
 @misc_router.get("/config", dependencies=[StudioAuth])
 async def config(svc: Services) -> dict[str, Any]:
     """Studio-relevant settings only — an explicit allowlist, so new sensitive
     settings (DSNs, key material) stay private by default (SPEC §10.5)."""
     s = svc.settings
     return {
+        "a2a_grpc_available": _a2a_grpc_available(),  # §5.4 wizard transport gate
         "env": s.env,
         "host_url": s.host_url,
         "auth_enabled": s.auth_enabled,

@@ -46,6 +46,10 @@ export interface A2ASettings {
   auth?: "public" | "api-key";
   stream_tokens?: boolean;
   push_notifications?: boolean;
+  /** A2A-door transport (SPEC §5.4). HTTP+JSON is always served; "grpc" also
+   * exposes the flow on the shared gRPC server — gated on /config's
+   * `a2a_grpc_available` (the a2a-sdk[grpc] extra). */
+  transport?: "http_json" | "grpc";
 }
 
 export interface McpSettings {
@@ -53,6 +57,8 @@ export interface McpSettings {
   tool_name?: string;
   description?: string;
   auto_resolve_interrupts?: "approve" | "reject" | null;
+  /** Per-call timeout in seconds; blank ⇒ server default. */
+  timeout_s?: number;
 }
 
 export interface FlowMeta {
