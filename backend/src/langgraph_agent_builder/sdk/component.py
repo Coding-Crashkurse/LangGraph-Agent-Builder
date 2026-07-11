@@ -127,12 +127,7 @@ class BuildContext:
         """Config value, rendering ``{{ }}`` when the field opted into expressions."""
         raw = self.config.get(name)
         field = self.fields.get(name)
-        if (
-            field is not None
-            and field.expressions
-            and isinstance(raw, str)
-            and has_expression(raw)
-        ):
+        if field is not None and field.expressions and isinstance(raw, str) and has_expression(raw):
             return render_expression(raw, self.expr_scope(state))
         return raw
 

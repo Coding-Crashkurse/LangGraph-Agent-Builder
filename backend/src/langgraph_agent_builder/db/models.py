@@ -89,6 +89,36 @@ class RunEventRow(Base):
     created_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), default=utcnow)
 
 
+class NodeRunRow(Base):
+    """Per-node execution record for the run timeline (REFACTOR.md §7).
+
+    One row per (run, node, iteration): recorded from the compiler node wrapper
+    via ``RunContext.record_node_run`` so it captures the FULL input state and
+    output delta (the executor/EventBus only see truncated copies). ``iteration``
+    is a per-(run, node) counter; a looped/resumed node yields multiple rows.
+    ``tokens``/``cost`` stay null until an LLM-usage reporting path exists.
+    """
+
+    __tablename__ = "node_runs"
+    __table_args__ = (sa.Index("ix_node_runs_run_node_iter", "run_id", "node_id", "iteration"),)
+
+    id: Mapped[str] = mapped_column(sa.String(36), primary_key=True, default=new_id)
+    run_id: Mapped[str] = mapped_column(sa.String(36), index=True)
+    node_id: Mapped[str] = mapped_column(sa.String(100))
+    iteration: Mapped[int] = mapped_column(sa.Integer, default=1)
+    status: Mapped[str] = mapped_column(
+        sa.String(16), default="running"
+    )  # running/ok/error/interrupted
+    started_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), default=utcnow)
+    finished_at: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True), nullable=True)
+    duration_ms: Mapped[float | None] = mapped_column(sa.Float, nullable=True)
+    input_snapshot: Mapped[dict[str, Any] | None] = mapped_column(JSONVariant, nullable=True)
+    output_snapshot: Mapped[dict[str, Any] | None] = mapped_column(JSONVariant, nullable=True)
+    tokens: Mapped[int | None] = mapped_column(sa.Integer, nullable=True)
+    cost: Mapped[float | None] = mapped_column(sa.Float, nullable=True)
+    error_code: Mapped[str | None] = mapped_column(sa.String(16), nullable=True)
+
+
 class A2ATaskRow(Base):
     __tablename__ = "a2a_tasks"
 

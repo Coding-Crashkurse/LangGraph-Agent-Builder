@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import json
 import time
 from collections.abc import Callable, Hashable
 from typing import Any, cast
@@ -30,7 +31,7 @@ from langgraph_agent_builder.schema.state import FlowState
 from langgraph_agent_builder.sdk.component import BuildContext, Component, NodeFn
 from langgraph_agent_builder.sdk.outputs import Output
 from langgraph_agent_builder.sdk.ports import PortFamily
-from langgraph_agent_builder.sdk.runtime import current_node_id, stream_write
+from langgraph_agent_builder.sdk.runtime import current_node_id, get_run_context, stream_write
 
 __all__ = [
     "emit",
@@ -47,6 +48,50 @@ def _preview(value: Any, limit: int = 200) -> Any:
     except Exception:  # pragma: no cover - defensive
         return "<unrepresentable>"
     return s if len(s) <= limit else s[: limit - 1] + "…"
+
+
+# Node-run timeline snapshots (REFACTOR.md §7): the wrapper holds the FULL input
+# state and output delta, so we record a JSON-safe, size-capped projection of
+# each. Messages / pydantic models are coerced; oversized blobs are truncated.
+_SNAPSHOT_MAX_CHARS = 8000
+_SNAPSHOT_STR_CAP = 2000
+
+
+def _json_safe(value: Any) -> Any:
+    if value is None or isinstance(value, (bool, int, float)):
+        return value
+    if isinstance(value, str):
+        return value if len(value) <= _SNAPSHOT_STR_CAP else value[: _SNAPSHOT_STR_CAP - 1] + "…"
+    if isinstance(value, dict):
+        return {str(k): _json_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(v) for v in value]
+    dump = getattr(value, "model_dump", None)
+    if callable(dump):
+        try:
+            return _json_safe(dump(mode="json"))
+        except Exception:  # pragma: no cover - defensive
+            pass
+    if hasattr(value, "content"):  # LangChain message-like
+        return {
+            "type": getattr(value, "type", type(value).__name__),
+            "content": _json_safe(value.content),
+        }
+    return _preview(value, _SNAPSHOT_STR_CAP)
+
+
+def _snapshot(value: Any) -> dict[str, Any]:
+    """JSON-safe, size-capped snapshot of a node's input state / output delta."""
+    safe = _json_safe(value)
+    if not isinstance(safe, dict):
+        safe = {"value": safe}
+    try:
+        blob = json.dumps(safe)
+    except (TypeError, ValueError):  # pragma: no cover - defensive
+        return {"__unserializable__": _preview(value, _SNAPSHOT_MAX_CHARS)}
+    if len(blob) > _SNAPSHOT_MAX_CHARS:
+        return {"__truncated__": True, "preview": blob[:_SNAPSHOT_MAX_CHARS]}
+    return safe
 
 
 def make_node_wrapper(
@@ -73,6 +118,22 @@ def make_node_wrapper(
     async def wrapped(state: dict[str, Any], config: RunnableConfig) -> dict[str, Any]:
         token = current_node_id.set(node_id)
         started = time.perf_counter()
+        # Per-node run timeline (REFACTOR.md §7): record from the wrapper, which
+        # sees the FULL input state / output delta. ``record_node_run`` is None
+        # under vanilla LangGraph / the test harness ⇒ recording is a no-op and
+        # the iteration counter is never touched.
+        run_ctx = get_run_context(config)
+        recorder = run_ctx.record_node_run
+        iteration = run_ctx.next_iteration(node_id) if recorder is not None else 0
+        if recorder is not None:
+            recorder(
+                {
+                    "event": "started",
+                    "node_id": node_id,
+                    "iteration": iteration,
+                    "input_snapshot": _snapshot(state),
+                }
+            )
         stream_write({"event": "node_started", "node_id": node_id, "data": {}})
         try:
             result = await fn(state, config) or {}
@@ -84,8 +145,22 @@ def make_node_wrapper(
                     value = await value
                 result[name] = value
         except (GraphInterrupt, GraphBubbleUp):
+            if recorder is not None:
+                recorder({"event": "interrupted", "node_id": node_id, "iteration": iteration})
             raise  # interrupt/control-flow — LangGraph owns these
-        except (RuntimeError_, asyncio.CancelledError):
+        except asyncio.CancelledError:
+            raise
+        except RuntimeError_ as exc:
+            if recorder is not None:
+                recorder(
+                    {
+                        "event": "error",
+                        "node_id": node_id,
+                        "iteration": iteration,
+                        "error_code": exc.code.value,
+                        "duration_ms": round((time.perf_counter() - started) * 1000, 2),
+                    }
+                )
             raise
         except Exception as exc:
             stream_write(
@@ -95,6 +170,16 @@ def make_node_wrapper(
                     "data": {"code": RuntimeErrorCode.RT103.value, "message": str(exc)},
                 }
             )
+            if recorder is not None:
+                recorder(
+                    {
+                        "event": "error",
+                        "node_id": node_id,
+                        "iteration": iteration,
+                        "error_code": RuntimeErrorCode.RT103.value,
+                        "duration_ms": round((time.perf_counter() - started) * 1000, 2),
+                    }
+                )
             raise RuntimeError_(
                 RuntimeErrorCode.RT103, f"node {node_id!r} failed: {exc}", node_id
             ) from exc
@@ -122,17 +207,30 @@ def make_node_wrapper(
             delta["data"] = result["data"]
         if ports_delta:
             delta["ports"] = ports_delta
+        duration_ms = round((time.perf_counter() - started) * 1000, 2)
+        route_label = delta["route"][node_id] if "route" in delta else None
         stream_write(
             {
                 "event": "node_finished",
                 "node_id": node_id,
                 "data": {
-                    "duration_ms": round((time.perf_counter() - started) * 1000, 2),
+                    "duration_ms": duration_ms,
                     "outputs_preview": {k: _preview(v) for k, v in ports_delta.items()},
-                    **({"route": delta["route"][node_id]} if "route" in delta else {}),
+                    **({"route": route_label} if route_label is not None else {}),
                 },
             }
         )
+        if recorder is not None:
+            recorder(
+                {
+                    "event": "finished",
+                    "node_id": node_id,
+                    "iteration": iteration,
+                    "output_snapshot": _snapshot(delta),
+                    "duration_ms": duration_ms,
+                    **({"route": route_label} if route_label is not None else {}),
+                }
+            )
         return delta
 
     return wrapped

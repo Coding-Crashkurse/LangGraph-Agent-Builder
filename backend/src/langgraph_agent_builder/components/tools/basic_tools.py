@@ -9,6 +9,7 @@ from typing import Any
 
 from langgraph_agent_builder.sdk import BuildContext, Component, Output, fields, ports
 from langgraph_agent_builder.sdk.component import NodeConfig, NodeFn
+from langgraph_agent_builder.sdk.runtime import get_run_context
 
 _OPS: dict[type[ast.AST], Callable[..., float]] = {
     ast.Add: operator.add,
@@ -110,6 +111,15 @@ class HttpRequest(Component):
         fields.FloatInput(
             name="timeout_s", display_name="Timeout (s)", default=15.0, advanced=True
         ),
+        fields.BoolInput(
+            name="idempotency",
+            display_name="Idempotency Key",
+            default=True,
+            advanced=True,
+            info="Send an Idempotency-Key header ({run_id}:{node_id}:{iteration}) so a "
+            "retried run is de-duplicated by the target. Disable for endpoints that "
+            "reject unknown headers.",
+        ),
     ]
     outputs = [
         Output(name="text", display_name="Text", port=ports.TEXT),
@@ -134,6 +144,15 @@ class HttpRequest(Component):
             method = str(ctx.get_field("method") or "GET").upper()
             body = ctx.get_field("body") if method == "POST" else None
             headers = dict(ctx.get_field("headers") or {})
+            # Idempotency (REFACTOR.md §7): stamp a per-(run, node, iteration) key
+            # so retrying a run doesn't double-execute a side-effecting request.
+            # Only on the direct-node path — as an agent tool the RunContext isn't
+            # threaded through (runtime/tools.py passes an empty config), so run_id
+            # is empty and we skip. A caller-set header always wins (setdefault).
+            run_ctx = get_run_context(config)
+            if run_ctx.run_id and ctx.get_field("idempotency") is not False:
+                iteration = run_ctx.current_iteration(ctx.node_id)
+                headers.setdefault("Idempotency-Key", f"{run_ctx.run_id}:{ctx.node_id}:{iteration}")
             # Redirects are followed manually so EVERY hop passes the SSRF
             # guard — follow_redirects=True would let a public URL 302 into
             # 169.254.169.254 or the local Studio API.

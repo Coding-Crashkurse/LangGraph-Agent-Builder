@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
 
 from langgraph_agent_builder.api.deps import Services, StudioAuth, header_vars
-from langgraph_agent_builder.db.models import RunRow
+from langgraph_agent_builder.db.models import NodeRunRow, RunRow
 from langgraph_agent_builder.schema.events import HEARTBEAT_INTERVAL_S
 from langgraph_agent_builder.schema.flowspec import end_output_schema, start_input_schema
 from langgraph_agent_builder.services.orchestrator import FlowNotRunnableError
@@ -61,6 +61,23 @@ def run_info(row: RunRow) -> dict[str, Any]:
         "result_preview": row.result_preview,
         "started_at": row.started_at.isoformat(),
         "finished_at": row.finished_at.isoformat() if row.finished_at else None,
+    }
+
+
+def node_run_info(row: NodeRunRow) -> dict[str, Any]:
+    """One node-timeline row (REFACTOR.md §7). Shape is a frontend contract."""
+    return {
+        "node_id": row.node_id,
+        "iteration": row.iteration,
+        "status": row.status,
+        "started_at": row.started_at.isoformat(),
+        "finished_at": row.finished_at.isoformat() if row.finished_at else None,
+        "duration_ms": row.duration_ms,
+        "input_snapshot": row.input_snapshot,
+        "output_snapshot": row.output_snapshot,
+        "tokens": row.tokens,
+        "cost": row.cost,
+        "error_code": row.error_code,
     }
 
 
@@ -222,6 +239,16 @@ async def get_run(run_id: str, svc: Services) -> dict[str, Any]:
     if row is None:
         raise HTTPException(404, "run not found")
     return run_info(row)
+
+
+@router.get("/runs/{run_id}/nodes")
+async def run_node_timeline(run_id: str, svc: Services) -> list[dict[str, Any]]:
+    """Per-node run timeline, oldest first (REFACTOR.md §7) — every node
+    execution with its input/output snapshots, making a run fully inspectable."""
+    row = await svc.runs.get(run_id)
+    if row is None:
+        raise HTTPException(404, "run not found")
+    return [node_run_info(r) for r in await svc.runs.list_node_runs(run_id)]
 
 
 @router.get("/runs/{run_id}/events")

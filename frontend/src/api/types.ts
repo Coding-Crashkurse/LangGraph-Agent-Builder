@@ -232,6 +232,25 @@ export interface RunInfo {
   finished_at: string | null;
 }
 
+/** One node execution within a past run (GET /runs/{id}/nodes). A node that
+ * loops appears once per iteration. Snapshots are the port-keyed input/output
+ * previews the run recorded; `interrupted` marks a node parked on human input
+ * (§7.3 "every run is fully inspectable"). Not yet in schema.gen.ts — mirrored
+ * here until the backend endpoint ships (then regen + alias, cf. RunInfo). */
+export interface NodeRunInfo {
+  node_id: string;
+  iteration: number;
+  status: "running" | "ok" | "error" | "interrupted";
+  started_at: string;
+  finished_at: string | null;
+  duration_ms: number | null;
+  input_snapshot: unknown;
+  output_snapshot: unknown;
+  tokens: number | null;
+  cost: number | null;
+  error_code: string | null;
+}
+
 export interface RunEvent {
   event: string;
   run_id: string;

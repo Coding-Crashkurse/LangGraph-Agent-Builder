@@ -11,6 +11,8 @@ from tests.conftest import approval_spec, create_and_publish, hello_spec, slow_s
 if TYPE_CHECKING:
     import httpx
 
+    from langgraph_agent_builder.app import AppServices
+
 
 async def _drain_until_terminal(response: httpx.Response) -> list[str]:
     """Collect SSE event names, stopping at the terminal run event."""
@@ -186,6 +188,73 @@ async def test_get_unknown_run_is_404(client: httpx.AsyncClient) -> None:
     resp = await client.get("/api/v1/runs/nope")
     assert resp.status_code == 404
     assert resp.json()["detail"] == "run not found"
+
+
+# ------------------------------------------------------- node timeline (§7)
+_NODE_RUN_KEYS = {
+    "node_id",
+    "iteration",
+    "status",
+    "started_at",
+    "finished_at",
+    "duration_ms",
+    "input_snapshot",
+    "output_snapshot",
+    "tokens",
+    "cost",
+    "error_code",
+}
+
+
+async def test_run_node_timeline(client: httpx.AsyncClient, svc: AppServices) -> None:
+    """REFACTOR.md §7: every node execution is recorded and returned by
+    GET /runs/{id}/nodes with input/output snapshots — a run is fully inspectable."""
+    await create_and_publish(client, hello_spec("timeline"))
+    body = (await client.post("/api/v1/flows/timeline/run", json={"input_text": "hi"})).json()
+    # the node-run writer is a background task; flush it before asserting
+    await svc.runs.drain_node_runs()
+
+    resp = await client.get(f"/api/v1/runs/{body['run_id']}/nodes")
+    assert resp.status_code == 200
+    nodes = resp.json()
+    by_node = {n["node_id"]: n for n in nodes}
+    assert {"start", "fake", "end"} <= set(by_node)  # every node recorded
+    assert all(n["status"] == "ok" for n in nodes)
+    fake = by_node["fake"]
+    assert set(fake) == _NODE_RUN_KEYS  # exact frontend contract shape
+    assert fake["iteration"] == 1
+    assert fake["duration_ms"] is not None
+    assert fake["input_snapshot"] is not None
+    assert fake["output_snapshot"] is not None
+    assert fake["tokens"] is None  # deferred column (no LLM-usage path)
+    assert fake["cost"] is None  # deferred column
+    assert fake["error_code"] is None
+
+
+async def test_failed_run_node_timeline_records_error(
+    client: httpx.AsyncClient, svc: AppServices
+) -> None:
+    spec = hello_spec("boomtimeline")
+    spec["nodes"][1] = {
+        "id": "fake",
+        "component_id": "lab.testing.failing_node",
+        "component_version": "1.0.0",
+        "config": {"error_message": "boom"},
+        "position": {"x": 300, "y": 0},
+    }
+    await create_and_publish(client, spec)
+    body = (await client.post("/api/v1/flows/boomtimeline/run", json={"input_text": "hi"})).json()
+    await svc.runs.drain_node_runs()
+
+    nodes = (await client.get(f"/api/v1/runs/{body['run_id']}/nodes")).json()
+    failing = next(n for n in nodes if n["node_id"] == "fake")
+    assert failing["status"] == "error"
+    assert failing["error_code"] == "RT103"
+
+
+async def test_node_timeline_unknown_run_is_404(client: httpx.AsyncClient) -> None:
+    resp = await client.get("/api/v1/runs/does-not-exist/nodes")
+    assert resp.status_code == 404
 
 
 # --------------------------------------------------------------- delete / clear

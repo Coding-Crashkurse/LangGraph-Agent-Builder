@@ -319,7 +319,15 @@ export function FlowsPage() {
                 key={run.run_id}
                 className="group border-t border-border text-text-2 hover:bg-surface-2"
               >
-                <td className="px-3 py-1.5 font-mono text-[10.5px]">{run.run_id.slice(0, 12)}…</td>
+                <td className="px-3 py-1.5 font-mono text-[10.5px]">
+                  <Link
+                    to={`/runs/${run.run_id}`}
+                    title="Inspect this run node-by-node"
+                    className="rounded text-text-2 hover:text-accent focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent"
+                  >
+                    {run.run_id.slice(0, 12)}…
+                  </Link>
+                </td>
                 <td className="px-3 py-1.5">{run.flow_slug}</td>
                 <td className="px-3 py-1.5">{run.mode}</td>
                 <td className="px-3 py-1.5">

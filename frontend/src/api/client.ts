@@ -12,6 +12,7 @@ import type {
   FlowInfo,
   FlowSpec,
   McpServerInfo,
+  NodeRunInfo,
   OutputDescriptor,
   PortSpec,
   ResourceInfo,
@@ -143,6 +144,11 @@ export const api = {
       unwrap<RunInfo>(
         await raw.GET("/api/v1/runs/{run_id}", { params: { path: { run_id: runId } } }),
       ),
+    /** Per-node execution timeline for a past run (§7.3). Not yet in the
+     * generated OpenAPI schema, so this uses the same thin-fetch helper as
+     * api.resources (regen with `pnpm gen:api` and swap to `raw` once it ships). */
+    nodes: async (runId: string): Promise<NodeRunInfo[]> =>
+      resourceFetch<NodeRunInfo[]>(`/api/v1/runs/${encodeURIComponent(runId)}/nodes`),
     delete: async (runId: string) =>
       unwrap<unknown>(
         await raw.DELETE("/api/v1/runs/{run_id}", { params: { path: { run_id: runId } } }),

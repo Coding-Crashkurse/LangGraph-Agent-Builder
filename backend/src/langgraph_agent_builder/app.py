@@ -92,6 +92,7 @@ async def build_services(settings: Settings) -> AppServices:
         checkpointer_getter=checkpointers.get,
         bus=bus,
         on_status=runs.update_status,
+        record_node_run=runs.record_node_run,  # per-node run timeline (§7)
         recursion_limit_default=settings.recursion_limit_default,
         preview_length=settings.max_text_length,
     )
@@ -180,6 +181,7 @@ async def _shutdown(svc: AppServices) -> None:
     # can never orphan the DB engine (leaked aiosqlite worker threads).
     try:
         await svc.bus.aclose()
+        await svc.runs.aclose()  # flush + stop the node-run writer (§7)
         if svc.a2a is not None:
             await svc.a2a.aclose()
         await svc.checkpointers.aclose()

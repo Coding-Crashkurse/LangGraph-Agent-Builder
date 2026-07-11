@@ -6,6 +6,7 @@ import asyncio
 from typing import Any
 
 import pytest
+from langchain_core.runnables import RunnableConfig
 
 from langgraph_agent_builder.compiler import compile_flow
 from langgraph_agent_builder.runtime.executor import Executor
@@ -338,6 +339,111 @@ async def test_loop_until_terminates(mem_executor: tuple[Executor, EventBus]) ->
     result = await executor.execute(compiled, input_text="go")
     assert result.status == "completed"
     assert "APPROVED" in result.result_text
+
+
+def _loop_spec(condition: str = "", max_iterations: int = 3) -> dict[str, Any]:
+    """start → fake → loop; continue loops back to fake, done → end."""
+    return {
+        "schema_version": "1",
+        "flow": {"name": "loopdur", "slug": "loopdur", "description": "loop"},
+        "nodes": [
+            {"id": "start", "component_id": "lab.io.start", "config": {}},
+            {
+                "id": "fake",
+                "component_id": "lab.testing.fake_llm",
+                "config": {"replies": ["x"]},
+            },
+            {
+                "id": "loop",
+                "component_id": "lab.flow.loop_until",
+                "config": {"condition": condition, "max_iterations": max_iterations},
+            },
+            {"id": "end", "component_id": "lab.io.end", "config": {}},
+        ],
+        "edges": [
+            _edge("e1", "data", "start", "message", "fake", "input"),
+            _edge("e2", "data", "fake", "message", "loop", "input"),
+            _edge("e3", "router", "loop", "continue", "fake", "input"),
+            _edge("e4", "router", "loop", "done", "end", "message"),
+        ],
+    }
+
+
+def _edge(edge_id: str, kind: str, src: str, out: str, dst: str, inp: str) -> dict[str, Any]:
+    return {
+        "id": edge_id,
+        "kind": kind,
+        "source": {"node": src, "output": out},
+        "target": {"node": dst, "input": inp},
+    }
+
+
+async def test_loop_until_cursor_survives_restart_and_resumes(
+    mem_executor: tuple[Executor, EventBus],
+) -> None:
+    """Loop durability (REFACTOR.md §7): LoopUntil keeps its cursor in the
+    checkpointed ``data`` channel, so a restart resumes from the durable
+    iteration instead of replaying from zero.
+
+    max_iterations=3, no condition ⇒ run 1 loops to done at cursor 4. A fresh
+    Executor over the SAME checkpointer (simulated restart) runs the same thread
+    again: it reads the persisted cursor (4) and finishes immediately at 5 — it
+    does NOT restart the count at 1.
+    """
+    executor, _bus = mem_executor
+    compiled = compile_flow(_loop_spec(), use_cache=False)
+    thread = "loopdur-1"
+
+    first = await executor.execute(compiled, input_text="go", thread_id=thread)
+    assert first.status == "completed"
+
+    saver = await executor.get_checkpointer()
+    graph = compiled.compile(checkpointer=saver)
+    cfg: RunnableConfig = {"configurable": {"thread_id": thread}}
+    cursor_after_first = (await graph.aget_state(cfg)).values["data"]["__loop_loop"]
+    assert cursor_after_first == 4  # cursor durably checkpointed, not lost
+
+    # simulated restart: new Executor, no carried-over in-memory state, same store
+    async def _same_saver() -> Any:
+        return saver
+
+    restarted = Executor(checkpointer_getter=_same_saver)
+    second = await restarted.execute(compiled, input_text="go again", thread_id=thread)
+    assert second.status == "completed"
+    cursor_after_second = (await graph.aget_state(cfg)).values["data"]["__loop_loop"]
+    assert cursor_after_second == 5  # resumed from 4 → done at 5 (no replay from 1)
+
+
+async def test_node_run_recorder_records_interrupt_then_resume() -> None:
+    """The wrapper records 'interrupted' when a HITL node bubbles up, then a
+    fresh 'started'→'finished' pair on resume; the executor stamps run_id (§7)."""
+    from langgraph.checkpoint.memory import InMemorySaver
+
+    saver = InMemorySaver()
+
+    async def get() -> InMemorySaver:
+        return saver
+
+    payloads: list[dict[str, Any]] = []
+
+    def record(payload: dict[str, Any]) -> None:
+        payloads.append(payload)
+
+    executor = Executor(checkpointer_getter=get, bus=EventBus(), record_node_run=record)
+    compiled = compile_flow(approval_spec(), use_cache=False)
+
+    first = await executor.execute(compiled, input_text="draft", thread_id="rec1")
+    assert first.status == "input_required"
+    review = [p for p in payloads if p["node_id"] == "review"]
+    assert [p["event"] for p in review] == ["started", "interrupted"]
+    assert all(p["run_id"] == first.run_id for p in review)  # executor injected run_id
+    assert review[0]["input_snapshot"] is not None
+
+    payloads.clear()
+    resumed = await executor.execute(compiled, thread_id="rec1", resume={"decision": "approve"})
+    assert resumed.status == "completed"
+    review2 = [p for p in payloads if p["node_id"] == "review"]
+    assert [p["event"] for p in review2] == ["started", "finished"]
 
 
 async def test_rt102_invalid_router_label(mem_executor: tuple[Executor, EventBus]) -> None:

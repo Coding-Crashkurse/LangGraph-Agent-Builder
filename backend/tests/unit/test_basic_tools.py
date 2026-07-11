@@ -138,7 +138,15 @@ class _FakeHttpClient:
         json: Any = None,
         headers: Any = None,
     ) -> _FakeResponse:
-        self._sink.append({"verb": "request", "method": method, "url": url, "json": json})
+        self._sink.append(
+            {
+                "verb": "request",
+                "method": method,
+                "url": url,
+                "json": json,
+                "headers": headers or {},
+            }
+        )
         return self._next()
 
     async def post(self, url: str, *, json: Any = None, **_: Any) -> _FakeResponse:
@@ -268,6 +276,45 @@ async def test_http_request_follows_validated_public_redirect(
     out = await node({}, {})
     assert out["json"] == {"ok": True}
     assert [s["url"] for s in sink] == ["http://public.example/x", "http://cdn.example/y"]
+
+
+# ---------------------------------------------------- idempotency key (§7)
+async def test_http_request_injects_idempotency_key(
+    sqlite_settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A run's RunContext stamps Idempotency-Key: {run_id}:{node_id}:{iteration}."""
+    from langgraph_agent_builder.sdk.runtime import RUN_CTX_KEY, RunContext
+
+    sqlite_settings.push_allow_private = True
+    sink = _install_fake_httpx(monkeypatch, _FakeResponse(text="{}", json_data={}))
+    node = _build(HttpRequest, {"url": "http://svc.local/x"}, sqlite_settings)
+    ctx = RunContext(run_id="run-1", thread_id="th", mode="api")
+    await node({}, {"configurable": {RUN_CTX_KEY: ctx}})
+    assert sink[0]["headers"]["Idempotency-Key"] == "run-1:t:1"
+
+
+async def test_http_request_idempotency_opt_out(
+    sqlite_settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from langgraph_agent_builder.sdk.runtime import RUN_CTX_KEY, RunContext
+
+    sqlite_settings.push_allow_private = True
+    sink = _install_fake_httpx(monkeypatch, _FakeResponse(text="{}", json_data={}))
+    node = _build(HttpRequest, {"url": "http://svc.local/x", "idempotency": False}, sqlite_settings)
+    ctx = RunContext(run_id="run-1", thread_id="th")
+    await node({}, {"configurable": {RUN_CTX_KEY: ctx}})
+    assert "Idempotency-Key" not in sink[0]["headers"]
+
+
+async def test_http_request_no_idempotency_key_without_run_context(
+    sqlite_settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # agent-tool path passes an empty config (no RunContext) → no header stamped
+    sqlite_settings.push_allow_private = True
+    sink = _install_fake_httpx(monkeypatch, _FakeResponse(text="{}", json_data={}))
+    node = _build(HttpRequest, {"url": "http://svc.local/x"}, sqlite_settings)
+    await node({}, {})
+    assert "Idempotency-Key" not in sink[0]["headers"]
 
 
 # --------------------------------------------------------------------------- WebSearch

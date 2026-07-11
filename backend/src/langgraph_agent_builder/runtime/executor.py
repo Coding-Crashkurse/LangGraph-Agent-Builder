@@ -35,6 +35,12 @@ StatusHook = Callable[..., Awaitable[None]]
 
 EventSink = Callable[[RunEvent], Awaitable[None]]
 
+# Sync sink for the per-node run timeline (REFACTOR.md §7): the compiler node
+# wrapper calls it (via RunContext) with a plain payload dict; the payload we
+# forward carries ``run_id`` so RunService can key the row. Sync + fire-and-
+# forget (it enqueues to a background writer) so it never blocks the hot path.
+NodeRunRecorder = Callable[[dict[str, Any]], None]
+
 
 class RunResult(BaseModel):
     run_id: str
@@ -114,15 +120,33 @@ class Executor:
         checkpointer_getter: Callable[[], Awaitable[Any]],
         bus: EventBus | None = None,
         on_status: StatusHook | None = None,
+        record_node_run: NodeRunRecorder | None = None,
         recursion_limit_default: int = 50,
         preview_length: int = 300,  # LAB_MAX_TEXT_LENGTH
     ) -> None:
         self._get_checkpointer = checkpointer_getter
         self._bus = bus
         self._on_status = on_status
+        self._record_node_run = record_node_run
         self._recursion_default = recursion_limit_default
         self._preview_length = preview_length
         self.runs: dict[str, RunHandle] = {}
+
+    def _attach_node_recorder(self, ctx: RunContext, run_id: str) -> None:
+        """Give a run's RunContext a per-run node-timeline recorder (REFACTOR.md §7).
+
+        Mirrors how ``on_status`` is wired: the executor owns the sink, and here
+        closes it over ``run_id`` so the compiler wrapper stays DB-free. No-op
+        when no sink is configured or the context already has one (e.g. resume).
+        """
+        sink = self._record_node_run
+        if sink is None or ctx._noop or ctx.record_node_run is not None:
+            return
+
+        def record(payload: dict[str, Any]) -> None:
+            sink({"run_id": run_id, **payload})
+
+        ctx.record_node_run = record
 
     @property
     def bus(self) -> EventBus | None:
@@ -219,6 +243,9 @@ class Executor:
                 or RunContext(run_id=run_id, thread_id=thread_id, mode=mode),
             )
         handle.task = handle.task or asyncio.current_task()
+        # attach the node-timeline recorder here so both execute() and start()
+        # (which delegates here with its pre-built handle) get it exactly once
+        self._attach_node_recorder(handle.run_context, handle.run_id)
         if register:
             self.runs[handle.run_id] = handle
         try:

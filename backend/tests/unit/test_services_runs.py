@@ -238,3 +238,79 @@ async def test_sweep_checkpoints_suppresses_delete_errors(
     checkpointer = FakeCheckpointer(fail={"boomthread"})
     # the raise is swallowed → nothing counted, no exception propagates
     assert await runs.sweep_checkpoints(checkpointer, ttl_days=30) == 0
+
+
+# ----------------------------------------------------------------- node runs (§7)
+def _node_payload(event: str, **extra: object) -> dict[str, object]:
+    return {"event": event, "run_id": "r1", "node_id": "n1", "iteration": 1, **extra}
+
+
+async def test_record_node_run_started_then_finished_upserts_one_row(runs: RunService) -> None:
+    await runs.create("r1", thread_id="t1", mode="api")
+    runs.record_node_run(_node_payload("started", input_snapshot={"messages": []}))
+    runs.record_node_run(
+        _node_payload("finished", output_snapshot={"data": {"x": 1}}, duration_ms=12.5)
+    )
+    await runs.drain_node_runs()
+    rows = await runs.list_node_runs("r1")
+    assert len(rows) == 1  # started + finished collapse into one (run, node, iteration) row
+    row = rows[0]
+    assert (row.node_id, row.iteration, row.status) == ("n1", 1, "ok")
+    assert row.duration_ms == 12.5
+    assert row.input_snapshot == {"messages": []}
+    assert row.output_snapshot == {"data": {"x": 1}}
+    assert row.finished_at is not None
+    assert row.tokens is None  # deferred (no LLM-usage path)
+    assert row.cost is None
+    await runs.aclose()
+
+
+async def test_record_node_run_error_sets_status_and_code(runs: RunService) -> None:
+    await runs.create("r1", thread_id="t1", mode="api")
+    runs.record_node_run(_node_payload("started"))
+    runs.record_node_run(_node_payload("error", error_code="RT103", duration_ms=3.0))
+    await runs.drain_node_runs()
+    rows = await runs.list_node_runs("r1")
+    assert [r.status for r in rows] == ["error"]
+    assert rows[0].error_code == "RT103"
+    await runs.aclose()
+
+
+async def test_record_node_run_interrupted(runs: RunService) -> None:
+    await runs.create("r1", thread_id="t1", mode="api")
+    runs.record_node_run(_node_payload("started"))
+    runs.record_node_run(_node_payload("interrupted"))
+    await runs.drain_node_runs()
+    rows = await runs.list_node_runs("r1")
+    assert [r.status for r in rows] == ["interrupted"]
+    assert rows[0].finished_at is not None
+    await runs.aclose()
+
+
+async def test_record_node_run_finish_without_started_is_noop(runs: RunService) -> None:
+    await runs.create("r1", thread_id="t1", mode="api")
+    runs.record_node_run(_node_payload("finished"))  # no open row to close
+    await runs.drain_node_runs()
+    assert await runs.list_node_runs("r1") == []
+    await runs.aclose()
+
+
+async def test_list_node_runs_orders_by_iteration(runs: RunService) -> None:
+    await runs.create("r1", thread_id="t1", mode="api")
+    for it in (1, 2, 3):  # a looped node produces one row per iteration
+        runs.record_node_run(_node_payload("started", node_id="loop", iteration=it))
+        runs.record_node_run(_node_payload("finished", node_id="loop", iteration=it))
+    await runs.drain_node_runs()
+    rows = await runs.list_node_runs("r1")
+    assert [r.iteration for r in rows] == [1, 2, 3]
+    await runs.aclose()
+
+
+async def test_delete_run_cascades_node_runs(runs: RunService) -> None:
+    await runs.create("r1", thread_id="t1", mode="api")
+    runs.record_node_run(_node_payload("started"))
+    await runs.drain_node_runs()
+    assert await runs.list_node_runs("r1")
+    await runs.delete("r1")
+    assert await runs.list_node_runs("r1") == []
+    await runs.aclose()

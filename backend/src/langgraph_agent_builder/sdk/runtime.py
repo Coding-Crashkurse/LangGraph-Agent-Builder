@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Callable
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import Any
@@ -50,6 +51,26 @@ class RunContext:
     cancellation: asyncio.Event = field(default_factory=asyncio.Event)
     mode: str = "api"
     _noop: bool = False
+    # Opaque, DB-free sink for the per-node run timeline (REFACTOR.md §7). The
+    # compiler node wrapper calls it with a plain payload dict; the executor/app
+    # layer wires it to a background writer in RunService (keeps sdk/compiler
+    # DB-clean — mirrors how ``on_status`` is wired). None ⇒ nothing recorded.
+    record_node_run: Callable[[dict[str, Any]], None] | None = None
+    # Per-(run, node) iteration counter — iterations are not on events, so the
+    # wrapper increments this on each ``node_started`` (looped/resumed nodes
+    # produce distinct rows). Per RunContext ⇒ per execute() call.
+    _node_iterations: dict[str, int] = field(default_factory=dict)
+
+    # ---------------------------------------------------------------- iterations
+    def next_iteration(self, node_id: str) -> int:
+        """Increment and return this node's iteration for the current run."""
+        nxt = self._node_iterations.get(node_id, 0) + 1
+        self._node_iterations[node_id] = nxt
+        return nxt
+
+    def current_iteration(self, node_id: str) -> int:
+        """This node's current iteration without advancing it (≥1 once started)."""
+        return self._node_iterations.get(node_id, 1)
 
     # ---------------------------------------------------------------- emitters
     def emit_status(self, text: str) -> None:
