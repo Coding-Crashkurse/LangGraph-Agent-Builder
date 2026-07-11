@@ -13,20 +13,28 @@ from urllib.parse import urlparse, urlunparse
 
 import httpx
 from a2a.server.context import ServerCallContext
-from a2a.server.tasks import PushNotificationConfigStore, PushNotificationSender
-from a2a.types import PushNotificationConfig, Task, TaskState
+from a2a.server.tasks import (
+    PushNotificationConfigStore,
+    PushNotificationEvent,
+    PushNotificationSender,
+)
+from a2a.types import TaskPushNotificationConfig
+from a2a.utils.proto_utils import to_stream_response
+from google.protobuf.json_format import MessageToDict, ParseDict
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from langgraph_agent_builder.a2a.tasks import TERMINAL_STATES
+from langgraph_agent_builder.a2a.tasks import TERMINAL_STATES, state_from_str
 from langgraph_agent_builder.db.models import PushConfigRow
 from langgraph_agent_builder.errors import LabValueError
 from langgraph_agent_builder.services.settings import Settings
 
 logger = logging.getLogger("langgraph_agent_builder.a2a.push")
 
-# §7.9: input-required + terminal always notify; `working` needs notify_working opt-in
-NOTIFY_STATES = TERMINAL_STATES | {TaskState.input_required}
+# §7.9: input-required + terminal notify. The v1.0 protobuf TaskPushNotificationConfig
+# has no metadata channel, so the old per-config `working` opt-in is no longer
+# expressible — `working`/`submitted` never notify.
+NOTIFY_STATES: set[int] = TERMINAL_STATES | {state_from_str("input-required")}
 RETRIES = 3
 
 
@@ -121,6 +129,14 @@ async def resolve_and_pin_webhook(url: str, settings: Settings) -> PinnedWebhook
     )
 
 
+def _event_state(event: PushNotificationEvent) -> int | None:
+    """State carried by a task/status event; None for artifact-update events."""
+    try:
+        return int(event.status.state)  # Task, TaskStatusUpdateEvent
+    except AttributeError:
+        return None  # TaskArtifactUpdateEvent has no status
+
+
 class DbPushConfigStore(PushNotificationConfigStore):
     def __init__(self, sessions: async_sessionmaker[AsyncSession], settings: Settings) -> None:
         self._sessions = sessions
@@ -129,7 +145,7 @@ class DbPushConfigStore(PushNotificationConfigStore):
     async def set_info(
         self,
         task_id: str,
-        notification_config: PushNotificationConfig,
+        notification_config: TaskPushNotificationConfig,
         context: ServerCallContext | None = None,
     ) -> None:
         await resolve_and_pin_webhook(notification_config.url, self._settings)  # SSRF (§7.9)
@@ -146,13 +162,13 @@ class DbPushConfigStore(PushNotificationConfigStore):
                 row = PushConfigRow(id=config_id, task_id=task_id, url=notification_config.url)
                 session.add(row)
             row.url = notification_config.url
-            row.token = notification_config.token
-            row.config = notification_config.model_dump(mode="json", exclude_none=True)
+            row.token = notification_config.token or None
+            row.config = MessageToDict(notification_config)
             await session.commit()
 
     async def get_info(
         self, task_id: str, context: ServerCallContext | None = None
-    ) -> list[PushNotificationConfig]:
+    ) -> list[TaskPushNotificationConfig]:
         async with self._sessions() as session:
             rows = (
                 (
@@ -163,13 +179,20 @@ class DbPushConfigStore(PushNotificationConfigStore):
                 .scalars()
                 .all()
             )
-        return [PushNotificationConfig.model_validate(r.config) for r in rows]
+        return [
+            ParseDict(r.config, TaskPushNotificationConfig(), ignore_unknown_fields=True)
+            for r in rows
+        ]
+
+    async def get_info_for_dispatch(self, task_id: str) -> list[TaskPushNotificationConfig]:
+        """Out-of-band delivery lookup — no call context, fans across all owners."""
+        return await self.get_info(task_id)
 
     async def delete_info(
         self,
         task_id: str,
-        config_id: str | None = None,
         context: ServerCallContext | None = None,
+        config_id: str | None = None,
     ) -> None:
         async with self._sessions() as session:
             stmt = delete(PushConfigRow).where(PushConfigRow.task_id == task_id)
@@ -180,7 +203,11 @@ class DbPushConfigStore(PushNotificationConfigStore):
 
 
 class GuardedPushSender(PushNotificationSender):
-    """POSTs the Task object with retries + client token header (SPEC §7.9)."""
+    """POSTs the task event with retries + client token header (SPEC §7.9).
+
+    a2a-sdk 1.x drives ``send_notification(task_id, event)`` on every task event;
+    we gate delivery to the §7.9 notify states and SSRF-pin each webhook.
+    """
 
     def __init__(
         self,
@@ -193,35 +220,31 @@ class GuardedPushSender(PushNotificationSender):
         self._settings = settings
 
     @staticmethod
-    def _should_notify(state: TaskState, configs: Sequence[PushNotificationConfig]) -> bool:
-        """The one §7.9 decision: input-required/terminal always notify,
-        `working` only with a notify_working opt-in, everything else
-        (including `submitted`) never."""
-        if state in NOTIFY_STATES:
-            return True
-        if state is not TaskState.working:
-            return False
-        return any(
-            bool((getattr(c, "metadata", None) or {}).get("notify_working")) for c in configs
-        )
+    def _should_notify(state: int) -> bool:
+        """The §7.9 decision: input-required + terminal notify; everything else
+        (working, submitted, auth-required, artifact-update) never."""
+        return state in NOTIFY_STATES
 
-    async def send_notification(self, task: Task) -> None:
-        configs = await self._store.get_info(task.id)
-        if not configs or not self._should_notify(task.status.state, configs):
+    async def send_notification(self, task_id: str, event: PushNotificationEvent) -> None:
+        state = _event_state(event)
+        if state is None or not self._should_notify(state):
             return
-        payload = task.model_dump(mode="json", exclude_none=True)
+        configs = await self._store.get_info_for_dispatch(task_id)
+        if not configs:
+            return
+        payload = MessageToDict(to_stream_response(event))
         for config in configs:
             try:
                 pinned = await resolve_and_pin_webhook(config.url, self._settings)
             except SsrfError as exc:
-                logger.warning("push blocked for task %s: %s", task.id, exc)
+                logger.warning("push blocked for task %s: %s", task_id, exc)
                 continue
-            await self._deliver(task.id, config, pinned, payload)
+            await self._deliver(task_id, config, pinned, payload)
 
     async def _deliver(
         self,
         task_id: str,
-        config: PushNotificationConfig,
+        config: TaskPushNotificationConfig,
         pinned: PinnedWebhook | None,
         payload: dict[str, Any],
     ) -> None:

@@ -85,11 +85,11 @@ def version(json_out: Annotated[bool, typer.Option("--json/--no-json")] = False)
 
     settings = build_settings(None)
     try:
-        from a2a.types import AgentCard
+        from a2a.utils.constants import PROTOCOL_VERSION_CURRENT
 
-        protocol = AgentCard.model_fields["protocol_version"].default
+        protocol = PROTOCOL_VERSION_CURRENT
     except Exception:
-        protocol = "0.3.x"
+        protocol = "1.0"
     try:
         langgraph_version = importlib.metadata.version("langgraph")
     except importlib.metadata.PackageNotFoundError:

@@ -254,7 +254,6 @@ class ResourcesService:
 
     async def _fetch_card(self, config: dict[str, Any]) -> dict[str, Any]:
         import httpx
-        from a2a.types import AgentCard
 
         from langgraph_agent_builder.a2a.push import validate_webhook_url
 
@@ -273,9 +272,16 @@ class ResourcesService:
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.get(card_url, headers=headers)
             resp.raise_for_status()
-            card = AgentCard.model_validate(resp.json())
-        dumped: dict[str, Any] = card.model_dump(mode="json", exclude_none=True)
-        return dumped
+            card = resp.json()
+        # a2a-sdk 1.x cards are protobuf (no pydantic model_validate); remote cards
+        # also vary (v0.3 snake_case / v1.0 ProtoJSON camelCase). Validate the shape
+        # and cache the raw JSON rather than force-parsing a foreign card.
+        if not isinstance(card, dict) or not (
+            card.get("name") or card.get("url") or card.get("supported_interfaces")
+        ):
+            raise ValueError("remote response is not an Agent Card")
+        result: dict[str, Any] = card
+        return result
 
     # ------------------------------------------------------------------ secrets / info
     async def _resolve_params(self, params: dict[str, Any]) -> dict[str, Any]:

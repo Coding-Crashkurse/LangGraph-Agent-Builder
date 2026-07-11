@@ -10,7 +10,7 @@ the run's remaining events out as already-replayed.
 from __future__ import annotations
 
 import uuid
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from tests.conftest import approval_spec, create_and_publish
 
@@ -51,10 +51,6 @@ async def test_resume_after_restart_restores_seq_floor(
     assert "run_finished" in names  # persisted above the old floor, not dropped
 
 
-def _rpc_send(message: dict[str, Any]) -> dict[str, Any]:
-    return {"jsonrpc": "2.0", "id": 1, "method": "message/send", "params": {"message": message}}
-
-
 async def test_a2a_resume_after_restart_restores_seq_floor(
     client: httpx.AsyncClient, svc: AppServices
 ) -> None:
@@ -62,18 +58,18 @@ async def test_a2a_resume_after_restart_restores_seq_floor(
     restore the floor before Executor.execute starts publishing again."""
     await create_and_publish(client, approval_spec("a2a-seq-floor"))
     first = await client.post(
-        "/a2a/a2a-seq-floor/",
-        json=_rpc_send(
-            {
-                "role": "user",
+        "/a2a/a2a-seq-floor/message:send",
+        json={
+            "message": {
+                "role": "ROLE_USER",
                 "messageId": str(uuid.uuid4()),
-                "parts": [{"kind": "text", "text": "draft"}],
+                "parts": [{"text": "draft"}],
             }
-        ),
+        },
     )
     assert first.status_code == 200, first.text
-    task = first.json()["result"]
-    assert task["status"]["state"] == "input-required"
+    task = first.json()["task"]
+    assert task["status"]["state"] == "TASK_STATE_INPUT_REQUIRED"
     run_id = task["id"]  # one task == one run + its resume chain (§7.6)
 
     await svc.bus.drain()
@@ -83,15 +79,15 @@ async def test_a2a_resume_after_restart_restores_seq_floor(
     svc.bus._seq.clear()  # what a process restart does to the in-memory counters
 
     answer = {
-        "role": "user",
+        "role": "ROLE_USER",
         "messageId": str(uuid.uuid4()),
         "taskId": task["id"],
         "contextId": task["contextId"],
-        "parts": [{"kind": "data", "data": {"decision": "approve"}}],
+        "parts": [{"data": {"decision": "approve"}}],
     }
-    done = await client.post("/a2a/a2a-seq-floor/", json=_rpc_send(answer))
+    done = await client.post("/a2a/a2a-seq-floor/message:send", json={"message": answer})
     assert done.status_code == 200, done.text
-    assert done.json()["result"]["status"]["state"] == "completed"
+    assert done.json()["task"]["status"]["state"] == "TASK_STATE_COMPLETED"
 
     await svc.bus.drain()
     fresh = await svc.runs.load_events(run_id, after_seq=floor)

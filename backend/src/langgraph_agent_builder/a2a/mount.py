@@ -1,32 +1,68 @@
 """A2A mounting: per-agent ASGI apps under /a2a/{slug} with auth (SPEC §7.1, §7.11).
 
 Rebuilt on publish/unpublish; the dispatcher swaps sub-apps without restarting.
+
+a2a-sdk 1.x (protocol v1.0) serves a REST HTTP+JSON door: the route factories in
+``a2a.server.routes`` (``create_agent_card_routes`` + ``create_rest_routes``)
+produce Starlette routes we hang off a per-flow ``Starlette`` sub-app. The 0.3
+``A2AStarletteApplication`` + ``JSONRPCHandler`` are gone; push-capability honesty
+(§7.9/§7.10) and resubscribe replay (§7.5) are now native to the request handler
+(see handler.py), so this module only wires + mounts.
 """
 
 from __future__ import annotations
 
-import json
 import logging
 from typing import TYPE_CHECKING, Any
 
 import httpx
-from a2a.server.apps import A2AStarletteApplication
+from a2a.server.request_handlers.response_helpers import agent_card_to_dict
+from a2a.server.routes import (
+    DefaultServerCallContextBuilder,
+    create_agent_card_routes,
+    create_rest_routes,
+)
+from a2a.utils.constants import PROTOCOL_VERSION_1_0, VERSION_HEADER
+from starlette.applications import Starlette
 from starlette.responses import JSONResponse
 from starlette.routing import Route
 
-from langgraph_agent_builder.a2a.card import LEGACY_WELL_KNOWN_PATH, WELL_KNOWN_PATH, build_card
+from langgraph_agent_builder.a2a.card import WELL_KNOWN_PATH, build_card
 from langgraph_agent_builder.a2a.executor import LabAgentExecutor
-from langgraph_agent_builder.a2a.handler import LabJSONRPCHandler, LabRequestHandler
+from langgraph_agent_builder.a2a.handler import LabRequestHandler
 from langgraph_agent_builder.a2a.push import DbPushConfigStore, GuardedPushSender
 from langgraph_agent_builder.a2a.scope import current_client_scope, scope_for_api_key, scope_for_ip
 from langgraph_agent_builder.a2a.tasks import resolve_task_store
 
 if TYPE_CHECKING:
+    from a2a.server.context import ServerCallContext
+    from starlette.requests import Request
+
     from langgraph_agent_builder.app import AppServices
 
 logger = logging.getLogger("langgraph_agent_builder.a2a.mount")
 
-CARD_PATHS = {WELL_KNOWN_PATH, LEGACY_WELL_KNOWN_PATH}
+# v1.0 serves the single well-known card path (agent.json is gone).
+CARD_PATHS = {WELL_KNOWN_PATH}
+
+
+class _LabContextBuilder(DefaultServerCallContextBuilder):
+    """Default the ``A2A-Version`` header to 1.0 and freeze the per-request client
+    scope. The SDK treats a missing version header as 0.3, but our door only
+    speaks v1.0 (D4: no v0.3 compat), so an unversioned request is 1.0. An
+    explicit header is preserved (a genuine 0.3 client still gets 400). The auth
+    middleware's contextvar is snapshotted into call-context state so
+    ``resolve_client_scope`` stays correct across ActiveTask background tasks."""
+
+    def build(self, request: Request) -> ServerCallContext:
+        context = super().build(request)
+        headers = context.state.setdefault("headers", {})
+        if not (headers.get(VERSION_HEADER) or headers.get(VERSION_HEADER.lower())):
+            headers[VERSION_HEADER] = PROTOCOL_VERSION_1_0
+        scope = current_client_scope.get()
+        if scope:
+            context.state["lga_client_scope"] = scope
+        return context
 
 
 def effective_path(scope: dict[str, Any]) -> str:
@@ -40,7 +76,7 @@ def effective_path(scope: dict[str, Any]) -> str:
 
 
 class _AgentAuthMiddleware:
-    """HTTP-layer auth (SPEC §7.10/§7.11): 401 before JSON-RPC ever sees the request."""
+    """HTTP-layer auth (SPEC §7.10/§7.11): 401 before the REST handler sees the request."""
 
     def __init__(self, app: Any, svc: AppServices, auth_mode: str) -> None:
         self._app = app
@@ -119,7 +155,8 @@ class A2AManager:
                     stream_tokens=spec.flow.a2a.stream_tokens,
                 )
                 # push honesty (§7.9): card says pushNotifications:false ⇒ no
-                # store/sender wired, and pushNotificationConfig/* → -32003
+                # store/sender wired, and the handler's native capability gate
+                # answers PUSH_NOTIFICATION_NOT_SUPPORTED for every push method.
                 push_enabled = spec.flow.a2a.push_notifications
                 push_store = DbPushConfigStore(svc.sessions, svc.settings) if push_enabled else None
                 handler = LabRequestHandler(
@@ -130,36 +167,34 @@ class A2AManager:
                         flow_slug=slug,
                         settings=svc.settings,
                     ),
+                    agent_card=card,
                     push_config_store=push_store,
                     push_sender=(
                         GuardedPushSender(self._http, push_store, svc.settings)
                         if push_store is not None
                         else None
                     ),
-                    push_supported=push_enabled,
+                    # v1 extended card == public card (§7.5); flip the card's
+                    # capability flag later to diverge without protocol changes
+                    extended_agent_card=card,
                 )
-                # v1 extended card == public card (§7.5) — wired so the
-                # capability flag can be flipped without protocol changes
-                a2a_app = A2AStarletteApplication(
-                    agent_card=card, http_handler=handler, extended_agent_card=card
-                )
-                # the sdk hardwires a plain JSONRPCHandler; swap in ours so the
-                # push-set capability gate answers -32003 (§7.10), not -32603
-                a2a_app.handler = LabJSONRPCHandler(
-                    agent_card=card, request_handler=handler, extended_agent_card=card
-                )
-                app = a2a_app.build(agent_card_url=WELL_KNOWN_PATH, rpc_url="/")
-                card_json = json.loads(card.model_dump_json(exclude_none=True, by_alias=True))
+                card_dict = agent_card_to_dict(card)
 
                 async def card_endpoint(
-                    _request: Any, _card: dict[str, Any] = card_json
+                    _request: Any, _card: dict[str, Any] = card_dict
                 ) -> JSONResponse:
                     return JSONResponse(_card)
 
-                # the sdk app already serves both well-known paths; add GET / → card
-                app.router.routes.append(Route("/", card_endpoint, methods=["GET"]))
-                apps[slug] = _AgentAuthMiddleware(app, svc, spec.flow.a2a.auth)
-                cards[slug] = card_json
+                # REST HTTP+JSON door: card route + GET / convenience + the
+                # message:send/tasks/* endpoints, all relative to /a2a/{slug}
+                routes = [
+                    *create_agent_card_routes(card, card_url=WELL_KNOWN_PATH),
+                    Route("/", card_endpoint, methods=["GET"]),
+                    *create_rest_routes(handler, context_builder=_LabContextBuilder()),
+                ]
+                sub_app = Starlette(routes=routes)
+                apps[slug] = _AgentAuthMiddleware(sub_app, svc, spec.flow.a2a.auth)
+                cards[slug] = card_dict
             except Exception:
                 logger.exception("failed to mount A2A agent %s", slug)
         self._apps = apps

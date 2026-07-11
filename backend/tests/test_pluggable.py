@@ -70,22 +70,18 @@ async def test_memory_task_store_serves_a2a(client: httpx.AsyncClient, svc: AppS
     try:
         await create_and_publish(client, hello_spec("mem-store-flow"))
         response = await client.post(
-            "/a2a/mem-store-flow/",
+            "/a2a/mem-store-flow/message:send",
             json={
-                "jsonrpc": "2.0",
-                "id": 1,
-                "method": "message/send",
-                "params": {
-                    "message": {
-                        "role": "user",
-                        "messageId": "m-mem-1",
-                        "parts": [{"kind": "text", "text": "hi"}],
-                    }
-                },
+                "message": {
+                    "role": "ROLE_USER",
+                    "messageId": "m-mem-1",
+                    "parts": [{"text": "hi"}],
+                }
             },
         )
-        task = response.json()["result"]
-        assert task["status"]["state"] == "completed"
+        assert response.status_code == 200, response.text
+        task = response.json()["task"]
+        assert task["status"]["state"] == "TASK_STATE_COMPLETED"
     finally:
         svc.settings.a2a_task_store = "db"
         await svc.remount()

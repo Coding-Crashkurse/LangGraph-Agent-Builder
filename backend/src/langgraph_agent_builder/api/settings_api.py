@@ -205,11 +205,11 @@ async def version(svc: Services) -> dict[str, Any]:
     import langgraph_agent_builder as lab_pkg
 
     try:
-        from a2a.utils.constants import DEFAULT_PROTOCOL_VERSION  # type: ignore
+        from a2a.utils.constants import PROTOCOL_VERSION_CURRENT
 
-        protocol = DEFAULT_PROTOCOL_VERSION
+        protocol = PROTOCOL_VERSION_CURRENT
     except Exception:
-        protocol = "0.3.x"
+        protocol = "1.0"
     from langgraph_agent_builder.vectorstores import installed_backends
 
     return {

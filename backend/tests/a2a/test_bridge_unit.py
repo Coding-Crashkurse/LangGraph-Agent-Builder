@@ -1,6 +1,10 @@
 """Unit pins for the A2A bridge internals: §7.6 state-set derivation, the §7.9
 push decision, the §7.10 machine-readable failure part, and the SSRF pin
-(resolve-once/connect-to-validated-address, §10.5)."""
+(resolve-once/connect-to-validated-address, §10.5).
+
+a2a-sdk 1.x: TaskState values are protobuf enum ints (``TERMINAL_STATES`` etc.
+are ``set[int]``), ``TaskStatusUpdateEvent`` has no ``final`` flag, and ``Part``
+is flat (``WhichOneof('content')`` → ``text``/``data``/``raw``/``url``)."""
 
 from __future__ import annotations
 
@@ -10,7 +14,8 @@ import httpx
 import pytest
 from a2a.server.events import EventQueue
 from a2a.server.tasks import TaskUpdater
-from a2a.types import TaskState, TaskStatusUpdateEvent
+from a2a.types import Message, Part, Role, Task, TaskState, TaskStatus, TaskStatusUpdateEvent
+from google.protobuf.json_format import MessageToDict
 
 from langgraph_agent_builder.a2a.executor import LabAgentExecutor, _A2ASink
 from langgraph_agent_builder.a2a.push import (
@@ -20,59 +25,61 @@ from langgraph_agent_builder.a2a.push import (
     SsrfError,
     resolve_and_pin_webhook,
 )
-from langgraph_agent_builder.a2a.tasks import ALLOWED_TRANSITIONS, FINAL_STATES, TERMINAL_STATES
+from langgraph_agent_builder.a2a.tasks import (
+    ALLOWED_TRANSITIONS,
+    FINAL_STATES,
+    TERMINAL_STATES,
+    state_from_str,
+)
 from langgraph_agent_builder.runtime.executor import RunResult
 
 if TYPE_CHECKING:
     from langgraph_agent_builder.services.settings import Settings
 
 
+class _RecordingQueue(EventQueue):
+    """Captures enqueued events (the v1.0 EventQueue producer surface is only
+    ``enqueue_event``)."""
+
+    def __init__(self) -> None:
+        self.events: list[Any] = []
+
+    async def enqueue_event(self, event: Any) -> None:
+        self.events.append(event)
+
+
 # ------------------------------------------------------------ state sets (§7.6)
 def test_terminal_states_derived_from_transition_table() -> None:
     assert TERMINAL_STATES == {
-        TaskState.completed,
-        TaskState.failed,
-        TaskState.canceled,
-        TaskState.rejected,
+        state_from_str(s) for s in ("completed", "failed", "canceled", "rejected")
     }
-    assert FINAL_STATES == TERMINAL_STATES | {TaskState.input_required, TaskState.auth_required}
+    assert FINAL_STATES == TERMINAL_STATES | {
+        state_from_str("input-required"),
+        state_from_str("auth-required"),
+    }
     # every terminal state has an empty transition set and vice versa
     for state, targets in ALLOWED_TRANSITIONS.items():
-        assert (TaskState(state) in TERMINAL_STATES) == (not targets)
+        assert (state_from_str(state) in TERMINAL_STATES) == (not targets)
 
 
 # ------------------------------------------------------------ push decision (§7.9)
-class _Cfg:
-    def __init__(self, metadata: dict[str, Any] | None = None) -> None:
-        self.url = "https://hook.example/cb"
-        self.token = None
-        self.metadata = metadata
-
-
-def _configs(*metas: dict[str, Any] | None) -> Any:
-    return [cast("Any", _Cfg(m)) for m in metas]
-
-
 @pytest.mark.parametrize(
-    ("state", "metas", "expected"),
+    ("state", "expected"),
     [
-        (TaskState.completed, [None], True),
-        (TaskState.failed, [None], True),
-        (TaskState.canceled, [None], True),
-        (TaskState.rejected, [None], True),
-        (TaskState.input_required, [None], True),
-        # working requires the notify_working opt-in
-        (TaskState.working, [None], False),
-        (TaskState.working, [{"notify_working": True}], True),
-        # submitted NEVER notifies — even with a notify_working opt-in
-        (TaskState.submitted, [{"notify_working": True}], False),
-        (TaskState.auth_required, [{"notify_working": True}], False),
+        ("completed", True),
+        ("failed", True),
+        ("canceled", True),
+        ("rejected", True),
+        ("input-required", True),
+        # v1.0 TaskPushNotificationConfig has no metadata channel, so the old
+        # per-config `notify_working` opt-in is gone — working never notifies
+        ("working", False),
+        ("submitted", False),
+        ("auth-required", False),
     ],
 )
-def test_should_notify_decision(
-    state: TaskState, metas: list[dict[str, Any] | None], expected: bool
-) -> None:
-    assert GuardedPushSender._should_notify(state, _configs(*metas)) is expected
+def test_should_notify_decision(state: str, expected: bool) -> None:
+    assert GuardedPushSender._should_notify(state_from_str(state)) is expected
 
 
 # ------------------------------------------------------------ SSRF pinning (§10.5)
@@ -130,9 +137,13 @@ async def test_delivery_uses_pinned_address(
 
     monkeypatch.setattr("langgraph_agent_builder.a2a.push._resolve", fake_resolve)
 
+    class _Cfg:
+        url = "https://hook.example/cb"
+        token = None
+
     class _StubStore:
-        async def get_info(self, task_id: str) -> Any:
-            return _configs(None)
+        async def get_info_for_dispatch(self, task_id: str) -> Any:
+            return [cast("Any", _Cfg())]
 
     requests: list[httpx.Request] = []
 
@@ -140,17 +151,15 @@ async def test_delivery_uses_pinned_address(
         requests.append(request)
         return httpx.Response(200)
 
-    from a2a.types import Message, Part, Role, Task, TaskStatus, TextPart
-
     task = Task(
         id="pin1",
         context_id="ctx",
-        status=TaskStatus(state=TaskState.completed),
-        history=[Message(role=Role.user, message_id="m1", parts=[Part(root=TextPart(text="x"))])],
+        status=TaskStatus(state=TaskState.TASK_STATE_COMPLETED),
+        history=[Message(role=Role.ROLE_USER, message_id="m1", parts=[Part(text="x")])],
     )
     client = httpx.AsyncClient(transport=httpx.MockTransport(responder))
     sender = GuardedPushSender(client, cast("DbPushConfigStore", _StubStore()), sqlite_settings)
-    await sender.send_notification(task)
+    await sender.send_notification("pin1", task)
     await client.aclose()
 
     assert len(requests) == 1
@@ -160,7 +169,7 @@ async def test_delivery_uses_pinned_address(
 
 # ------------------------------------------------------------ terminal mapping (§7.10)
 async def test_failed_result_carries_machine_readable_rt_code() -> None:
-    queue = EventQueue()
+    queue = _RecordingQueue()
     updater = TaskUpdater(queue, "t1", "c1")
     sink = _A2ASink(updater, stream_tokens=False)
     result = RunResult(
@@ -171,15 +180,13 @@ async def test_failed_result_carries_machine_readable_rt_code() -> None:
         error_message="node exploded",
     )
     await LabAgentExecutor._emit_terminal(result, updater, sink)
-    event = await queue.dequeue_event(no_wait=True)
-    assert isinstance(event, TaskStatusUpdateEvent)
-    assert event.status.state is TaskState.failed
-    assert event.final is True
-    message = event.status.message
-    assert message is not None
-    kinds = {p.root.kind for p in message.parts}
+
+    event = next(e for e in queue.events if isinstance(e, TaskStatusUpdateEvent))
+    assert event.status.state == TaskState.TASK_STATE_FAILED
+    parts = list(event.status.message.parts)
+    kinds = {p.WhichOneof("content") for p in parts}
     assert kinds == {"text", "data"}
-    data_part = next(p.root for p in message.parts if p.root.kind == "data")
-    assert data_part.data == {"run_error_code": "RT002"}  # §7.10 data.run_error_code
-    text_part = next(p.root for p in message.parts if p.root.kind == "text")
+    data_part = next(p for p in parts if p.WhichOneof("content") == "data")
+    assert MessageToDict(data_part.data) == {"run_error_code": "RT002"}  # §7.10
+    text_part = next(p for p in parts if p.WhichOneof("content") == "text")
     assert "RT002" in text_part.text

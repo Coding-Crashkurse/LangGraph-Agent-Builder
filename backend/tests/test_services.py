@@ -105,22 +105,24 @@ async def test_push_delivery_with_token_and_retry(sqlite_stack: SqliteStack) -> 
     from a2a.types import (
         Message,
         Part,
-        PushNotificationConfig,
         Role,
         Task,
+        TaskPushNotificationConfig,
         TaskState,
         TaskStatus,
-        TextPart,
     )
 
     task = Task(
         id="pt1",
         context_id="pc1",
-        status=TaskStatus(state=TaskState.completed),
-        history=[Message(role=Role.user, message_id="m1", parts=[Part(root=TextPart(text="x"))])],
+        status=TaskStatus(state=TaskState.TASK_STATE_COMPLETED),
+        history=[Message(role=Role.ROLE_USER, message_id="m1", parts=[Part(text="x")])],
     )
     await store.set_info(
-        "pt1", PushNotificationConfig(id="c1", url="http://10.0.0.5/hook", token="tok-123")
+        "pt1",
+        TaskPushNotificationConfig(
+            id="c1", task_id="pt1", url="http://10.0.0.5/hook", token="tok-123"
+        ),
     )
 
     calls: list[httpx.Request] = []
@@ -135,24 +137,27 @@ async def test_push_delivery_with_token_and_retry(sqlite_stack: SqliteStack) -> 
 
     client = httpx.AsyncClient(transport=httpx.MockTransport(responder))
     sender = GuardedPushSender(client, store, settings)
-    await sender.send_notification(task)
+    await sender.send_notification("pt1", task)
     assert len(calls) == 2  # retried after the 500
     assert calls[-1].headers["X-A2A-Notification-Token"] == "tok-123"
     import json
 
+    # v1.0 push payload is a StreamResponse envelope (MessageToDict, camelCase)
     payload = json.loads(calls[-1].content)
-    assert payload["id"] == "pt1"
-    assert payload["status"]["state"] == "completed"
+    assert payload["task"]["id"] == "pt1"
+    assert payload["task"]["status"]["state"] == "TASK_STATE_COMPLETED"
     await client.aclose()
 
 
 async def test_push_blocked_for_private_url_by_default(sqlite_stack: SqliteStack) -> None:
     settings, sessions = sqlite_stack
     store = DbPushConfigStore(sessions, settings)
-    from a2a.types import PushNotificationConfig
+    from a2a.types import TaskPushNotificationConfig
 
     with pytest.raises(SsrfError):
-        await store.set_info("px", PushNotificationConfig(id="c", url="http://192.168.0.1/hook"))
+        await store.set_info(
+            "px", TaskPushNotificationConfig(id="c", task_id="px", url="http://192.168.0.1/hook")
+        )
 
 
 # ------------------------------------------------------------------ files (§9.6)

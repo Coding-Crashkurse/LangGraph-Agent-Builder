@@ -128,6 +128,8 @@ class A2ATaskRow(Base):
     flow_slug: Mapped[str] = mapped_column(sa.String(100), index=True)
     state: Mapped[str] = mapped_column(sa.String(24), default="submitted", index=True)
     task: Mapped[dict[str, Any]] = mapped_column(JSONVariant)  # full a2a Task snapshot
+    # a2a-sdk 1.x records the negotiated protocol version alongside the snapshot
+    protocol_version: Mapped[str | None] = mapped_column(sa.String(16), nullable=True)
     client_scope: Mapped[str] = mapped_column(sa.String(80), default="")  # §7.11 namespacing
     created_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(

@@ -12,12 +12,11 @@ import pytest
 from a2a.types import (
     Message,
     Part,
-    PushNotificationConfig,
     Role,
     Task,
+    TaskPushNotificationConfig,
     TaskState,
     TaskStatus,
-    TextPart,
 )
 
 from langgraph_agent_builder.a2a.mount import A2AManager, effective_path
@@ -39,7 +38,7 @@ def _task(task_id: str, state: TaskState) -> Task:
         id=task_id,
         context_id="ctx",
         status=TaskStatus(state=state),
-        history=[Message(role=Role.user, message_id="m1", parts=[Part(root=TextPart(text="x"))])],
+        history=[Message(role=Role.ROLE_USER, message_id="m1", parts=[Part(text="x")])],
     )
 
 
@@ -101,11 +100,14 @@ async def test_non_notify_state_does_not_deliver(sqlite_stack: SqliteStack) -> N
     settings, sessions = sqlite_stack
     settings.push_allow_private = True
     store = DbPushConfigStore(sessions, settings)
-    await store.set_info("n1", PushNotificationConfig(id="c", url="http://10.0.0.9/hook"))
+    await store.set_info(
+        "n1", TaskPushNotificationConfig(id="c", task_id="n1", url="http://10.0.0.9/hook")
+    )
 
     client, calls = _no_call_client()
     sender = GuardedPushSender(client, store, settings)
-    await sender.send_notification(_task("n1", TaskState.submitted))  # not a notify state
+    # submitted is not a notify state
+    await sender.send_notification("n1", _task("n1", TaskState.TASK_STATE_SUBMITTED))
     assert calls == []
     await client.aclose()
 
@@ -114,11 +116,14 @@ async def test_working_state_without_optin_does_not_deliver(sqlite_stack: Sqlite
     settings, sessions = sqlite_stack
     settings.push_allow_private = True
     store = DbPushConfigStore(sessions, settings)
-    await store.set_info("w1", PushNotificationConfig(id="c", url="http://10.0.0.9/hook"))
+    await store.set_info(
+        "w1", TaskPushNotificationConfig(id="c", task_id="w1", url="http://10.0.0.9/hook")
+    )
 
     client, calls = _no_call_client()
     sender = GuardedPushSender(client, store, settings)
-    await sender.send_notification(_task("w1", TaskState.working))  # no notify_working opt-in
+    # working never notifies (no metadata opt-in channel in v1.0)
+    await sender.send_notification("w1", _task("w1", TaskState.TASK_STATE_WORKING))
     assert calls == []
     await client.aclose()
 
@@ -127,12 +132,14 @@ async def test_delivery_blocked_when_url_becomes_private(sqlite_stack: SqliteSta
     settings, sessions = sqlite_stack
     settings.push_allow_private = True  # allow storing a private URL
     store = DbPushConfigStore(sessions, settings)
-    await store.set_info("b1", PushNotificationConfig(id="c", url="http://10.0.0.9/hook"))
+    await store.set_info(
+        "b1", TaskPushNotificationConfig(id="c", task_id="b1", url="http://10.0.0.9/hook")
+    )
 
     settings.push_allow_private = False  # now the guard rejects it at send time
     client, calls = _no_call_client()
     sender = GuardedPushSender(client, store, settings)
-    await sender.send_notification(_task("b1", TaskState.completed))
+    await sender.send_notification("b1", _task("b1", TaskState.TASK_STATE_COMPLETED))
     assert calls == []  # SsrfError → logged + skipped, never POSTed
     await client.aclose()
 
@@ -141,7 +148,9 @@ async def test_delivery_gives_up_after_retries(sqlite_stack: SqliteStack) -> Non
     settings, sessions = sqlite_stack
     settings.push_allow_private = True
     store = DbPushConfigStore(sessions, settings)
-    await store.set_info("f1", PushNotificationConfig(id="c", url="http://10.0.0.9/hook"))
+    await store.set_info(
+        "f1", TaskPushNotificationConfig(id="c", task_id="f1", url="http://10.0.0.9/hook")
+    )
 
     attempts: list[httpx.Request] = []
 
@@ -151,7 +160,7 @@ async def test_delivery_gives_up_after_retries(sqlite_stack: SqliteStack) -> Non
 
     client = httpx.AsyncClient(transport=httpx.MockTransport(responder))
     sender = GuardedPushSender(client, store, settings)
-    await sender.send_notification(_task("f1", TaskState.completed))
+    await sender.send_notification("f1", _task("f1", TaskState.TASK_STATE_COMPLETED))
     assert len(attempts) == 3  # RETRIES exhausted, then gives up (logged)
     await client.aclose()
 
@@ -160,8 +169,12 @@ async def test_delete_info_scoped_by_config_id(sqlite_stack: SqliteStack) -> Non
     settings, sessions = sqlite_stack
     settings.push_allow_private = True
     store = DbPushConfigStore(sessions, settings)
-    await store.set_info("d1", PushNotificationConfig(id="cfg-a", url="http://10.0.0.9/a"))
-    await store.set_info("d1", PushNotificationConfig(id="cfg-b", url="http://10.0.0.9/b"))
+    await store.set_info(
+        "d1", TaskPushNotificationConfig(id="cfg-a", task_id="d1", url="http://10.0.0.9/a")
+    )
+    await store.set_info(
+        "d1", TaskPushNotificationConfig(id="cfg-b", task_id="d1", url="http://10.0.0.9/b")
+    )
 
     await store.delete_info("d1", config_id="cfg-a")
     remaining = await store.get_info("d1")

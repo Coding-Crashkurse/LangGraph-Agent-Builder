@@ -16,9 +16,9 @@ dependencies = [
     "langgraph>=1.0",
     "langgraph-checkpoint-sqlite>=2.0",
     "langchain-core>=0.3",
-    # protocols — a2a-sdk pinned to the 0.3 line: SPEC §7 targets protocol v0.3.x;
-    # a2a-sdk 1.x is a rewritten server API (protocol v1.0) and a deliberate migration.
-    "a2a-sdk[http-server]>=0.3,<0.4",
+    # protocols — a2a-sdk on the 1.x line (protocol v1.0); migrated from 0.3 in
+    # REFACTOR P1 (route factories, protobuf types, google.rpc errors). SPEC §7 v1.0.
+    "a2a-sdk[http-server]>=1.1,<2",
     "mcp>=1.9",
     "langchain-mcp-adapters>=0.1",
     # persistence
@@ -196,6 +196,7 @@ warn_required_dynamic_aliases = true
 [[tool.mypy.overrides]]
 module = [
     "a2a.*",
+    "google.protobuf.*",  # protobuf runtime ships no stubs (types-protobuf not installed)
     "mcp.*",
     "langgraph.*",
     "langgraph_checkpoint.*",

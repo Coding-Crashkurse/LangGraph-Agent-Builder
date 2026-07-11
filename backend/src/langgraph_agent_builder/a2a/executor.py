@@ -1,8 +1,17 @@
 """LabAgentExecutor — the A2A ⇄ LangGraph bridge (SPEC §7.6–§7.8, normative).
 
 contextId == thread_id (scoped per client for public agents), one task == one
-run + its interrupt-resume chain, interrupt → input-required (final), follow-up
-message → Command(resume=…), terminal result → one `response` artifact.
+run + its interrupt-resume chain, interrupt → input-required, follow-up message
+→ Command(resume=…), terminal result → one `response` artifact.
+
+a2a-sdk 1.x (protocol v1.0) types are protobuf: ``Part`` is a flat message with a
+``content`` oneof (``text`` str / ``data`` Value / ``raw`` bytes / ``url`` str);
+there are no ``TextPart``/``DataPart``/``FilePart`` classes — parts are built with
+``a2a.helpers.new_text_part``/``new_data_part`` and read via ``WhichOneof``.
+``TaskUpdater.update_status`` no longer takes ``final=`` (finality is derived from
+the state / the stream ending), so input-required uses ``updater.requires_input``.
+Errors are raised as ``a2a.utils.errors`` ``A2AError`` subclasses directly (no
+``ServerError`` wrapper); the REST transport maps them to google.rpc shapes.
 """
 
 from __future__ import annotations
@@ -11,29 +20,20 @@ import asyncio
 import fnmatch
 import logging
 import time
+import uuid
 from collections.abc import Awaitable, Callable
 from typing import Any
 
+from a2a.helpers import new_data_part, new_text_part
 from a2a.server.agent_execution import AgentExecutor, RequestContext
 from a2a.server.events import EventQueue
 from a2a.server.tasks import TaskUpdater
-from a2a.types import (
-    ContentTypeNotSupportedError,
-    DataPart,
-    FilePart,
-    FileWithBytes,
-    FileWithUri,
-    InvalidParamsError,
-    Part,
-    Task,
-    TaskState,
-    TextPart,
-)
-from a2a.utils import new_task
-from a2a.utils.errors import ServerError
+from a2a.types import Task, TaskState, TaskStatus
+from a2a.utils.errors import ContentTypeNotSupportedError, InvalidParamsError
+from google.protobuf.json_format import MessageToDict
 
 from langgraph_agent_builder.a2a.scope import resolve_client_scope
-from langgraph_agent_builder.a2a.tasks import TERMINAL_STATES
+from langgraph_agent_builder.a2a.tasks import TERMINAL_STATES, state_to_str
 from langgraph_agent_builder.runtime.executor import Executor, RunResult
 from langgraph_agent_builder.schema.events import RunEvent
 from langgraph_agent_builder.sdk.interrupts import parse_approval_resume, parse_input_resume
@@ -78,51 +78,42 @@ class LabAgentExecutor(AgentExecutor):
             return scoped_thread_id(scope, context_id)
         return context_id
 
+    @staticmethod
+    def _parts(context: RequestContext) -> list[Any]:
+        return list(context.message.parts) if context.message else []
+
     def _validate_parts(self, context: RequestContext) -> None:
-        """FilePart mime allowlist (SPEC §7.8) — side-effect-free, raises -32005."""
-        for part in (context.message.parts if context.message else []) or []:
-            root = part.root
-            if isinstance(root, FilePart):
-                mime = getattr(root.file, "mime_type", None) or "application/octet-stream"
+        """File-part mime allowlist (SPEC §7.8) — side-effect-free, raises
+        ContentTypeNotSupported. Inline (``raw``) and referenced (``url``) parts
+        are the v1.0 file parts."""
+        for part in self._parts(context):
+            if part.WhichOneof("content") in ("raw", "url"):
+                mime = part.media_type or "application/octet-stream"
                 if not _mime_allowed(mime, self._settings.a2a_accepted_mime):
-                    raise ServerError(
-                        error=ContentTypeNotSupportedError(
-                            message=f"mime type {mime!r} not accepted"
-                        )
-                    )
+                    raise ContentTypeNotSupportedError(message=f"mime type {mime!r} not accepted")
 
     async def _inbound(self, context: RequestContext) -> dict[str, Any]:
         """Message parts → run input (SPEC §7.8 inbound); parts pre-validated."""
         text_parts: list[str] = []
         data: dict[str, Any] = {}
         files: list[dict[str, Any]] = []
-        for part in (context.message.parts if context.message else []) or []:
-            root = part.root
-            if isinstance(root, TextPart):
-                text_parts.append(root.text)
-            elif isinstance(root, DataPart):
-                data.update(root.data if isinstance(root.data, dict) else {"value": root.data})
-            elif isinstance(root, FilePart):
-                file = root.file
-                mime = getattr(file, "mime_type", None) or "application/octet-stream"
-                if isinstance(file, FileWithBytes) and self._files is not None:
-                    import base64
-
-                    saved = await self._files.save(
-                        getattr(file, "name", "upload") or "upload",
-                        mime,
-                        base64.b64decode(file.bytes),
-                    )
+        for part in self._parts(context):
+            kind = part.WhichOneof("content")
+            if kind == "text":
+                text_parts.append(part.text)
+            elif kind == "data":
+                value = MessageToDict(part.data)
+                data.update(value if isinstance(value, dict) else {"value": value})
+            elif kind == "raw":  # inline file bytes (v1.0 FileWithBytes)
+                mime = part.media_type or "application/octet-stream"
+                if self._files is not None:
+                    saved = await self._files.save(part.filename or "upload", mime, part.raw)
                     files.append({"file_id": saved["file_id"], "mime": mime, "name": saved["name"]})
-                elif isinstance(file, FileWithUri):
-                    files.append(
-                        {
-                            "file_id": "",
-                            "mime": mime,
-                            "name": getattr(file, "name", "") or "",
-                            "uri": file.uri,
-                        }
-                    )
+            elif kind == "url":  # file by reference (v1.0 FileWithUri)
+                mime = part.media_type or "application/octet-stream"
+                files.append(
+                    {"file_id": "", "mime": mime, "name": part.filename or "", "uri": part.url}
+                )
         return {
             "input_text": "\n".join(t for t in text_parts if t),
             "data": {"a2a_input": data} if data else None,
@@ -130,40 +121,47 @@ class LabAgentExecutor(AgentExecutor):
         }
 
     def _check_output_modes(self, context: RequestContext) -> None:
-        config = getattr(context, "configuration", None)
-        accepted = getattr(config, "accepted_output_modes", None) if config else None
+        config = context.configuration
+        accepted = list(config.accepted_output_modes) if config else []
         if not accepted:
             return
         ours = {"text/plain", "application/json", "text/*", "application/*", "*/*"}
         if not any(a in ours or a.split("/")[0] + "/*" in ours for a in accepted):
-            raise ServerError(
-                error=ContentTypeNotSupportedError(
-                    message=f"acceptedOutputModes {accepted} not supported "
-                    "(text/plain, application/json)"
-                )
+            raise ContentTypeNotSupportedError(
+                message=f"acceptedOutputModes {accepted} not supported "
+                "(text/plain, application/json)"
             )
 
     # ------------------------------------------------------------ execute steps
+    @staticmethod
+    def _new_task(context: RequestContext) -> Task:
+        """Initial submitted Task; ``id`` MUST equal the RequestContext task_id
+        (the handler validates the match)."""
+        message = context.message
+        assert message is not None
+        return Task(
+            id=context.task_id or message.task_id or str(uuid.uuid4()),
+            context_id=context.context_id or message.context_id or str(uuid.uuid4()),
+            status=TaskStatus(state=TaskState.TASK_STATE_SUBMITTED),
+            history=[message],
+        )
+
     async def _ensure_task(self, context: RequestContext, event_queue: EventQueue) -> Task | None:
         """Create or reuse the task; None ⇒ messageId dedup hit (prior result
         re-enqueued, SPEC §7.5)."""
         task = context.current_task
         if task is None:
             if context.message is None:
-                raise ServerError(
-                    error=InvalidParamsError(message="neither task nor message provided")
-                )
-            task = new_task(context.message)
+                raise InvalidParamsError(message="neither task nor message provided")
+            task = self._new_task(context)
             await event_queue.enqueue_event(task)
             return task
         if task.status.state in TERMINAL_STATES:
-            raise ServerError(
-                error=InvalidParamsError(
-                    message=f"task {task.id} is {task.status.state.value}; terminal tasks "
-                    "cannot be restarted — send a new message without taskId"
-                )
+            raise InvalidParamsError(
+                message=f"task {task.id} is {state_to_str(task.status.state)}; terminal tasks "
+                "cannot be restarted — send a new message without taskId"
             )
-        msg_id = context.message.message_id if context.message else None
+        msg_id = context.message.message_id if context.message else ""
         if msg_id and task.history and any(m.message_id == msg_id for m in task.history[:-1]):
             await event_queue.enqueue_event(task)
             return None
@@ -174,9 +172,9 @@ class LabAgentExecutor(AgentExecutor):
     ) -> Any:
         """Client answer → Command(resume=…) payload; None ⇒ unparseable (§7.7)."""
         client_value: Any = None
-        for part in (context.message.parts if context.message else []) or []:
-            if isinstance(part.root, DataPart):
-                client_value = part.root.data
+        for part in self._parts(context):
+            if part.WhichOneof("content") == "data":
+                client_value = MessageToDict(part.data)
                 break
         if client_value is None:
             client_value = inbound["input_text"]
@@ -198,12 +196,8 @@ class LabAgentExecutor(AgentExecutor):
             if options
             else "Could not parse your answer against the expected schema."
         )
-        await updater.update_status(
-            TaskState.input_required,
-            message=updater.new_agent_message(
-                parts=[Part(root=TextPart(text=hint)), Part(root=DataPart(data=payload))]
-            ),
-            final=True,
+        await updater.requires_input(
+            message=updater.new_agent_message(parts=[new_text_part(hint), new_data_part(payload)])
         )
 
     async def _ensure_run_row(self, run_id: str, thread_id: str) -> None:
@@ -220,44 +214,39 @@ class LabAgentExecutor(AgentExecutor):
         if result.status == "input_required":
             payload = result.interrupt or {}
             prompt = str(payload.get("prompt", "input required"))
-            await updater.update_status(
-                TaskState.input_required,
+            await updater.requires_input(
                 message=updater.new_agent_message(
-                    parts=[Part(root=TextPart(text=prompt)), Part(root=DataPart(data=payload))]
-                ),
-                final=True,
+                    parts=[new_text_part(prompt), new_data_part(payload)]
+                )
             )
             return
         if result.status == "failed":
             parts = [
-                Part(
-                    root=TextPart(
-                        text=f"{result.error_code or 'error'}: "
-                        f"{result.error_message or 'run failed'}"
-                    )
+                new_text_part(
+                    f"{result.error_code or 'error'}: {result.error_message or 'run failed'}"
                 )
             ]
             if result.error_code:
                 # machine-readable RT code (§7.10: data.run_error_code)
-                parts.append(Part(root=DataPart(data={"run_error_code": result.error_code})))
+                parts.append(new_data_part({"run_error_code": result.error_code}))
             await updater.failed(message=updater.new_agent_message(parts=parts))
             return
         if result.status == "cancelled":
-            # the canceled status event is enqueued by cancel() on the cancel
-            # queue; emitting a second, final one here would trigger the sdk
-            # consumer's immediate-close which wipes tapped child queues
+            # the canceled status is enqueued by cancel(); the run task is already
+            # unwinding — a second terminal event here would be redundant.
             return
 
-        parts = [Part(root=TextPart(text=result.result_text))]
+        parts = [new_text_part(result.result_text)]
         if result.result_json is not None:
-            parts.append(Part(root=DataPart(data=result.result_json)))
+            parts.append(new_data_part(result.result_json))
         await updater.add_artifact(parts, name="response")
         await updater.complete()
 
     # ------------------------------------------------------------ execute
     async def execute(self, context: RequestContext, event_queue: EventQueue) -> None:
-        # negotiation/part validation BEFORE task creation: a -32005 must not
-        # orphan a freshly-enqueued task in `submitted` (SPEC §7.10)
+        # negotiation/part validation BEFORE task creation: a content-type error
+        # must not orphan a freshly-enqueued task in `submitted` (SPEC §7.10).
+        # These raise A2AError subclasses that the REST transport maps to 4xx.
         self._check_output_modes(context)
         self._validate_parts(context)
 
@@ -271,9 +260,7 @@ class LabAgentExecutor(AgentExecutor):
         compiled = await self._orchestrator.compiled(await self._spec_provider())
         if not compiled.ok:
             await updater.failed(
-                message=updater.new_agent_message(
-                    parts=[Part(root=TextPart(text="flow has compile errors"))]
-                )
+                message=updater.new_agent_message(parts=[new_text_part("flow has compile errors")])
             )
             return
 
@@ -317,9 +304,7 @@ class LabAgentExecutor(AgentExecutor):
             # server log; remote clients get a generic message, never str(exc)
             logger.exception("a2a task %s failed unexpectedly", task.id)
             await updater.failed(
-                message=updater.new_agent_message(
-                    parts=[Part(root=TextPart(text="internal error"))]
-                )
+                message=updater.new_agent_message(parts=[new_text_part("internal error")])
             )
             return
 
@@ -329,9 +314,11 @@ class LabAgentExecutor(AgentExecutor):
         task = context.current_task
         if task is None:
             return
-        # enqueue the canceled status FIRST: stopping the run below closes the
-        # producer's queue, which cascades to the tapped cancel queue — a late
-        # enqueue would be dropped and the aggregator would report `working`.
+        # enqueue the canceled status BEFORE signaling the run to stop: the run
+        # task is being cancelled underneath us and its producer closes the event
+        # queue as it unwinds — a late enqueue could miss the drain window and
+        # leave the task reporting `working`. `Executor.cancel` is non-awaiting
+        # by contract (awaiting it deadlocks against this same consumer).
         updater = TaskUpdater(event_queue, task.id, task.context_id)
         await updater.cancel()
         await self._executor.cancel(task.id)
@@ -355,7 +342,13 @@ class _A2ASink:
                 if sum(len(t) for t in self._token_buffer) >= 80:
                     await self.flush_tokens()
             return
-        if kind in ("run_started", "run_resumed", "run_finished", "interrupt_raised"):
+        if kind in (
+            "run_started",
+            "run_resumed",
+            "run_finished",
+            "run_cancelled",
+            "interrupt_raised",
+        ):
             return  # protocol states cover these
         if kind == "node_status":
             now = time.monotonic()
@@ -363,17 +356,15 @@ class _A2ASink:
                 return
             self._last_status = now
         await self._updater.update_status(
-            TaskState.working,
+            TaskState.TASK_STATE_WORKING,
             message=self._updater.new_agent_message(
                 parts=[
-                    Part(
-                        root=DataPart(
-                            data={
-                                "type": kind,
-                                "node": event.data.get("node_id", ""),
-                                "data": {k: v for k, v in event.data.items() if k != "node_id"},
-                            }
-                        )
+                    new_data_part(
+                        {
+                            "type": kind,
+                            "node": event.data.get("node_id", ""),
+                            "data": {k: v for k, v in event.data.items() if k != "node_id"},
+                        }
                     )
                 ]
             ),
@@ -387,7 +378,7 @@ class _A2ASink:
         if not text and not (last and self._streamed_any):
             return
         await self._updater.add_artifact(
-            [Part(root=TextPart(text=text))],
+            [new_text_part(text)],
             artifact_id="response-stream",
             name="response-stream",
             append=self._streamed_any,

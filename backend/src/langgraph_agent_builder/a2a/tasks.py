@@ -1,13 +1,19 @@
-"""Postgres/SQLite TaskStore + explicit task state machine (SPEC §7.6)."""
+"""Postgres/SQLite TaskStore + explicit task state machine (SPEC §7.6).
+
+a2a-sdk 1.x tasks are protobuf messages; snapshots persist as ProtoJSON
+(``MessageToDict``/``ParseDict``) and ``TaskState`` values are plain enum ints.
+"""
 
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, cast
 
 from a2a.server.context import ServerCallContext
 from a2a.server.tasks import TaskStore
-from a2a.types import Task, TaskState
+from a2a.types import ListTasksRequest, ListTasksResponse, Task, TaskState
+from a2a.utils.constants import PROTOCOL_VERSION_1_0
+from google.protobuf.json_format import MessageToDict, ParseDict
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -30,15 +36,34 @@ ALLOWED_TRANSITIONS: dict[str, set[str]] = {
     "rejected": set(),
 }
 
-# the §7.6/§7.11 state sets live HERE, derived from the transition table so the
-# store's state machine and the executor/handler guards cannot drift
-TERMINAL_STATES: set[TaskState] = {
-    TaskState(state) for state, targets in ALLOWED_TRANSITIONS.items() if not targets
+
+# ``DbTaskStore.list`` (the v1.0 TaskStore ABC method) shadows the builtin
+# ``list`` for in-class annotations under ``from __future__ import annotations``;
+# alias the row shape at module scope so ``transitions``/``list_tasks`` keep
+# their concrete return types.
+JsonRows = list[dict[str, Any]]
+
+
+def state_to_str(state: int) -> str:
+    """protobuf ``TASK_STATE_INPUT_REQUIRED`` → the wire/transition name ``input-required``."""
+    return str(TaskState.Name(state).removeprefix("TASK_STATE_").lower().replace("_", "-"))
+
+
+def state_from_str(name: str) -> int:
+    """``input-required`` → protobuf ``TaskState.TASK_STATE_INPUT_REQUIRED``."""
+    return int(TaskState.Value("TASK_STATE_" + name.upper().replace("-", "_")))
+
+
+# the §7.6/§7.11 state sets live HERE (protobuf enum ints), derived from the
+# transition table so the store's state machine and the executor/handler guards
+# cannot drift
+TERMINAL_STATES: set[int] = {
+    state_from_str(state) for state, targets in ALLOWED_TRANSITIONS.items() if not targets
 }
 # final-for-a-stream: terminal + the paused states that close an SSE stream (§7.7)
-FINAL_STATES: set[TaskState] = TERMINAL_STATES | {
-    TaskState.input_required,
-    TaskState.auth_required,
+FINAL_STATES: set[int] = TERMINAL_STATES | {
+    state_from_str("input-required"),
+    state_from_str("auth-required"),
 }
 
 
@@ -89,11 +114,8 @@ class DbTaskStore(TaskStore):
         self._flow_slug = flow_slug
 
     async def save(self, task: Task, context: ServerCallContext | None = None) -> None:
-        new_state = (
-            task.status.state.value
-            if hasattr(task.status.state, "value")
-            else str(task.status.state)
-        )
+        new_state = state_to_str(task.status.state)
+        snapshot = MessageToDict(task)
         async with self._sessions() as session:
             row = await session.get(A2ATaskRow, task.id)
             if row is None:
@@ -102,7 +124,8 @@ class DbTaskStore(TaskStore):
                     context_id=task.context_id or "",
                     flow_slug=self._flow_slug,
                     state=new_state,
-                    task=task.model_dump(mode="json", exclude_none=True),
+                    task=snapshot,
+                    protocol_version=PROTOCOL_VERSION_1_0,
                     client_scope=resolve_client_scope(context),
                 )
                 session.add(row)
@@ -126,7 +149,7 @@ class DbTaskStore(TaskStore):
                     )
                 row.state = new_state
                 row.context_id = task.context_id or row.context_id
-                row.task = task.model_dump(mode="json", exclude_none=True)
+                row.task = snapshot
             await session.commit()
 
     async def get(self, task_id: str, context: ServerCallContext | None = None) -> Task | None:
@@ -138,7 +161,36 @@ class DbTaskStore(TaskStore):
         if row.client_scope and scope and row.client_scope != scope:
             # foreign session (public-agent namespacing, §7.11): behave as unknown
             return None
-        return Task.model_validate(row.task)
+        return cast("Task", ParseDict(row.task, Task(), ignore_unknown_fields=True))
+
+    async def list(
+        self, params: ListTasksRequest, context: ServerCallContext | None = None
+    ) -> ListTasksResponse:
+        """`tasks/list` (§7.6): scope-aware, single-flow, newest-first.
+
+        v1.0 made ``TaskStore.list`` abstract. Filtering honours the same
+        public-session scope as :meth:`get`; page_token cursors are not issued
+        (single-flow lists stay small), so pagination is a simple size cap.
+        """
+        scope = resolve_client_scope(context)
+        status_filter = state_to_str(params.status) if params.status else None
+        async with self._sessions() as session:
+            stmt = select(A2ATaskRow).where(A2ATaskRow.flow_slug == self._flow_slug)
+            if params.context_id:
+                stmt = stmt.where(A2ATaskRow.context_id == params.context_id)
+            stmt = stmt.order_by(A2ATaskRow.created_at.desc())
+            rows = (await session.execute(stmt)).scalars().all()
+        tasks: list[Task] = []
+        for row in rows:
+            if row.client_scope and scope and row.client_scope != scope:
+                continue  # foreign session (public-agent namespacing, §7.11)
+            if status_filter is not None and row.state != status_filter:
+                continue
+            tasks.append(ParseDict(row.task, Task(), ignore_unknown_fields=True))
+        page_size = params.page_size or 100
+        return ListTasksResponse(
+            tasks=tasks[:page_size], total_size=len(tasks), page_size=page_size
+        )
 
     async def delete(self, task_id: str, context: ServerCallContext | None = None) -> None:
         async with self._sessions() as session:
@@ -148,7 +200,7 @@ class DbTaskStore(TaskStore):
                 await session.commit()
 
     # ---------------------------------------------------------------- extras
-    async def transitions(self, task_id: str) -> list[dict[str, Any]]:
+    async def transitions(self, task_id: str) -> JsonRows:
         async with self._sessions() as session:
             rows = (
                 (
@@ -170,7 +222,7 @@ class DbTaskStore(TaskStore):
             for r in rows
         ]
 
-    async def list_tasks(self, limit: int = 100) -> list[dict[str, Any]]:
+    async def list_tasks(self, limit: int = 100) -> JsonRows:
         async with self._sessions() as session:
             rows = (
                 (

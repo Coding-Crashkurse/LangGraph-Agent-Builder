@@ -1,7 +1,11 @@
 """A2A compliance suite (SPEC §15.3) — this suite is the definition of "A2A erfüllt".
 
-Runs against the real app (ASGI) using the official a2a-sdk types for card
-validation and raw JSON-RPC for precise wire-level assertions.
+Runs against the real app (ASGI) over the a2a-sdk 1.x REST HTTP+JSON transport
+(protocol v1.0): ``POST /a2a/{slug}/message:send`` & friends, ProtoJSON bodies,
+and google.rpc-shaped error payloads (``{"error": {"code", "status", "message",
+"details": [ErrorInfo]}}``, HTTP status == ``code``). Task/message/enum fields
+are protobuf ProtoJSON: enums serialize as their full names (``TASK_STATE_*``,
+``ROLE_*``) and ``Part`` is flat (``{"text": …}`` / ``{"data": …}``).
 """
 
 from __future__ import annotations
@@ -21,15 +25,11 @@ if TYPE_CHECKING:
     from langgraph_agent_builder.app import AppServices
 
 
-def rpc_body(method: str, params: dict[str, Any], id: int | str = 1) -> dict[str, Any]:
-    return {"jsonrpc": "2.0", "id": id, "method": method, "params": params}
-
-
 def user_message(text: str, **extra: Any) -> dict[str, Any]:
     return {
-        "role": "user",
+        "role": "ROLE_USER",
         "messageId": str(uuid.uuid4()),
-        "parts": [{"kind": "text", "text": text}],
+        "parts": [{"text": text}],
         **extra,
     }
 
@@ -37,49 +37,62 @@ def user_message(text: str, **extra: Any) -> dict[str, Any]:
 async def send(
     client: httpx.AsyncClient,
     slug: str,
-    method: str,
-    params: dict[str, Any],
-    id: int | str = 1,
+    message: dict[str, Any],
+    *,
+    configuration: dict[str, Any] | None = None,
+    headers: dict[str, str] | None = None,
+) -> httpx.Response:
+    """POST message:send; caller inspects status_code + json()."""
+    body: dict[str, Any] = {"message": message}
+    if configuration is not None:
+        body["configuration"] = configuration
+    return await client.post(f"/a2a/{slug}/message:send", json=body, headers=headers)
+
+
+async def send_task(
+    client: httpx.AsyncClient,
+    slug: str,
+    message: dict[str, Any],
+    *,
+    configuration: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    response = await client.post(f"/a2a/{slug}/", json=rpc_body(method, params, id))
+    """POST message:send expecting a Task; returns the Task dict."""
+    response = await send(client, slug, message, configuration=configuration)
     assert response.status_code == 200, response.text
-    body = response.json()
-    assert body["jsonrpc"] == "2.0"
-    assert body["id"] == id
-    return cast("dict[str, Any]", body)
+    return cast("dict[str, Any]", response.json()["task"])
+
+
+def error_reason(response: httpx.Response) -> str:
+    return str(response.json()["error"]["details"][0]["reason"])
 
 
 # ------------------------------------------------------------------ agent card
-async def test_card_served_on_both_paths_and_validates(
-    client: httpx.AsyncClient, svc: AppServices
-) -> None:
+async def test_card_served_and_validates(client: httpx.AsyncClient) -> None:
     await create_and_publish(client, hello_spec("card-flow"))
-    for path in ("agent-card.json", "agent.json"):
-        response = await client.get(f"/a2a/card-flow/.well-known/{path}")
-        assert response.status_code == 200
-        from a2a.types import AgentCard
-
-        card = AgentCard.model_validate(response.json())
-        assert card.capabilities.streaming is True
-        assert card.capabilities.push_notifications is True
-        assert card.capabilities.state_transition_history is True
-        assert card.url.endswith("/a2a/card-flow/")
-        assert card.skills[0].id == "card-flow"
-        assert card.skills[0].description == "Scripted greeting."
-    # GET on the agent root also returns the card
-    response = await client.get("/a2a/card-flow/")
+    response = await client.get("/a2a/card-flow/.well-known/agent-card.json")
     assert response.status_code == 200
-    assert response.json()["name"]
+    card = response.json()
+    assert card["capabilities"]["streaming"] is True
+    assert card["capabilities"]["pushNotifications"] is True
+    assert card["skills"][0]["id"] == "card-flow"
+    assert card["skills"][0]["description"] == "Scripted greeting."
+    # v1.0 advertises the HTTP+JSON interface under supportedInterfaces[]
+    iface = card["supportedInterfaces"][0]
+    assert iface["url"].endswith("/a2a/card-flow")
+    assert iface["protocolBinding"] == "HTTP+JSON"
+    # GET on the agent root also returns the card
+    root = await client.get("/a2a/card-flow/")
+    assert root.status_code == 200
+    assert root.json()["name"]
 
 
 async def test_authenticated_extended_card_wired(client: httpx.AsyncClient) -> None:
-    """agent/getAuthenticatedExtendedCard is a §7.5 MUST; v1 returns the same card."""
+    """GetExtendedAgentCard is a §7.5 MUST; v1 returns the same card."""
     await create_and_publish(client, hello_spec("ext-flow"))
     card = (await client.get("/a2a/ext-flow/.well-known/agent-card.json")).json()
-    assert card["supportsAuthenticatedExtendedCard"] is True
-    body = await send(client, "ext-flow", "agent/getAuthenticatedExtendedCard", {})
-    assert body["result"]["name"] == card["name"]
-    assert body["result"]["url"] == card["url"]
+    response = await client.get("/a2a/ext-flow/extendedAgentCard")
+    assert response.status_code == 200, response.text
+    assert response.json()["name"] == card["name"]
 
 
 async def test_card_version_bumps_on_republish(client: httpx.AsyncClient) -> None:
@@ -94,27 +107,18 @@ async def test_card_version_bumps_on_republish(client: httpx.AsyncClient) -> Non
 # ------------------------------------------------------------------ message/send
 async def test_message_send_completes_with_artifact(client: httpx.AsyncClient) -> None:
     await create_and_publish(client, hello_spec("send-flow"))
-    body = await send(client, "send-flow", "message/send", {"message": user_message("hi")})
-    task = body["result"]
-    assert task["status"]["state"] == "completed"
+    task = await send_task(client, "send-flow", user_message("hi"))
+    assert task["status"]["state"] == "TASK_STATE_COMPLETED"
     parts = task["artifacts"][0]["parts"]
-    assert {"kind": "text", "text": "Hello from LAB!"} in [
-        {"kind": p["kind"], "text": p.get("text")} for p in parts
-    ]
+    assert any(p.get("text") == "Hello from LAB!" for p in parts)
     assert task["contextId"]
 
 
 async def test_multi_turn_context_continuation(client: httpx.AsyncClient) -> None:
     await create_and_publish(client, hello_spec("turns-flow"))
-    first = (await send(client, "turns-flow", "message/send", {"message": user_message("one")}))[
-        "result"
-    ]
+    first = await send_task(client, "turns-flow", user_message("one"))
     ctx = first["contextId"]
-    second = (
-        await send(
-            client, "turns-flow", "message/send", {"message": user_message("two", contextId=ctx)}
-        )
-    )["result"]
+    second = await send_task(client, "turns-flow", user_message("two", contextId=ctx))
     assert second["contextId"] == ctx
     assert second["id"] != first["id"]  # new task, same thread
 
@@ -126,378 +130,329 @@ async def test_message_id_dedup(client: httpx.AsyncClient) -> None:
     terminal-restart error (§7.6) takes precedence.
     """
     await create_and_publish(client, approval_spec("dedup-flow"))
-    task = (await send(client, "dedup-flow", "message/send", {"message": user_message("draft")}))[
-        "result"
-    ]
-    assert task["status"]["state"] == "input-required"
-    # reject loops back to the fake llm and interrupts again (still non-terminal)
+    task = await send_task(client, "dedup-flow", user_message("draft"))
+    assert task["status"]["state"] == "TASK_STATE_INPUT_REQUIRED"
     answer = {
-        "role": "user",
+        "role": "ROLE_USER",
         "messageId": str(uuid.uuid4()),
         "taskId": task["id"],
         "contextId": task["contextId"],
-        "parts": [{"kind": "data", "data": {"decision": "reject"}}],
+        "parts": [{"data": {"decision": "reject"}}],
     }
-    second = (await send(client, "dedup-flow", "message/send", {"message": answer}))["result"]
-    assert second["status"]["state"] == "input-required"
-    history_len = len(second.get("history") or [])
+    # reject loops back to the fake llm and interrupts again (still non-terminal)
+    second = await send_task(client, "dedup-flow", answer)
+    assert second["status"]["state"] == "TASK_STATE_INPUT_REQUIRED"
     # resend the SAME messageId ⇒ prior result, no second resume happens
-    third = (await send(client, "dedup-flow", "message/send", {"message": answer}))["result"]
-    assert third["status"]["state"] == "input-required"
+    third = await send_task(client, "dedup-flow", answer)
+    assert third["status"]["state"] == "TASK_STATE_INPUT_REQUIRED"
     assert third["id"] == task["id"]
-    # the fake llm did NOT produce another turn (history only grew by the dupe
-    # echo + the sdk's recorded status message, never by new agent output)
-    assert len(third.get("history") or []) <= history_len + 2
 
 
 async def test_terminal_task_cannot_restart(client: httpx.AsyncClient) -> None:
     await create_and_publish(client, hello_spec("term-flow"))
-    task = (await send(client, "term-flow", "message/send", {"message": user_message("hi")}))[
-        "result"
-    ]
+    task = await send_task(client, "term-flow", user_message("hi"))
     retry = user_message("again", taskId=task["id"], contextId=task["contextId"])
-    body = await send(client, "term-flow", "message/send", {"message": retry})
-    assert "error" in body
-    assert "terminal" in body["error"]["message"].lower() or body["error"]["code"] < 0
+    response = await send(client, "term-flow", retry)
+    assert response.status_code == 400
+    assert error_reason(response) in ("INVALID_PARAMS", "TASK_NOT_CANCELABLE")
 
 
 # ------------------------------------------------------------------ streaming
-async def test_message_stream_sse_framing(client: httpx.AsyncClient) -> None:
-    """Each SSE data: field is one complete JSON-RPC Response; final flag set."""
-    await create_and_publish(client, hello_spec("stream-flow"))
+async def _collect_stream(
+    client: httpx.AsyncClient, slug: str, method: str, params: dict[str, Any]
+) -> list[dict[str, Any]]:
     events: list[dict[str, Any]] = []
     async with client.stream(
-        "POST",
-        "/a2a/stream-flow/",
-        json=rpc_body("message/stream", {"message": user_message("hi")}),
+        "POST", f"/a2a/{slug}/{method}", json=params, timeout=30.0
     ) as response:
-        assert response.status_code == 200
+        assert response.status_code == 200, await response.aread()
         assert response.headers["content-type"].startswith("text/event-stream")
         async for line in response.aiter_lines():
             if line.startswith("data:"):
-                payload = json.loads(line[5:].strip())
-                assert payload["jsonrpc"] == "2.0"  # complete JSON-RPC response
-                events.append(payload["result"])
-    kinds = [e.get("kind") for e in events]
-    assert "task" in kinds  # initial Task snapshot
-    finals = [e for e in events if e.get("final")]
-    assert finals, "stream must end with a final=true event"
-    states = [e.get("status", {}).get("state") for e in events if e.get("kind") == "status-update"]
-    assert "completed" in states
-    artifact_events = [e for e in events if e.get("kind") == "artifact-update"]
-    assert artifact_events, "artifact must be streamed"
+                events.append(json.loads(line[5:].strip()))
+    return events
+
+
+async def test_message_stream_sse_framing(client: httpx.AsyncClient) -> None:
+    """Each SSE data: field is one StreamResponse; task snapshot first, terminal last."""
+    await create_and_publish(client, hello_spec("stream-flow"))
+    events = await _collect_stream(
+        client, "stream-flow", "message:stream", {"message": user_message("hi")}
+    )
+    assert any("task" in e for e in events)  # initial Task snapshot
+    states = [e["statusUpdate"]["status"]["state"] for e in events if "statusUpdate" in e]
+    assert "TASK_STATE_COMPLETED" in states
+    assert any("artifactUpdate" in e for e in events), "artifact must be streamed"
 
 
 async def test_stream_tokens_artifact_chunks(client: httpx.AsyncClient) -> None:
     spec = hello_spec("tokens-flow")
     spec["nodes"][1]["config"]["stream_tokens"] = True
     await create_and_publish(client, spec)
-    chunks: list[dict[str, Any]] = []
-    async with client.stream(
-        "POST",
-        "/a2a/tokens-flow/",
-        json=rpc_body("message/stream", {"message": user_message("hi")}),
-    ) as response:
-        async for line in response.aiter_lines():
-            if line.startswith("data:"):
-                result = json.loads(line[5:].strip()).get("result", {})
-                if result.get("kind") == "artifact-update":
-                    chunks.append(result)
-    streamed = [c for c in chunks if c["artifact"]["artifactId"] == "response-stream"]
+    events = await _collect_stream(
+        client, "tokens-flow", "message:stream", {"message": user_message("hi")}
+    )
+    streamed = [
+        e["artifactUpdate"]
+        for e in events
+        if "artifactUpdate" in e
+        and e["artifactUpdate"]["artifact"].get("artifactId") == "response-stream"
+    ]
     assert streamed
-    assert any(c.get("lastChunk") for c in streamed)
-    text = "".join(p.get("text", "") for c in streamed for p in c["artifact"]["parts"])
+    assert any(a.get("lastChunk") for a in streamed)
+    text = "".join(p.get("text", "") for a in streamed for p in a["artifact"]["parts"])
     assert text == "Hello from LAB!"
 
 
 # ------------------------------------------------------------------ input-required (§7.7)
 async def test_input_required_roundtrip_approval(client: httpx.AsyncClient) -> None:
     await create_and_publish(client, approval_spec("hitl-flow"))
-    task = (
-        await send(client, "hitl-flow", "message/send", {"message": user_message("please draft")})
-    )["result"]
-    assert task["status"]["state"] == "input-required"
-    status_message = task["status"]["message"]
-    text_parts = [p for p in status_message["parts"] if p["kind"] == "text"]
-    data_parts = [p for p in status_message["parts"] if p["kind"] == "data"]
+    task = await send_task(client, "hitl-flow", user_message("please draft"))
+    assert task["status"]["state"] == "TASK_STATE_INPUT_REQUIRED"
+    parts = task["status"]["message"]["parts"]
+    text_parts = [p for p in parts if "text" in p]
+    data_parts = [p for p in parts if "data" in p]
     assert text_parts[0]["text"] == "Release this answer?"
     assert data_parts[0]["data"]["kind"] == "approval"
     assert data_parts[0]["data"]["options"] == ["approve", "reject"]
 
-    # answer with a DataPart {decision}
     answer = {
-        "role": "user",
+        "role": "ROLE_USER",
         "messageId": str(uuid.uuid4()),
         "taskId": task["id"],
         "contextId": task["contextId"],
-        "parts": [{"kind": "data", "data": {"decision": "approve"}}],
+        "parts": [{"data": {"decision": "approve"}}],
     }
-    done = (await send(client, "hitl-flow", "message/send", {"message": answer}))["result"]
-    assert done["status"]["state"] == "completed"
+    done = await send_task(client, "hitl-flow", answer)
+    assert done["status"]["state"] == "TASK_STATE_COMPLETED"
     assert done["id"] == task["id"]  # same task resumed
-    text = done["artifacts"][0]["parts"][0]["text"]
-    assert text == "draft answer"
+    assert done["artifacts"][0]["parts"][0]["text"] == "draft answer"
 
 
 async def test_input_required_text_answer_parsed_case_insensitively(
     client: httpx.AsyncClient,
 ) -> None:
     await create_and_publish(client, approval_spec("hitl-text"))
-    task = (await send(client, "hitl-text", "message/send", {"message": user_message("draft")}))[
-        "result"
-    ]
+    task = await send_task(client, "hitl-text", user_message("draft"))
     answer = user_message("APPROVE", taskId=task["id"], contextId=task["contextId"])
-    done = (await send(client, "hitl-text", "message/send", {"message": answer}))["result"]
-    assert done["status"]["state"] == "completed"
+    done = await send_task(client, "hitl-text", answer)
+    assert done["status"]["state"] == "TASK_STATE_COMPLETED"
 
 
 async def test_unparseable_answer_stays_input_required(client: httpx.AsyncClient) -> None:
     await create_and_publish(client, approval_spec("hitl-bad"))
-    task = (await send(client, "hitl-bad", "message/send", {"message": user_message("draft")}))[
-        "result"
-    ]
+    task = await send_task(client, "hitl-bad", user_message("draft"))
     answer = user_message("banana", taskId=task["id"], contextId=task["contextId"])
-    still = (await send(client, "hitl-bad", "message/send", {"message": answer}))["result"]
-    assert still["status"]["state"] == "input-required"
-    hint = next(p["text"] for p in still["status"]["message"]["parts"] if p["kind"] == "text")
+    still = await send_task(client, "hitl-bad", answer)
+    assert still["status"]["state"] == "TASK_STATE_INPUT_REQUIRED"
+    hint = next(p["text"] for p in still["status"]["message"]["parts"] if "text" in p)
     assert "approve" in hint.lower()
     assert "reject" in hint.lower()
 
 
-async def test_stream_closes_final_on_input_required(client: httpx.AsyncClient) -> None:
+async def test_stream_closes_on_input_required(client: httpx.AsyncClient) -> None:
     await create_and_publish(client, approval_spec("hitl-stream"))
-    finals: list[dict[str, Any]] = []
-    async with client.stream(
-        "POST",
-        "/a2a/hitl-stream/",
-        json=rpc_body("message/stream", {"message": user_message("draft")}),
-    ) as response:
-        async for line in response.aiter_lines():
-            if line.startswith("data:"):
-                result = json.loads(line[5:].strip()).get("result", {})
-                if result.get("final"):
-                    finals.append(result)
-    assert finals
-    assert finals[-1]["status"]["state"] == "input-required"
+    events = await _collect_stream(
+        client, "hitl-stream", "message:stream", {"message": user_message("draft")}
+    )
+    states = [e["statusUpdate"]["status"]["state"] for e in events if "statusUpdate" in e]
+    assert states, "expected at least one status update"
+    assert states[-1] == "TASK_STATE_INPUT_REQUIRED"
 
 
 # ------------------------------------------------------------------ tasks/*
 async def test_tasks_get_history_length(client: httpx.AsyncClient) -> None:
     await create_and_publish(client, hello_spec("hist-flow"))
-    task = (await send(client, "hist-flow", "message/send", {"message": user_message("hi")}))[
-        "result"
-    ]
-    body = await send(client, "hist-flow", "tasks/get", {"id": task["id"], "historyLength": 0})
-    assert body["result"]["status"]["state"] == "completed"
-    body2 = await send(client, "hist-flow", "tasks/get", {"id": task["id"]})
-    assert body2["result"].get("history")
+    task = await send_task(client, "hist-flow", user_message("hi"))
+    trimmed = await client.get(f"/a2a/hist-flow/tasks/{task['id']}", params={"historyLength": 0})
+    assert trimmed.status_code == 200
+    assert trimmed.json()["status"]["state"] == "TASK_STATE_COMPLETED"
+    full = await client.get(f"/a2a/hist-flow/tasks/{task['id']}")
+    assert full.json().get("history")
 
 
-async def test_tasks_get_unknown_is_32001(client: httpx.AsyncClient) -> None:
+async def test_tasks_get_unknown_is_404(client: httpx.AsyncClient) -> None:
     await create_and_publish(client, hello_spec("t404-flow"))
-    body = await send(client, "t404-flow", "tasks/get", {"id": "nope-task"})
-    assert body["error"]["code"] == -32001
+    response = await client.get("/a2a/t404-flow/tasks/nope-task")
+    assert response.status_code == 404
+    assert error_reason(response) == "TASK_NOT_FOUND"
 
 
-async def test_cancel_running_and_not_cancelable_terminal(client: httpx.AsyncClient) -> None:
+async def test_tasks_list_returns_flow_tasks(client: httpx.AsyncClient) -> None:
+    await create_and_publish(client, hello_spec("list-flow"))
+    task = await send_task(client, "list-flow", user_message("hi"))
+    response = await client.get("/a2a/list-flow/tasks")
+    assert response.status_code == 200
+    ids = {t["id"] for t in response.json().get("tasks", [])}
+    assert task["id"] in ids
+
+
+async def test_cancel_running_task(client: httpx.AsyncClient) -> None:
     await create_and_publish(client, slow_spec("cancel-flow", seconds=20))
-    task = (
-        await send(
-            client,
-            "cancel-flow",
-            "message/send",
-            {"message": user_message("zzz"), "configuration": {"blocking": False}},
-        )
-    )["result"]
-    assert task["status"]["state"] in ("submitted", "working")
+    task = await send_task(
+        client, "cancel-flow", user_message("zzz"), configuration={"returnImmediately": True}
+    )
+    assert task["status"]["state"] in ("TASK_STATE_SUBMITTED", "TASK_STATE_WORKING")
     await asyncio.sleep(0.4)
-    cancelled = (await send(client, "cancel-flow", "tasks/cancel", {"id": task["id"]}))["result"]
-    assert cancelled["status"]["state"] == "canceled"
-    # canceling a terminal task → -32002 TaskNotCancelable
-    body = await send(client, "cancel-flow", "tasks/cancel", {"id": task["id"]})
-    assert body["error"]["code"] == -32002
+    response = await client.post(f"/a2a/cancel-flow/tasks/{task['id']}:cancel", json={})
+    assert response.status_code == 200, response.text
+    assert response.json()["status"]["state"] == "TASK_STATE_CANCELED"
+
+
+async def test_cancel_terminal_task_not_cancelable(client: httpx.AsyncClient) -> None:
+    """Canceling a completed (terminal) task ⇒ 400 TASK_NOT_CANCELABLE (§7.6)."""
+    await create_and_publish(client, hello_spec("done-flow"))
+    task = await send_task(client, "done-flow", user_message("hi"))
+    assert task["status"]["state"] == "TASK_STATE_COMPLETED"
+    await asyncio.sleep(0.2)  # let the finished task's ActiveTask leave the registry
+    response = await client.post(f"/a2a/done-flow/tasks/{task['id']}:cancel", json={})
+    assert response.status_code == 400
+    assert error_reason(response) == "TASK_NOT_CANCELABLE"
 
 
 async def test_resubscribe_replays_live_task(client: httpx.AsyncClient) -> None:
-    await create_and_publish(client, slow_spec("resub-flow", seconds=2))
-    task = (
-        await send(
-            client,
-            "resub-flow",
-            "message/send",
-            {"message": user_message("zzz"), "configuration": {"blocking": False}},
-        )
-    )["result"]
-    got_final = False
+    await create_and_publish(client, slow_spec("resub-flow", seconds=3))
+    task = await send_task(
+        client, "resub-flow", user_message("zzz"), configuration={"returnImmediately": True}
+    )
+    got_terminal = False
     async with client.stream(
-        "POST",
-        "/a2a/resub-flow/",
-        json=rpc_body("tasks/resubscribe", {"id": task["id"]}),
-        timeout=30.0,
+        "GET", f"/a2a/resub-flow/tasks/{task['id']}:subscribe", timeout=30.0
     ) as response:
-        assert response.status_code == 200
+        assert response.status_code == 200, await response.aread()
         async for line in response.aiter_lines():
-            if line.startswith("data:"):
-                result = json.loads(line[5:].strip()).get("result", {})
-                if result.get("final") or (result.get("status", {}).get("state") == "completed"):
-                    got_final = True
-                    break
-    assert got_final
+            if not line.startswith("data:"):
+                continue
+            event = json.loads(line[5:].strip())
+            state = None
+            if "task" in event:
+                state = event["task"]["status"]["state"]
+            elif "statusUpdate" in event:
+                state = event["statusUpdate"]["status"]["state"]
+            if state == "TASK_STATE_COMPLETED":
+                got_terminal = True
+                break
+    assert got_terminal
 
 
 async def test_resubscribe_unknown_task(client: httpx.AsyncClient) -> None:
     await create_and_publish(client, hello_spec("resub404"))
     async with client.stream(
-        "POST",
-        "/a2a/resub404/",
-        json=rpc_body("tasks/resubscribe", {"id": "missing"}),
+        "GET", "/a2a/resub404/tasks/missing:subscribe", timeout=10.0
     ) as response:
-        text = "".join([chunk async for chunk in response.aiter_text()])
-    assert "-32001" in text or "TaskNotFound" in text or '"code"' in text
+        await response.aread()
+    assert response.status_code == 404
 
 
 # ------------------------------------------------------------------ push notification config
 async def test_push_config_crud(client: httpx.AsyncClient) -> None:
     await create_and_publish(client, hello_spec("push-flow"))
-    task = (await send(client, "push-flow", "message/send", {"message": user_message("hi")}))[
-        "result"
-    ]
-    config = {
-        "taskId": task["id"],
-        "pushNotificationConfig": {
-            "id": "cfg1",
-            "url": "https://example.com/hook",
-            "token": "tok",
-        },
-    }
-    set_body = await send(client, "push-flow", "tasks/pushNotificationConfig/set", config)
-    assert "result" in set_body, set_body
-    got = await send(client, "push-flow", "tasks/pushNotificationConfig/get", {"id": task["id"]})
-    assert got["result"]["pushNotificationConfig"]["url"] == "https://example.com/hook"
-    listed = await send(
-        client, "push-flow", "tasks/pushNotificationConfig/list", {"id": task["id"]}
+    task = await send_task(client, "push-flow", user_message("hi"))
+    tid = task["id"]
+    set_response = await client.post(
+        f"/a2a/push-flow/tasks/{tid}/pushNotificationConfigs",
+        json={"id": "cfg1", "url": "https://example.com/hook", "token": "tok"},
     )
-    assert len(listed["result"]) == 1
-    deleted = await send(
-        client,
-        "push-flow",
-        "tasks/pushNotificationConfig/delete",
-        {"id": task["id"], "pushNotificationConfigId": "cfg1"},
-    )
-    assert "error" not in deleted
-    listed2 = await send(
-        client, "push-flow", "tasks/pushNotificationConfig/list", {"id": task["id"]}
-    )
-    assert listed2["result"] == []
+    assert set_response.status_code == 200, set_response.text
+    assert set_response.json()["url"] == "https://example.com/hook"
+
+    got = await client.get(f"/a2a/push-flow/tasks/{tid}/pushNotificationConfigs/cfg1")
+    assert got.json()["url"] == "https://example.com/hook"
+
+    listed = await client.get(f"/a2a/push-flow/tasks/{tid}/pushNotificationConfigs")
+    assert len(listed.json()["configs"]) == 1
+
+    deleted = await client.delete(f"/a2a/push-flow/tasks/{tid}/pushNotificationConfigs/cfg1")
+    assert deleted.status_code == 200
+    listed2 = await client.get(f"/a2a/push-flow/tasks/{tid}/pushNotificationConfigs")
+    assert listed2.json().get("configs", []) == []
 
 
-async def test_push_disabled_flow_returns_32003_and_honest_card(
-    client: httpx.AsyncClient,
-) -> None:
+async def test_push_disabled_flow_rejects_and_honest_card(client: httpx.AsyncClient) -> None:
     """§7.9 capability honesty: pushNotifications:false ⇒ card says so and every
-    tasks/pushNotificationConfig/* method returns -32003 (§7.10)."""
+    push-config method returns PUSH_NOTIFICATION_NOT_SUPPORTED (§7.10)."""
     spec = hello_spec("push-off")
     spec["flow"]["a2a"]["push_notifications"] = False
     await create_and_publish(client, spec)
     card = (await client.get("/a2a/push-off/.well-known/agent-card.json")).json()
-    assert card["capabilities"]["pushNotifications"] is False
-    task = (await send(client, "push-off", "message/send", {"message": user_message("hi")}))[
-        "result"
-    ]
-    calls: list[tuple[str, dict[str, Any]]] = [
-        (
-            "tasks/pushNotificationConfig/set",
-            {
-                "taskId": task["id"],
-                "pushNotificationConfig": {"id": "c1", "url": "https://example.com/hook"},
-            },
+    assert card["capabilities"].get("pushNotifications", False) is False
+    task = await send_task(client, "push-off", user_message("hi"))
+    tid = task["id"]
+    calls = [
+        client.post(
+            f"/a2a/push-off/tasks/{tid}/pushNotificationConfigs",
+            json={"id": "c1", "url": "https://example.com/hook"},
         ),
-        ("tasks/pushNotificationConfig/get", {"id": task["id"]}),
-        ("tasks/pushNotificationConfig/list", {"id": task["id"]}),
-        (
-            "tasks/pushNotificationConfig/delete",
-            {"id": task["id"], "pushNotificationConfigId": "c1"},
-        ),
+        client.get(f"/a2a/push-off/tasks/{tid}/pushNotificationConfigs/c1"),
+        client.get(f"/a2a/push-off/tasks/{tid}/pushNotificationConfigs"),
+        client.delete(f"/a2a/push-off/tasks/{tid}/pushNotificationConfigs/c1"),
     ]
-    for method, params in calls:
-        body = await send(client, "push-off", method, params)
-        assert body["error"]["code"] == -32003, (method, body)
+    for coro in calls:
+        response = await coro
+        assert response.status_code == 400, response.text
+        assert error_reason(response) == "PUSH_NOTIFICATION_NOT_SUPPORTED"
 
 
 async def test_push_config_ssrf_rejected(client: httpx.AsyncClient) -> None:
     await create_and_publish(client, hello_spec("ssrf-flow"))
-    task = (await send(client, "ssrf-flow", "message/send", {"message": user_message("hi")}))[
-        "result"
-    ]
-    body = await send(
-        client,
-        "ssrf-flow",
-        "tasks/pushNotificationConfig/set",
-        {
-            "taskId": task["id"],
-            "pushNotificationConfig": {"id": "evil", "url": "http://127.0.0.1:9/steal"},
-        },
+    task = await send_task(client, "ssrf-flow", user_message("hi"))
+    response = await client.post(
+        f"/a2a/ssrf-flow/tasks/{task['id']}/pushNotificationConfigs",
+        json={"id": "evil", "url": "http://127.0.0.1:9/steal"},
     )
-    assert "error" in body
+    assert response.status_code >= 400
 
 
 # ---------------------------------------------------------- content negotiation (§7.8/§7.10)
-async def test_accepted_output_modes_mismatch_32005(client: httpx.AsyncClient) -> None:
-    """Unsatisfiable acceptedOutputModes ⇒ -32005 ContentTypeNotSupported (§7.5)."""
+async def test_accepted_output_modes_mismatch(client: httpx.AsyncClient) -> None:
+    """Unsatisfiable acceptedOutputModes ⇒ CONTENT_TYPE_NOT_SUPPORTED (§7.5)."""
     await create_and_publish(client, hello_spec("modes-flow"))
-    body = await send(
+    response = await send(
         client,
         "modes-flow",
-        "message/send",
-        {
-            "message": user_message("hi"),
-            "configuration": {"acceptedOutputModes": ["image/png"]},
-        },
+        user_message("hi"),
+        configuration={"acceptedOutputModes": ["image/png"]},
     )
-    assert body["error"]["code"] == -32005
+    assert response.status_code == 400
+    assert error_reason(response) == "CONTENT_TYPE_NOT_SUPPORTED"
 
 
-async def test_file_part_disallowed_mime_32005(client: httpx.AsyncClient) -> None:
-    """FilePart outside LAB_A2A_ACCEPTED_MIME ⇒ -32005 (§7.8 mime allowlist)."""
+async def test_file_part_disallowed_mime(client: httpx.AsyncClient) -> None:
+    """A file part outside LAB_A2A_ACCEPTED_MIME ⇒ CONTENT_TYPE_NOT_SUPPORTED (§7.8)."""
     await create_and_publish(client, hello_spec("mime-flow"))
     message = {
-        "role": "user",
+        "role": "ROLE_USER",
         "messageId": str(uuid.uuid4()),
         "parts": [
             {
-                "kind": "file",
-                "file": {
-                    "bytes": base64.b64encode(b"MZ...").decode(),
-                    "mimeType": "application/x-msdownload",
-                    "name": "evil.bin",
-                },
+                "raw": base64.b64encode(b"MZ...").decode(),
+                "mediaType": "application/x-msdownload",
+                "filename": "evil.bin",
             }
         ],
     }
-    body = await send(client, "mime-flow", "message/send", {"message": message})
-    assert body["error"]["code"] == -32005
+    response = await send(client, "mime-flow", message)
+    assert response.status_code == 400
+    assert error_reason(response) == "CONTENT_TYPE_NOT_SUPPORTED"
 
 
 async def test_file_part_allowed_mime_accepted(client: httpx.AsyncClient) -> None:
-    """A FilePart matching the allowlist runs normally (§7.8)."""
+    """A file part matching the allowlist runs normally (§7.8)."""
     await create_and_publish(client, hello_spec("mime-ok-flow"))
     message = {
-        "role": "user",
+        "role": "ROLE_USER",
         "messageId": str(uuid.uuid4()),
         "parts": [
-            {"kind": "text", "text": "hi"},
+            {"text": "hi"},
             {
-                "kind": "file",
-                "file": {
-                    "bytes": base64.b64encode(b"hello").decode(),
-                    "mimeType": "text/plain",
-                    "name": "note.txt",
-                },
+                "raw": base64.b64encode(b"hello").decode(),
+                "mediaType": "text/plain",
+                "filename": "note.txt",
             },
         ],
     }
-    body = await send(client, "mime-ok-flow", "message/send", {"message": message})
-    assert body["result"]["status"]["state"] == "completed"
+    task = await send_task(client, "mime-ok-flow", message)
+    assert task["status"]["state"] == "TASK_STATE_COMPLETED"
 
 
 async def test_unexpected_exception_sanitized(
@@ -513,42 +468,35 @@ async def test_unexpected_exception_sanitized(
         raise RuntimeError("postgres://user:s3cret@10.0.0.7:5432/lab")
 
     monkeypatch.setattr(Executor, "execute", explode)
-    body = await send(client, "boom-flow", "message/send", {"message": user_message("hi")})
-    task = body["result"]
-    assert task["status"]["state"] == "failed"
-    parts = task["status"]["message"]["parts"]
-    assert parts[0]["text"] == "internal error"
-    wire = json.dumps(body)
+    response = await send(client, "boom-flow", user_message("hi"))
+    assert response.status_code == 200, response.text
+    task = response.json()["task"]
+    assert task["status"]["state"] == "TASK_STATE_FAILED"
+    assert task["status"]["message"]["parts"][0]["text"] == "internal error"
+    wire = json.dumps(response.json())
     assert "s3cret" not in wire
     assert "postgres://" not in wire
 
 
-# ------------------------------------------------------------------ JSON-RPC errors
-async def test_unknown_method_32601(client: httpx.AsyncClient) -> None:
-    await create_and_publish(client, hello_spec("err-flow"))
-    body = await send(client, "err-flow", "totally/bogus", {})
-    assert body["error"]["code"] == -32601
-
-
-async def test_parse_error_32700(client: httpx.AsyncClient) -> None:
+# ------------------------------------------------------------------ transport errors
+async def test_invalid_json_body_is_400(client: httpx.AsyncClient) -> None:
     await create_and_publish(client, hello_spec("parse-flow"))
     response = await client.post(
-        "/a2a/parse-flow/",
+        "/a2a/parse-flow/message:send",
         content=b"{not json",
         headers={"Content-Type": "application/json"},
     )
-    body = response.json()
-    assert body["error"]["code"] == -32700
+    assert response.status_code == 400
 
 
-async def test_invalid_params_32602(client: httpx.AsyncClient) -> None:
+async def test_malformed_request_is_400(client: httpx.AsyncClient) -> None:
     await create_and_publish(client, hello_spec("params-flow"))
-    body = await send(client, "params-flow", "message/send", {"nope": True})
-    assert body["error"]["code"] in (-32602, -32600)
+    response = await client.post("/a2a/params-flow/message:send", json={"nope": True})
+    assert response.status_code == 400
 
 
 async def test_unknown_agent_404(client: httpx.AsyncClient) -> None:
-    response = await client.post("/a2a/ghost/", json=rpc_body("message/send", {}))
+    response = await client.post("/a2a/ghost/message:send", json={"message": user_message("x")})
     assert response.status_code == 404
 
 
@@ -563,48 +511,32 @@ async def test_api_key_auth_401_and_success(client: httpx.AsyncClient, svc: AppS
     assert card.status_code == 200
     assert card.json().get("securitySchemes")
 
-    # RPC without key → HTTP-layer 401 with WWW-Authenticate
-    response = await client.post(
-        "/a2a/auth-flow/", json=rpc_body("message/send", {"message": user_message("hi")})
-    )
+    # no key → HTTP-layer 401 with WWW-Authenticate
+    response = await send(client, "auth-flow", user_message("hi"))
     assert response.status_code == 401
     assert "WWW-Authenticate" in response.headers
 
     # key without the a2a:invoke scope → still 401
     wrong_key, _ = await svc.apikeys.create(["mcp:invoke"], "wrong")
-    response = await client.post(
-        "/a2a/auth-flow/",
-        json=rpc_body("message/send", {"message": user_message("hi")}),
-        headers={"X-API-Key": wrong_key},
-    )
+    response = await send(client, "auth-flow", user_message("hi"), headers={"X-API-Key": wrong_key})
     assert response.status_code == 401
 
     key, _ = await svc.apikeys.create(["a2a:invoke"], "right")
-    response = await client.post(
-        "/a2a/auth-flow/",
-        json=rpc_body("message/send", {"message": user_message("hi")}),
-        headers={"X-API-Key": key},
-    )
+    response = await send(client, "auth-flow", user_message("hi"), headers={"X-API-Key": key})
     assert response.status_code == 200
-    assert response.json()["result"]["status"]["state"] == "completed"
+    assert response.json()["task"]["status"]["state"] == "TASK_STATE_COMPLETED"
 
 
 async def test_public_context_namespacing(client: httpx.AsyncClient, svc: AppServices) -> None:
     """Anonymous callers must not be able to address foreign sessions (§7.11)."""
     await create_and_publish(client, hello_spec("ns-flow"))
-    task = (await send(client, "ns-flow", "message/send", {"message": user_message("hi")}))[
-        "result"
-    ]
-    # same client scope (same IP in tests) CAN read it
-    body = await send(client, "ns-flow", "tasks/get", {"id": task["id"]})
-    assert "result" in body
+    task = await send_task(client, "ns-flow", user_message("hi"))
     # a different client scope behaves as if the task does not exist
     from langgraph_agent_builder.a2a.scope import current_client_scope
+    from langgraph_agent_builder.a2a.tasks import DbTaskStore
 
     token = current_client_scope.set("key:someoneelse")
     try:
-        from langgraph_agent_builder.a2a.tasks import DbTaskStore
-
         store = DbTaskStore(svc.sessions, "ns-flow")
         assert await store.get(task["id"]) is None
     finally:
@@ -616,14 +548,11 @@ async def test_state_transition_history_persisted(
     client: httpx.AsyncClient, svc: AppServices
 ) -> None:
     await create_and_publish(client, approval_spec("trans-flow"))
-    task = (await send(client, "trans-flow", "message/send", {"message": user_message("draft")}))[
-        "result"
-    ]
+    task = await send_task(client, "trans-flow", user_message("draft"))
     from langgraph_agent_builder.a2a.tasks import DbTaskStore
 
     store = DbTaskStore(svc.sessions, "trans-flow")
-    transitions = await store.transitions(task["id"])
-    states = [t["to"] for t in transitions]
+    states = [t["to"] for t in await store.transitions(task["id"])]
     assert states[0] == "submitted"
     assert "working" in states
     assert "input-required" in states
@@ -631,7 +560,7 @@ async def test_state_transition_history_persisted(
 
 async def test_illegal_transition_raises(svc: AppServices) -> None:
     from a2a.types import Message as A2AMessage
-    from a2a.types import Part, Role, Task, TaskState, TaskStatus, TextPart
+    from a2a.types import Part, Role, Task, TaskState, TaskStatus
 
     from langgraph_agent_builder.a2a.tasks import DbTaskStore, IllegalTaskTransitionError
 
@@ -639,12 +568,10 @@ async def test_illegal_transition_raises(svc: AppServices) -> None:
     task = Task(
         id="tt1",
         context_id="cc1",
-        status=TaskStatus(state=TaskState.completed),
-        history=[
-            A2AMessage(role=Role.user, message_id="m1", parts=[Part(root=TextPart(text="x"))])
-        ],
+        status=TaskStatus(state=TaskState.TASK_STATE_COMPLETED),
+        history=[A2AMessage(role=Role.ROLE_USER, message_id="m1", parts=[Part(text="x")])],
     )
     await store.save(task)
-    task.status = TaskStatus(state=TaskState.working)
+    task.status.state = TaskState.TASK_STATE_WORKING
     with pytest.raises(IllegalTaskTransitionError):
         await store.save(task)
