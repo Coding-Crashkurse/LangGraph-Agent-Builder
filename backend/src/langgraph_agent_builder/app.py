@@ -175,12 +175,16 @@ async def _shutdown(svc: AppServices) -> None:
     for task in svc.tasks:
         task.cancel()
     # aclose, not drain: flushing alone leaves the persist task pending —
-    # "Task was destroyed but it is pending!" at interpreter shutdown
-    await svc.bus.aclose()
-    if svc.a2a is not None:
-        await svc.a2a.aclose()
-    await svc.checkpointers.aclose()
-    await svc.engine.dispose()
+    # "Task was destroyed but it is pending!" at interpreter shutdown.
+    # engine.dispose() runs in finally so a failing bus/a2a/checkpointer close
+    # can never orphan the DB engine (leaked aiosqlite worker threads).
+    try:
+        await svc.bus.aclose()
+        if svc.a2a is not None:
+            await svc.a2a.aclose()
+        await svc.checkpointers.aclose()
+    finally:
+        await svc.engine.dispose()
 
 
 def create_app(settings: Settings | None = None, *, backend_only: bool = False) -> FastAPI:
