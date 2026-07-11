@@ -12,8 +12,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from lga.compiler.ir import FlowIR, NodeIR
-from lga.sdk.ports import PortFamily
+from langgraph_agent_builder.compiler.ir import FlowIR, NodeIR
+from langgraph_agent_builder.sdk.ports import PortFamily
 
 
 def is_router_like(node: NodeIR) -> bool:

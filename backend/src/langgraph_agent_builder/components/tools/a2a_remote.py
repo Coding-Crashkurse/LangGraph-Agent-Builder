@@ -14,11 +14,11 @@ import httpx
 from langchain_core.messages import AIMessage
 from langgraph.types import interrupt
 
-from lga.sdk import BuildContext, Component, Output, fields, ports
-from lga.sdk.component import NodeConfig, NodeFn
-from lga.sdk.ports import LazyToolset, ToolDef
-from lga.sdk.runtime import get_run_context
-from lga.sdk.templating import last_message_text
+from langgraph_agent_builder.sdk import BuildContext, Component, Output, fields, ports
+from langgraph_agent_builder.sdk.component import NodeConfig, NodeFn
+from langgraph_agent_builder.sdk.ports import LazyToolset, ToolDef
+from langgraph_agent_builder.sdk.runtime import get_run_context
+from langgraph_agent_builder.sdk.templating import last_message_text
 
 # process cache: (thread_id, node_id) → pending remote session
 _REMOTE_SESSIONS: dict[tuple[str, str], dict[str, Any]] = {}
@@ -77,7 +77,7 @@ def _interrupt_payload(task: dict[str, Any], agent_url: str) -> dict[str, Any]:
 
 
 class A2ARemoteAgent(Component):
-    component_id = "lga.tools.a2a_remote_agent"
+    component_id = "lab.tools.a2a_remote_agent"
     display_name = "A2A Remote Agent"
     description = "Call another A2A agent as a node or as a tool; nested HITL propagates."
     icon = "satellite"
@@ -104,7 +104,7 @@ class A2ARemoteAgent(Component):
     def outputs_for_config(cls, config: NodeConfig) -> list[Output]:
         """mode=node → Message output; mode=tool → Toolset output (SPEC §7.12)."""
         if str(config.get("mode") or "node") == "tool":
-            from lga.sdk.ports import TOOLSET
+            from langgraph_agent_builder.sdk.ports import TOOLSET
 
             return [Output(name="toolset", display_name="Toolset", port=TOOLSET)]
         return list(cls.outputs)

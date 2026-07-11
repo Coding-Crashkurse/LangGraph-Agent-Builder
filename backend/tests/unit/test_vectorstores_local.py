@@ -1,5 +1,5 @@
 """Unit tests for the local (sqlite-backed) vector store and the shared
-``lga.vectorstores.base`` abstraction (SPEC §8b).
+``langgraph_agent_builder.vectorstores.base`` abstraction (SPEC §8b).
 
 Covered behaviour:
 * portable filter semantics (equality / ``$in`` / ``$eq`` / ``$and`` and the
@@ -20,9 +20,9 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from lga.components.llm._models import resolve_embeddings
-from lga.sdk.ports import Document
-from lga.vectorstores.base import (
+from langgraph_agent_builder.components.llm._models import resolve_embeddings
+from langgraph_agent_builder.sdk.ports import Document
+from langgraph_agent_builder.vectorstores.base import (
     BackendExtraMissing,
     CollectionInfo,
     CollectionMissing,
@@ -37,7 +37,7 @@ from lga.vectorstores.base import (
     filter_matches_nothing,
     matches_filter,
 )
-from lga.vectorstores.local import LocalVectorStore, _score, _table
+from langgraph_agent_builder.vectorstores.local import LocalVectorStore, _score, _table
 
 if TYPE_CHECKING:
     from pathlib import Path

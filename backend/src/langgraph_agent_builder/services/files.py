@@ -12,14 +12,14 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from lga.db.models import FileRow
-from lga.errors import LgaValueError
-from lga.services.settings import Settings
+from langgraph_agent_builder.db.models import FileRow
+from langgraph_agent_builder.errors import LabValueError
+from langgraph_agent_builder.services.settings import Settings
 
 CHUNK_SIZE = 1024 * 1024
 
 
-class FileTooLargeError(LgaValueError):
+class FileTooLargeError(LabValueError):
     pass
 
 
@@ -36,7 +36,7 @@ class FilesService:
 
     @property
     def _limit_bytes(self) -> int:
-        return self._settings.max_file_size_mb * 1024 * 1024  # LGA_MAX_FILE_SIZE_MB
+        return self._settings.max_file_size_mb * 1024 * 1024  # LAB_MAX_FILE_SIZE_MB
 
     def _too_large(self) -> FileTooLargeError:
         return FileTooLargeError(f"file exceeds {self._settings.max_file_size_mb} MB upload limit")

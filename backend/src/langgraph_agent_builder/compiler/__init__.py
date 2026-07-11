@@ -20,18 +20,18 @@ from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import All, Checkpointer
 from pydantic import BaseModel, Field
 
-from lga.compiler import emit as emit_pass
-from lga.compiler import parse as parse_pass
-from lga.compiler import resolve as resolve_pass
-from lga.compiler import validate as validate_pass
-from lga.compiler import wire as wire_pass
-from lga.compiler.ir import FlowIR
-from lga.compiler.resolve import EnvVariablesProvider, VariablesProvider
-from lga.schema.diagnostics import Diagnostic, has_errors
-from lga.schema.flowspec import FlowMeta, FlowSpec
-from lga.schema.state import FlowState
-from lga.sdk.component import BuildContext, NodeKind, SecretsResolver
-from lga.sdk.registry import ComponentRegistry, get_registry
+from langgraph_agent_builder.compiler import emit as emit_pass
+from langgraph_agent_builder.compiler import parse as parse_pass
+from langgraph_agent_builder.compiler import resolve as resolve_pass
+from langgraph_agent_builder.compiler import validate as validate_pass
+from langgraph_agent_builder.compiler import wire as wire_pass
+from langgraph_agent_builder.compiler.ir import FlowIR
+from langgraph_agent_builder.compiler.resolve import EnvVariablesProvider, VariablesProvider
+from langgraph_agent_builder.schema.diagnostics import Diagnostic, has_errors
+from langgraph_agent_builder.schema.flowspec import FlowMeta, FlowSpec
+from langgraph_agent_builder.schema.state import FlowState
+from langgraph_agent_builder.sdk.component import BuildContext, NodeKind, SecretsResolver
+from langgraph_agent_builder.sdk.registry import ComponentRegistry, get_registry
 
 __all__ = [
     "CompileReport",
@@ -72,7 +72,7 @@ class CompiledFlow:
 
     @property
     def graph(self) -> CompiledStateGraph[FlowState]:
-        """Vanilla compiled LangGraph — no checkpointer, usable without lga."""
+        """Vanilla compiled LangGraph — no checkpointer, usable without lab."""
         if self.builder is None:
             raise ValueError("flow has compile errors; no graph available")
         if self._plain_graph is None:
@@ -241,7 +241,7 @@ def validate_flow(
     registry: ComponentRegistry | None = None,
     variables: VariablesProvider | None = None,
 ) -> list[Diagnostic]:
-    """Validation-only entry (used by /validate and `lga flow validate`):
+    """Validation-only entry (used by /validate and `lab flow validate`):
     stops after P3, so component build() code never runs."""
     return compile_flow(
         source,

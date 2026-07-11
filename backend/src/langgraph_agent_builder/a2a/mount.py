@@ -14,17 +14,17 @@ from a2a.server.apps import A2AStarletteApplication
 from starlette.responses import JSONResponse
 from starlette.routing import Route
 
-from lga.a2a.card import LEGACY_WELL_KNOWN_PATH, WELL_KNOWN_PATH, build_card
-from lga.a2a.executor import LGAAgentExecutor
-from lga.a2a.handler import LGAJSONRPCHandler, LGARequestHandler
-from lga.a2a.push import DbPushConfigStore, GuardedPushSender
-from lga.a2a.scope import current_client_scope, scope_for_api_key, scope_for_ip
-from lga.a2a.tasks import resolve_task_store
+from langgraph_agent_builder.a2a.card import LEGACY_WELL_KNOWN_PATH, WELL_KNOWN_PATH, build_card
+from langgraph_agent_builder.a2a.executor import LabAgentExecutor
+from langgraph_agent_builder.a2a.handler import LabJSONRPCHandler, LabRequestHandler
+from langgraph_agent_builder.a2a.push import DbPushConfigStore, GuardedPushSender
+from langgraph_agent_builder.a2a.scope import current_client_scope, scope_for_api_key, scope_for_ip
+from langgraph_agent_builder.a2a.tasks import resolve_task_store
 
 if TYPE_CHECKING:
-    from lga.app import AppServices
+    from langgraph_agent_builder.app import AppServices
 
-logger = logging.getLogger("lga.a2a.mount")
+logger = logging.getLogger("langgraph_agent_builder.a2a.mount")
 
 CARD_PATHS = {WELL_KNOWN_PATH, LEGACY_WELL_KNOWN_PATH}
 
@@ -108,7 +108,7 @@ class A2AManager:
                 ) -> dict[str, Any]:
                     return _spec
 
-                agent_executor = LGAAgentExecutor(
+                agent_executor = LabAgentExecutor(
                     spec_provider=spec_provider,
                     flow_slug=slug,
                     orchestrator=svc.orchestrator,
@@ -122,7 +122,7 @@ class A2AManager:
                 # store/sender wired, and pushNotificationConfig/* → -32003
                 push_enabled = spec.flow.a2a.push_notifications
                 push_store = DbPushConfigStore(svc.sessions, svc.settings) if push_enabled else None
-                handler = LGARequestHandler(
+                handler = LabRequestHandler(
                     agent_executor=agent_executor,
                     task_store=resolve_task_store(
                         svc.settings.a2a_task_store,
@@ -145,7 +145,7 @@ class A2AManager:
                 )
                 # the sdk hardwires a plain JSONRPCHandler; swap in ours so the
                 # push-set capability gate answers -32003 (§7.10), not -32603
-                a2a_app.handler = LGAJSONRPCHandler(
+                a2a_app.handler = LabJSONRPCHandler(
                     agent_card=card, request_handler=handler, extended_agent_card=card
                 )
                 app = a2a_app.build(agent_card_url=WELL_KNOWN_PATH, rpc_url="/")
@@ -193,7 +193,7 @@ class A2AManager:
             and scope.get("scheme") == "http"
         ):
             response = JSONResponse(
-                {"detail": "A2A requires https in prod (LGA_A2A_ALLOW_HTTP=true for proxies)"},
+                {"detail": "A2A requires https in prod (LAB_A2A_ALLOW_HTTP=true for proxies)"},
                 status_code=403,
             )
             await response(scope, receive, send)

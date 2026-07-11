@@ -7,10 +7,10 @@ on the SQLite tier — the retriever demands Postgres).
 
 ```bash
 docker compose up -d postgres
-export LGA_DATABASE_URL=postgresql+asyncpg://graphforge:graphforge@localhost:55432/graphforge
-export LGA_CRED_OPENAI_API_KEY=sk-…
+export LAB_DATABASE_URL=postgresql+asyncpg://graphforge:graphforge@localhost:55432/graphforge
+export LAB_CRED_OPENAI_API_KEY=sk-…
 python examples/03_rag_pgvector/seed.py
-lga flow import examples/03_rag_pgvector/flow.json && lga flow publish library-rag
-lga flow run library-rag --input "Who wrote The Left Hand of Darkness?"
+lab flow import examples/03_rag_pgvector/flow.json && lab flow publish library-rag
+lab flow run library-rag --input "Who wrote The Left Hand of Darkness?"
 # → …Ursula K. Le Guin…
 ```

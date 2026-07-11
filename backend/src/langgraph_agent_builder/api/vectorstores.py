@@ -7,8 +7,8 @@ from typing import Any, Literal
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from lga.api.deps import Services, StudioAuth
-from lga.vectorstores import BACKEND_EXTRAS, installed_backends
+from langgraph_agent_builder.api.deps import Services, StudioAuth
+from langgraph_agent_builder.vectorstores import BACKEND_EXTRAS, installed_backends
 
 router = APIRouter(prefix="/vectorstores", tags=["vectorstores"], dependencies=[StudioAuth])
 

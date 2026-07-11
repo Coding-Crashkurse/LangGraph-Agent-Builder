@@ -31,7 +31,7 @@ async def test_blocking_run_completes_and_is_listed(client: httpx.AsyncClient) -
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["status"] == "completed"
-    assert "Hello from LGA!" in body["result_text"]
+    assert "Hello from LAB!" in body["result_text"]
     run_id = body["run_id"]
 
     listed = await client.get("/api/v1/runs")
@@ -59,7 +59,7 @@ async def test_failed_run_persists_and_surfaces_node_id(client: httpx.AsyncClien
     spec = hello_spec("boomflow")
     spec["nodes"][1] = {
         "id": "fake",
-        "component_id": "lga.testing.failing_node",
+        "component_id": "lab.testing.failing_node",
         "component_version": "1.0.0",
         "config": {"error_message": "boom"},
         "position": {"x": 300, "y": 0},
@@ -88,8 +88,8 @@ async def test_run_unrunnable_flow_is_422_with_diagnostics(client: httpx.AsyncCl
         "schema_version": "1",
         "flow": {"name": "brk", "slug": "brk"},
         "nodes": [
-            {"id": "start", "component_id": "lga.io.start", "config": {}},
-            {"id": "ghost", "component_id": "lga.does.not.exist", "config": {}},
+            {"id": "start", "component_id": "lab.io.start", "config": {}},
+            {"id": "ghost", "component_id": "lab.does.not.exist", "config": {}},
         ],
         "edges": [],
     }
@@ -127,12 +127,12 @@ async def test_run_with_valid_uploaded_file(client: httpx.AsyncClient) -> None:
 
 
 async def test_run_honours_header_var_override(client: httpx.AsyncClient) -> None:
-    # X-LGA-VAR-* headers are harvested; a runnable flow still completes with them set.
+    # X-LAB-VAR-* headers are harvested; a runnable flow still completes with them set.
     await create_and_publish(client, hello_spec("hdr"))
     resp = await client.post(
         "/api/v1/flows/hdr/run",
         json={"input_text": "hi"},
-        headers={"X-LGA-VAR-TENANT": "acme"},
+        headers={"X-LAB-VAR-TENANT": "acme"},
     )
     assert resp.status_code == 200
     assert resp.json()["status"] == "completed"

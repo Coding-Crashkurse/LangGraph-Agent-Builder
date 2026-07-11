@@ -1,4 +1,4 @@
-"""Unit tests for lga.services.vectorstores (SPEC §8b.3): connection CRUD,
+"""Unit tests for langgraph_agent_builder.services.vectorstores (SPEC §8b.3): connection CRUD,
 secret/var resolution, provider building, health probing, and boot provisioning."""
 
 from __future__ import annotations
@@ -7,13 +7,13 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from lga.services.secrets import SecretsService
-from lga.services.vectorstores import VectorStoreService
+from langgraph_agent_builder.services.secrets import SecretsService
+from langgraph_agent_builder.services.vectorstores import VectorStoreService
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-    from lga.services.settings import Settings
+    from langgraph_agent_builder.services.settings import Settings
 
 SqliteStack = tuple["Settings", "async_sessionmaker[AsyncSession]"]
 
@@ -131,8 +131,8 @@ async def test_provision_creates_default_local(vs: VectorStoreService) -> None:
 async def test_provision_reads_env_descriptors(
     sqlite_stack: SqliteStack, vs: VectorStoreService, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("LGA_VECTORSTORE_EXTRA", '{"backend": "local", "path": "/tmp/x"}')
-    monkeypatch.setenv("LGA_VECTORSTORE_UNKNOWN", '{"backend": "not-a-backend"}')
+    monkeypatch.setenv("LAB_VECTORSTORE_EXTRA", '{"backend": "local", "path": "/tmp/x"}')
+    monkeypatch.setenv("LAB_VECTORSTORE_UNKNOWN", '{"backend": "not-a-backend"}')
     await vs.provision()
     conns = {c["name"]: c for c in await vs.list()}
     assert conns["extra"]["backend"] == "local"

@@ -18,18 +18,18 @@ from langgraph.types import Command
 from pydantic import BaseModel
 from ulid import ULID
 
-from lga.compiler import CompiledFlow
-from lga.runtime.streams import EventBus
-from lga.schema.diagnostics import RuntimeError_, RuntimeErrorCode
-from lga.schema.events import RunEvent
-from lga.schema.scrub import scrub_data
-from lga.schema.state import initial_state
-from lga.sdk.component import NodeKind
-from lga.sdk.ports import Message
-from lga.sdk.runtime import RUN_CTX_KEY, RunContext
-from lga.sdk.templating import message_text
+from langgraph_agent_builder.compiler import CompiledFlow
+from langgraph_agent_builder.runtime.streams import EventBus
+from langgraph_agent_builder.schema.diagnostics import RuntimeError_, RuntimeErrorCode
+from langgraph_agent_builder.schema.events import RunEvent
+from langgraph_agent_builder.schema.scrub import scrub_data
+from langgraph_agent_builder.schema.state import initial_state
+from langgraph_agent_builder.sdk.component import NodeKind
+from langgraph_agent_builder.sdk.ports import Message
+from langgraph_agent_builder.sdk.runtime import RUN_CTX_KEY, RunContext
+from langgraph_agent_builder.sdk.templating import message_text
 
-logger = logging.getLogger("lga.executor")
+logger = logging.getLogger("lab.executor")
 
 StatusHook = Callable[..., Awaitable[None]]
 
@@ -115,7 +115,7 @@ class Executor:
         bus: EventBus | None = None,
         on_status: StatusHook | None = None,
         recursion_limit_default: int = 50,
-        preview_length: int = 300,  # LGA_MAX_TEXT_LENGTH
+        preview_length: int = 300,  # LAB_MAX_TEXT_LENGTH
     ) -> None:
         self._get_checkpointer = checkpointer_getter
         self._bus = bus
@@ -278,7 +278,7 @@ class Executor:
         node_error_emitted = False
         try:
             if until_node is not None:
-                from lga.compiler.subgraph import induce_subgraph
+                from langgraph_agent_builder.compiler.subgraph import induce_subgraph
 
                 compiled = induce_subgraph(compiled, until_node)
             checkpointer = await self._get_checkpointer()
@@ -638,7 +638,7 @@ async def arun_flow(
     tweaks: dict[str, dict[str, Any]] | None = None,
 ) -> RunResult:
     """Headless execution of a FlowSpec (SPEC §2.7)."""
-    from lga.compiler import compile_flow
+    from langgraph_agent_builder.compiler import compile_flow
 
     compiled = (
         source

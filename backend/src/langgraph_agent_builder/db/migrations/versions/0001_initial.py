@@ -7,7 +7,7 @@ Create Date: 2026-07-05
 
 from alembic import op
 
-from lga.db.models import Base
+from langgraph_agent_builder.db.models import Base
 
 revision = "0001"
 down_revision = None

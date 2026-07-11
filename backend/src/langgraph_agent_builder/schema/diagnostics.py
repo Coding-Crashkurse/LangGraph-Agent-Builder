@@ -6,7 +6,7 @@ from enum import StrEnum
 
 from pydantic import BaseModel
 
-from lga.errors import LgaError
+from langgraph_agent_builder.errors import LabError
 
 
 class Severity(StrEnum):
@@ -125,7 +125,7 @@ class RuntimeErrorCode(StrEnum):
     RT107 = "RT107"  # VectorStoreError(backend, detail)
 
 
-class RuntimeError_(LgaError):
+class RuntimeError_(LabError):
     """Runtime error with a normative RT code and node attribution."""
 
     def __init__(self, code: RuntimeErrorCode, message: str, node_id: str | None = None) -> None:

@@ -1,6 +1,6 @@
 """Provider-agnostic model resolution — SPEC §1.5-5.
 
-Covers ``lga.components.llm._models``: keyless ``fake``/``echo`` providers that
+Covers ``langgraph_agent_builder.components.llm._models``: keyless ``fake``/``echo`` providers that
 keep flows testable, the shorthand/dict/invalid parsing of model values, the
 ``ValueError`` for unknown providers, and ``ProviderNotInstalledError`` when an
 optional provider extra is missing (simulated by shadowing its import).
@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING
 import pytest
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from lga.components.llm._models import (
+from langgraph_agent_builder.components.llm._models import (
     ProviderNotInstalledError,
     parse_model_value,
     resolve_embeddings,
@@ -136,16 +136,16 @@ def test_resolve_model_ollama_not_installed_raises() -> None:
 
 
 def test_provider_not_installed_error_is_runtime_error() -> None:
-    from lga.errors import LgaRuntimeError
+    from langgraph_agent_builder.errors import LabRuntimeError
 
     err = ProviderNotInstalledError("openai", "openai")
-    assert isinstance(err, LgaRuntimeError)
+    assert isinstance(err, LabRuntimeError)
     assert "not installed" in str(err)
 
 
 # --------------------------------------------------------------- port secrets
 def test_stash_port_secret_round_trip() -> None:
-    from lga.components.llm._models import stash_port_secret
+    from langgraph_agent_builder.components.llm._models import stash_port_secret
 
     ref = stash_port_secret("flow:node:api_key", "sk-not-a-real-key")
     assert ref == {"$port_secret": "flow:node:api_key"}
@@ -155,9 +155,9 @@ def test_stash_port_secret_round_trip() -> None:
 
 
 def test_unknown_port_secret_ref_raises_clear_error() -> None:
-    from lga.errors import LgaRuntimeError
+    from langgraph_agent_builder.errors import LabRuntimeError
 
-    with pytest.raises(LgaRuntimeError, match="not available in this process"):
+    with pytest.raises(LabRuntimeError, match="not available in this process"):
         resolve_model({"provider": "fake", "api_key": {"$port_secret": "gone:after:restart"}})
 
 

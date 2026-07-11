@@ -7,10 +7,10 @@ import type { ComponentDescriptor, RunEvent } from "@/api/types";
 import type { CanvasEdge, CanvasNode } from "./convert";
 import { useBuilder } from "./store";
 
-function node(id: string, componentId = "lga.testing.fake_llm"): CanvasNode {
+function node(id: string, componentId = "lab.testing.fake_llm"): CanvasNode {
   return {
     id,
-    type: "lga",
+    type: "lab",
     deletable: id !== "start" && id !== "end",
     position: { x: 0, y: 0 },
     data: {
@@ -31,7 +31,7 @@ function edge(id: string, source: string, target: string, kind: "data" | "tool" 
     target,
     targetHandle: "input",
     data: { kind },
-    type: "lga",
+    type: "lab",
   };
 }
 
@@ -40,7 +40,7 @@ function runEvent(event: string, data: Record<string, unknown> = {}): RunEvent {
 }
 
 const FAKE_LLM = {
-  component_id: "lga.testing.fake_llm",
+  component_id: "lab.testing.fake_llm",
   version: "1.0.0",
   category: "testing",
   node_kind: "task",
@@ -53,7 +53,7 @@ const FAKE_LLM = {
     {
       name: "message",
       display_name: "Message",
-      port: { schema_ref: "lga:Message", json_schema: {}, family: "MESSAGE", is_list: false },
+      port: { schema_ref: "lab:Message", json_schema: {}, family: "MESSAGE", is_list: false },
       method: null,
       group: null,
     },
@@ -137,7 +137,7 @@ describe("node actions (§11.2 kebab menu)", () => {
     original.data.config = { api_key: "sk-secret", replies: "hi" };
     useBuilder.setState({
       nodes: [original],
-      descriptors: new Map([["lga.testing.fake_llm", FAKE_LLM]]),
+      descriptors: new Map([["lab.testing.fake_llm", FAKE_LLM]]),
     });
     const id = useBuilder.getState().duplicateNode("fake_llm_1");
     expect(id).toBe("fake_llm_2");
@@ -188,7 +188,7 @@ describe("edge family stamping (§11.3)", () => {
   it("addEdge resolves the source port family from the descriptor", () => {
     useBuilder.setState({
       nodes: [node("fake_llm_1")],
-      descriptors: new Map([["lga.testing.fake_llm", FAKE_LLM]]),
+      descriptors: new Map([["lab.testing.fake_llm", FAKE_LLM]]),
     });
     useBuilder.getState().addEdge(edge("e1", "fake_llm_1", "end"));
     expect(useBuilder.getState().edges[0].data?.family).toBe("MESSAGE");

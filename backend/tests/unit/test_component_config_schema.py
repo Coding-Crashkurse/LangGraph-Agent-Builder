@@ -6,11 +6,11 @@ from __future__ import annotations
 import jsonschema  # type: ignore[import-untyped]  # no stubs installed for jsonschema
 import pytest
 
-from lga.sdk.registry import get_registry
+from langgraph_agent_builder.sdk.registry import get_registry
 
 
 def test_tool_capable_schema_accepts_implicit_fields() -> None:
-    calculator = get_registry().get("lga.tools.calculator")
+    calculator = get_registry().get("lab.tools.calculator")
     assert calculator is not None
     assert calculator.tool_mode_supported
     schema = calculator.config_schema()
@@ -28,7 +28,7 @@ def test_tool_capable_schema_accepts_implicit_fields() -> None:
 
 
 def test_non_tool_component_schema_rejects_tool_fields() -> None:
-    start = get_registry().get("lga.io.start")
+    start = get_registry().get("lab.io.start")
     assert start is not None
     assert not start.tool_mode_supported
     schema = start.config_schema()
@@ -38,7 +38,7 @@ def test_non_tool_component_schema_rejects_tool_fields() -> None:
 
 
 def test_implicit_fields_derived_from_one_source() -> None:
-    calculator = get_registry().get("lga.tools.calculator")
+    calculator = get_registry().get("lab.tools.calculator")
     assert calculator is not None
     names = [f.name for f in calculator._implicit_field_objects()]
     assert names == ["tool_mode", "tool_name", "tool_description"]

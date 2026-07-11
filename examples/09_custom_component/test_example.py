@@ -8,14 +8,14 @@ HERE = Path(__file__).parent
 
 
 def _registry():
-    import lga_ticket_triage
+    import lab_ticket_triage
 
-    from lga.sdk.registry import ComponentRegistry, get_registry
+    from langgraph_agent_builder.sdk.registry import ComponentRegistry, get_registry
 
     registry = ComponentRegistry()
     for cls in get_registry().components.values():
         registry.register(cls, "builtin")
-    registry._register_module(lga_ticket_triage, "example-09")
+    registry._register_module(lab_ticket_triage, "example-09")
     return registry
 
 
@@ -24,13 +24,13 @@ def _spec(edges):
         "schema_version": "1",
         "flow": {"name": "triage", "slug": "triage", "description": "x"},
         "nodes": [
-            {"id": "start", "component_id": "lga.io.start", "component_version": "1.0.0",
+            {"id": "start", "component_id": "lab.io.start", "component_version": "1.0.0",
              "config": {}, "position": {"x": 0, "y": 0}},
             {"id": "parse", "component_id": "ticket_triage.data.ticket_parser",
              "component_version": "1.0.0", "config": {}, "position": {"x": 0, "y": 0}},
             {"id": "summary", "component_id": "ticket_triage.data.ticket_summary",
              "component_version": "1.0.0", "config": {}, "position": {"x": 0, "y": 0}},
-            {"id": "end", "component_id": "lga.io.end", "component_version": "1.0.0",
+            {"id": "end", "component_id": "lab.io.end", "component_version": "1.0.0",
              "config": {}, "position": {"x": 0, "y": 0}},
         ],
         "edges": edges,
@@ -50,8 +50,8 @@ GOOD_EDGES = [
 def test_custom_components_register_and_run():
     import asyncio
 
-    from lga.compiler import compile_flow
-    from lga.runtime.executor import run_compiled_once
+    from langgraph_agent_builder.compiler import compile_flow
+    from langgraph_agent_builder.runtime.executor import run_compiled_once
 
     compiled = compile_flow(_spec(GOOD_EDGES), registry=_registry(), use_cache=False)
     errors = [d for d in compiled.diagnostics if d.severity == "error"]
@@ -63,8 +63,8 @@ def test_custom_components_register_and_run():
 
 
 def test_e020_names_both_custom_schema_refs():
-    from lga.compiler import compile_flow
-    from lga.schema.diagnostics import DiagnosticCode
+    from langgraph_agent_builder.compiler import compile_flow
+    from langgraph_agent_builder.schema.diagnostics import DiagnosticCode
 
     bad = [
         GOOD_EDGES[0],
@@ -75,4 +75,4 @@ def test_e020_names_both_custom_schema_refs():
     compiled = compile_flow(_spec(bad), registry=_registry(), use_cache=False)
     diag = next(d for d in compiled.diagnostics if d.code == DiagnosticCode.E020)
     assert "ticket_triage:TicketBatch" in diag.message
-    assert "lga:Message" in diag.message
+    assert "lab:Message" in diag.message

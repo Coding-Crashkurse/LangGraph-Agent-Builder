@@ -5,8 +5,8 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import Any
 
-from lga.sdk.component import BuildContext, InputBinding
-from lga.sdk.ports import ToolDef
+from langgraph_agent_builder.sdk.component import BuildContext, InputBinding
+from langgraph_agent_builder.sdk.ports import ToolDef
 
 
 def as_langchain_tools(defs: list[ToolDef]) -> list[Any]:
@@ -72,7 +72,7 @@ def node_as_tool(node_ir: Any, ctx: BuildContext) -> ToolDef:
 def _stringify(value: Any) -> str:
     import json
 
-    from lga.sdk.ports import Message
+    from langgraph_agent_builder.sdk.ports import Message
 
     if isinstance(value, Message):
         return value.content

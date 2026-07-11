@@ -12,19 +12,19 @@ from a2a.server.events import EventQueue
 from a2a.server.tasks import TaskUpdater
 from a2a.types import TaskState, TaskStatusUpdateEvent
 
-from lga.a2a.executor import LGAAgentExecutor, _A2ASink
-from lga.a2a.push import (
+from langgraph_agent_builder.a2a.executor import LabAgentExecutor, _A2ASink
+from langgraph_agent_builder.a2a.push import (
     DbPushConfigStore,
     GuardedPushSender,
     PinnedWebhook,
     SsrfError,
     resolve_and_pin_webhook,
 )
-from lga.a2a.tasks import ALLOWED_TRANSITIONS, FINAL_STATES, TERMINAL_STATES
-from lga.runtime.executor import RunResult
+from langgraph_agent_builder.a2a.tasks import ALLOWED_TRANSITIONS, FINAL_STATES, TERMINAL_STATES
+from langgraph_agent_builder.runtime.executor import RunResult
 
 if TYPE_CHECKING:
-    from lga.services.settings import Settings
+    from langgraph_agent_builder.services.settings import Settings
 
 
 # ------------------------------------------------------------ state sets (§7.6)
@@ -100,7 +100,7 @@ async def test_resolve_and_pin_connects_to_validated_address(
         assert host == "hook.example"
         return ["93.184.216.34"]
 
-    monkeypatch.setattr("lga.a2a.push._resolve", fake_resolve)
+    monkeypatch.setattr("langgraph_agent_builder.a2a.push._resolve", fake_resolve)
     pinned = await resolve_and_pin_webhook("https://hook.example/cb?x=1", sqlite_settings)
     assert pinned == PinnedWebhook(
         url="https://93.184.216.34/cb?x=1",
@@ -128,7 +128,7 @@ async def test_delivery_uses_pinned_address(
     async def fake_resolve(host: str, port: int | None) -> list[str]:
         return ["93.184.216.34"]
 
-    monkeypatch.setattr("lga.a2a.push._resolve", fake_resolve)
+    monkeypatch.setattr("langgraph_agent_builder.a2a.push._resolve", fake_resolve)
 
     class _StubStore:
         async def get_info(self, task_id: str) -> Any:
@@ -170,7 +170,7 @@ async def test_failed_result_carries_machine_readable_rt_code() -> None:
         error_code="RT002",
         error_message="node exploded",
     )
-    await LGAAgentExecutor._emit_terminal(result, updater, sink)
+    await LabAgentExecutor._emit_terminal(result, updater, sink)
     event = await queue.dequeue_event(no_wait=True)
     assert isinstance(event, TaskStatusUpdateEvent)
     assert event.status.state is TaskState.failed

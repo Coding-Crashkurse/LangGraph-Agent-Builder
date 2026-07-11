@@ -1,4 +1,4 @@
-"""Unit tests for lga.components.tools.mcp_toolset.
+"""Unit tests for langgraph_agent_builder.components.tools.mcp_toolset.
 
 `_connection_from_config` is pure; `load_mcp_tools` / provide_tools / health_check
 are exercised with an in-repo fake MCP client substituted for the real one.
@@ -10,12 +10,12 @@ from typing import Any
 
 import pytest
 
-from lga.components.tools.mcp_toolset import (
+from langgraph_agent_builder.components.tools.mcp_toolset import (
     MCPToolset,
     _connection_from_config,
     load_mcp_tools,
 )
-from lga.sdk.testing import ComponentTestHarness
+from langgraph_agent_builder.sdk.testing import ComponentTestHarness
 
 # ------------------------------------------------------------------- _connection_from_config
 
@@ -49,7 +49,7 @@ def test_connection_unknown_transport_defaults_to_stdio() -> None:
 
 
 def test_connection_header_forwarding_injects_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("LGA_FWD_API_KEY", "secret123")
+    monkeypatch.setenv("LAB_FWD_API_KEY", "secret123")
     conn = _connection_from_config(
         {"transport": "streamable_http", "url": "http://x", "header_forwarding": True}
     )
@@ -59,7 +59,7 @@ def test_connection_header_forwarding_injects_api_key(monkeypatch: pytest.Monkey
 def test_connection_header_forwarding_keeps_explicit_header(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("LGA_FWD_API_KEY", "secret123")
+    monkeypatch.setenv("LAB_FWD_API_KEY", "secret123")
     conn = _connection_from_config(
         {
             "transport": "streamable_http",
@@ -79,7 +79,7 @@ def test_connection_header_forwarding_off_without_env() -> None:
 def test_connection_header_forwarding_on_but_no_credential(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.delenv("LGA_FWD_API_KEY", raising=False)
+    monkeypatch.delenv("LAB_FWD_API_KEY", raising=False)
     conn = _connection_from_config(
         {"transport": "streamable_http", "url": "http://x", "header_forwarding": True}
     )

@@ -11,17 +11,17 @@ from typing import Any
 
 from ulid import ULID
 
-from lga.compiler import CompiledFlow, compile_flow
-from lga.db.models import FlowRow
-from lga.errors import LgaRuntimeError
-from lga.runtime.executor import Executor, RunHandle, RunResult
-from lga.schema.diagnostics import Diagnostic
-from lga.schema.flowspec import FlowSpec, parse_flowspec
-from lga.sdk.component import SecretsResolver
-from lga.sdk.registry import ComponentRegistry
-from lga.services.runs import RunService
-from lga.services.secrets import SecretsService, SnapshotVariablesProvider
-from lga.services.settings import Settings
+from langgraph_agent_builder.compiler import CompiledFlow, compile_flow
+from langgraph_agent_builder.db.models import FlowRow
+from langgraph_agent_builder.errors import LabRuntimeError
+from langgraph_agent_builder.runtime.executor import Executor, RunHandle, RunResult
+from langgraph_agent_builder.schema.diagnostics import Diagnostic
+from langgraph_agent_builder.schema.flowspec import FlowSpec, parse_flowspec
+from langgraph_agent_builder.sdk.component import SecretsResolver
+from langgraph_agent_builder.sdk.registry import ComponentRegistry
+from langgraph_agent_builder.services.runs import RunService
+from langgraph_agent_builder.services.secrets import SecretsService, SnapshotVariablesProvider
+from langgraph_agent_builder.services.settings import Settings
 
 
 def scoped_thread_id(scope: str, context_id: str) -> str:
@@ -98,8 +98,8 @@ class Orchestrator:
         return diags, (compiled if compiled.ok else None)
 
     async def _deep_checks(self, compiled: CompiledFlow) -> list[Diagnostic]:
-        from lga.schema.diagnostics import DiagnosticCode
-        from lga.vectorstores.base import (
+        from langgraph_agent_builder.schema.diagnostics import DiagnosticCode
+        from langgraph_agent_builder.vectorstores.base import (
             BackendExtraMissing,
             CollectionMissing,
             DimensionMismatch,
@@ -221,7 +221,7 @@ class Orchestrator:
     async def _spec_for_run(self, run: Any) -> tuple[dict[str, Any], FlowRow | None]:
         from sqlalchemy import select
 
-        from lga.db.models import FlowVersionRow
+        from langgraph_agent_builder.db.models import FlowVersionRow
 
         async with self.runs.session() as session:  # same sessionmaker as run rows
             if run.flow_version_id:
@@ -269,7 +269,7 @@ class Orchestrator:
         await graph.aupdate_state({"configurable": {"thread_id": thread_id}}, values)
 
 
-class FlowNotRunnableError(LgaRuntimeError):
+class FlowNotRunnableError(LabRuntimeError):
     def __init__(self, message: str, diagnostics: list[Diagnostic]) -> None:
         super().__init__(message)
         self.diagnostics = diagnostics

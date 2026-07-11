@@ -1,6 +1,6 @@
 """P5 emit: IR → LangGraph StateGraph (SPEC §5.3-P5).
 
-Interprets the shared graph plan (``lga.compiler.plan``); component ``build()``
+Interprets the shared graph plan (``langgraph_agent_builder.compiler.plan``); component ``build()``
 failures become E015 diagnostics instead of escaping the pipeline (§5.4).
 """
 
@@ -15,17 +15,22 @@ from typing import Any, cast
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, START, StateGraph
 
-from lga.compiler import plan as plan_pass
-from lga.compiler.ir import FlowIR
+from langgraph_agent_builder.compiler import plan as plan_pass
+from langgraph_agent_builder.compiler.ir import FlowIR
 
 # re-exported for backwards compatibility (they lived here before plan.py)
-from lga.compiler.plan import is_router_like, pure_tool_providers
-from lga.schema.diagnostics import Diagnostic, DiagnosticCode, RuntimeError_, RuntimeErrorCode
-from lga.schema.state import FlowState
-from lga.sdk.component import BuildContext, Component, NodeFn
-from lga.sdk.outputs import Output
-from lga.sdk.ports import PortFamily
-from lga.sdk.runtime import current_node_id, stream_write
+from langgraph_agent_builder.compiler.plan import is_router_like, pure_tool_providers
+from langgraph_agent_builder.schema.diagnostics import (
+    Diagnostic,
+    DiagnosticCode,
+    RuntimeError_,
+    RuntimeErrorCode,
+)
+from langgraph_agent_builder.schema.state import FlowState
+from langgraph_agent_builder.sdk.component import BuildContext, Component, NodeFn
+from langgraph_agent_builder.sdk.outputs import Output
+from langgraph_agent_builder.sdk.ports import PortFamily
+from langgraph_agent_builder.sdk.runtime import current_node_id, stream_write
 
 __all__ = [
     "emit",

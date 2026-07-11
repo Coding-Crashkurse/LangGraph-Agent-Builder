@@ -1,4 +1,4 @@
-"""Unit tests for lga.components.data.converters.
+"""Unit tests for langgraph_agent_builder.components.data.converters.
 
 PromptTemplate, TypeConvert (all conversion branches + dynamic ports/outputs),
 JsonExtract (single/multi/scalar), Parser (regex named/unnamed/no-match, split).
@@ -8,15 +8,15 @@ from __future__ import annotations
 
 import json
 
-from lga.components.data.converters import (
+from langgraph_agent_builder.components.data.converters import (
     CONVERSIONS,
     JsonExtract,
     Parser,
     PromptTemplate,
     TypeConvert,
 )
-from lga.sdk.ports import Document, Message
-from lga.sdk.testing import ComponentTestHarness
+from langgraph_agent_builder.sdk.ports import Document, Message
+from langgraph_agent_builder.sdk.testing import ComponentTestHarness
 
 # --------------------------------------------------------------------------- PromptTemplate
 

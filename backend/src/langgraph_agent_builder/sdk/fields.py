@@ -11,7 +11,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, model_validator
 from pydantic import Field as PydField
 
-from lga.sdk.ports import PortSpec
+from langgraph_agent_builder.sdk.ports import PortSpec
 
 
 class Option(BaseModel):
@@ -353,7 +353,7 @@ class ToolsInput(Field):
     @model_validator(mode="after")
     def _tool_port(self) -> ToolsInput:
         if self.as_port is None:
-            from lga.sdk.ports import TOOLSET_LIST
+            from langgraph_agent_builder.sdk.ports import TOOLSET_LIST
 
             self.as_port = TOOLSET_LIST
         return self

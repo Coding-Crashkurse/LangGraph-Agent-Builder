@@ -1,13 +1,13 @@
 """Integration tier (SPEC §4.10): the vector store abstraction against *live*
 vendor servers. Everything here is opt-in — a test runs only when its
-``LGA_TEST_<BACKEND>_URL`` env var points at a reachable server (docker
+``LAB_TEST_<BACKEND>_URL`` env var points at a reachable server (docker
 compose / testcontainers in the separate CI job), so the default SQLite-tier
 run stays green with zero servers and zero extras.
 
 The full cross-backend behaviour matrix lives in
 ``tests/contract/test_vectorstore_contract.py`` (which already covers qdrant
 in-process, chroma embedded, pgvector on :55432 and weaviate via
-``LGA_TEST_WEAVIATE_URL``); these smoke tests only pin the *server* connection
+``LAB_TEST_WEAVIATE_URL``); these smoke tests only pin the *server* connection
 paths the contract suite cannot reach without one (url/api_key params).
 """
 
@@ -18,14 +18,14 @@ import os
 
 import pytest
 
-from lga.sdk.ports import Document
-from lga.vectorstores import build_provider
+from langgraph_agent_builder.sdk.ports import Document
+from langgraph_agent_builder.vectorstores import build_provider
 
 pytestmark = pytest.mark.integration
 
 DIM = 8
-QDRANT_URL = os.environ.get("LGA_TEST_QDRANT_URL")
-CHROMA_URL = os.environ.get("LGA_TEST_CHROMA_URL")
+QDRANT_URL = os.environ.get("LAB_TEST_QDRANT_URL")
+CHROMA_URL = os.environ.get("LAB_TEST_CHROMA_URL")
 
 
 def _installed(module: str) -> bool:
@@ -34,7 +34,7 @@ def _installed(module: str) -> bool:
 
 @pytest.mark.skipif(
     not (QDRANT_URL and _installed("qdrant_client")),
-    reason="set LGA_TEST_QDRANT_URL (and install the qdrant extra)",
+    reason="set LAB_TEST_QDRANT_URL (and install the qdrant extra)",
 )
 async def test_qdrant_server_round_trip() -> None:
     provider = build_provider("qdrant", "it", {"url": QDRANT_URL})
@@ -53,7 +53,7 @@ async def test_qdrant_server_round_trip() -> None:
 
 @pytest.mark.skipif(
     not (CHROMA_URL and _installed("chromadb")),
-    reason="set LGA_TEST_CHROMA_URL (and install the chroma extra)",
+    reason="set LAB_TEST_CHROMA_URL (and install the chroma extra)",
 )
 async def test_chroma_http_round_trip() -> None:
     from urllib.parse import urlsplit

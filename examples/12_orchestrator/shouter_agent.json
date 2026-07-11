@@ -11,11 +11,11 @@
     }
   },
   "nodes": [
-    { "id": "start", "component_id": "lga.io.start", "component_version": "1.0.0",
+    { "id": "start", "component_id": "lab.io.start", "component_version": "1.0.0",
       "config": {}, "position": { "x": 0, "y": 120 } },
-    { "id": "shout", "component_id": "lga.testing.echo_llm", "component_version": "1.0.0",
+    { "id": "shout", "component_id": "lab.testing.echo_llm", "component_version": "1.0.0",
       "config": { "uppercase": true }, "position": { "x": 300, "y": 120 } },
-    { "id": "end", "component_id": "lga.io.end", "component_version": "1.0.0",
+    { "id": "end", "component_id": "lab.io.end", "component_version": "1.0.0",
       "config": {}, "position": { "x": 600, "y": 120 } }
   ],
   "edges": [

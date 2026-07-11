@@ -67,7 +67,7 @@ function makeDescriptor(
 function makeNode(id: string, componentId: string): CanvasNode {
   return {
     id,
-    type: "lga",
+    type: "lab",
     position: { x: 0, y: 0 },
     data: { componentId, componentVersion: "1.0.0", label: "", config: {}, notes: "" },
   };

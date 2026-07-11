@@ -1,7 +1,7 @@
 """Seed the `library-docs` pgvector collection. requires: [openai, postgres]
 
 Usage:
-    LGA_DATABASE_URL=postgresql+asyncpg://… OPENAI_API_KEY=sk-… python seed.py
+    LAB_DATABASE_URL=postgresql+asyncpg://… OPENAI_API_KEY=sk-… python seed.py
 """
 
 from __future__ import annotations
@@ -24,12 +24,12 @@ DOCS = [
 async def main() -> None:
     from langchain_core.documents import Document
 
-    from lga.components.rag._store import get_vector_store
-    from lga.services.settings import get_settings
+    from langgraph_agent_builder.components.rag._store import get_vector_store
+    from langgraph_agent_builder.services.settings import get_settings
 
     settings = get_settings()
     if not settings.is_postgres:
-        sys.exit("seed.py requires LGA_DATABASE_URL pointing at Postgres (pgvector)")
+        sys.exit("seed.py requires LAB_DATABASE_URL pointing at Postgres (pgvector)")
     store = get_vector_store(
         settings, "library-docs", {"provider": "openai", "model": "text-embedding-3-small"}
     )

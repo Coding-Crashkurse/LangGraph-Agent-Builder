@@ -5,7 +5,7 @@ from __future__ import annotations
 import copy
 from typing import Any
 
-from lga.services.bootstrap import STARTER_FLOWS
+from langgraph_agent_builder.services.bootstrap import STARTER_FLOWS
 
 
 def _template_id(spec: dict[str, Any]) -> str:

@@ -134,8 +134,8 @@ function VariablesSection() {
             Reference in node configs as{" "}
             <code className="font-mono text-text-2">{'{"$var": "name"}'}</code> /{" "}
             <code className="font-mono text-text-2">{'{"$secret": "name"}'}</code>. Credentials
-            are Fernet-encrypted and never readable through the API. Env promotion: LGA_VAR_* /
-            LGA_CRED_*.
+            are Fernet-encrypted and never readable through the API. Env promotion: LAB_VAR_* /
+            LAB_CRED_*.
           </>
         }
       />

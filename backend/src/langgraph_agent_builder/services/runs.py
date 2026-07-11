@@ -11,8 +11,8 @@ from typing import Any, cast
 from sqlalchemy import CursorResult, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from lga.db.models import RunEventRow, RunRow
-from lga.schema.events import RunEvent
+from langgraph_agent_builder.db.models import RunEventRow, RunRow
+from langgraph_agent_builder.schema.events import RunEvent
 
 TERMINAL_STATUSES = ("completed", "failed", "cancelled")
 EVENT_TTL_DAYS = 7

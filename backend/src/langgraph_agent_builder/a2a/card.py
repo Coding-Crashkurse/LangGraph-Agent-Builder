@@ -13,8 +13,8 @@ from a2a.types import (
     TransportProtocol,
 )
 
-from lga.schema.flowspec import FlowSpec
-from lga.services.settings import Settings
+from langgraph_agent_builder.schema.flowspec import FlowSpec
+from langgraph_agent_builder.services.settings import Settings
 
 WELL_KNOWN_PATH = "/.well-known/agent-card.json"
 LEGACY_WELL_KNOWN_PATH = "/.well-known/agent.json"

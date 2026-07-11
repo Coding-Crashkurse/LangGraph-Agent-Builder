@@ -34,7 +34,7 @@ node_modules/
 *.db
 *.sqlite
 *.sqlite3
-.lga/
+.langgraph-agent-builder/
 
 # ---------------------------------------------------------------- OS / editor
 .DS_Store
@@ -44,7 +44,7 @@ Thumbs.db
 
 # ---------------------------------------------------------------- Build output
 # Frontend bundle is generated into the wheel at build time (SPEC §2.2), never committed.
-backend/src/lga/_static/
+backend/src/langgraph_agent_builder/_static/
 
 # ---------------------------------------------------------------- Internal working docs
 # Kept local, OUT of the published repo. SPEC.md stays the authoritative spec for

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from lga.sdk.component import (
+from langgraph_agent_builder.sdk.component import (
     BuildContext,
     Component,
     InputBinding,
@@ -12,7 +12,7 @@ from lga.sdk.component import (
     NodeFn,
     SecretsResolver,
 )
-from lga.sdk.ports import ToolDef
+from langgraph_agent_builder.sdk.ports import ToolDef
 
 
 class BuiltNode:
@@ -74,8 +74,8 @@ class ComponentTestHarness:
         `upstream` maps the node's input names to literal values injected via a
         Set Data-style shim; catches wiring bugs the stub context cannot.
         """
-        from lga.compiler import compile_flow
-        from lga.runtime.executor import run_compiled_once
+        from langgraph_agent_builder.compiler import compile_flow
+        from langgraph_agent_builder.runtime.executor import run_compiled_once
 
         node_cfg = dict(config or {})
         spec: dict[str, Any] = {
@@ -84,7 +84,7 @@ class ComponentTestHarness:
             "nodes": [
                 {
                     "id": "start",
-                    "component_id": "lga.io.start",
+                    "component_id": "lab.io.start",
                     "component_version": "1.0.0",
                     "config": {},
                     "position": {"x": 0, "y": 0},
@@ -98,7 +98,7 @@ class ComponentTestHarness:
                 },
                 {
                     "id": "end",
-                    "component_id": "lga.io.end",
+                    "component_id": "lab.io.end",
                     "component_version": "1.0.0",
                     "config": {},
                     "position": {"x": 600, "y": 0},

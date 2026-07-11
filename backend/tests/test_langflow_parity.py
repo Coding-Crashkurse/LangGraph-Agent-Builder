@@ -17,8 +17,8 @@ if TYPE_CHECKING:
 
     from fastapi import FastAPI
 
-    from lga.app import AppServices
-    from lga.services.settings import Settings
+    from langgraph_agent_builder.app import AppServices
+    from langgraph_agent_builder.services.settings import Settings
 
 
 @asynccontextmanager
@@ -26,8 +26,8 @@ async def boot_app(
     settings: Settings,
 ) -> AsyncIterator[tuple[FastAPI, httpx.AsyncClient]]:
     """App + lifespan on a dedicated task (same pattern as the conftest fixture)."""
-    from lga.app import create_app
-    from lga.db.migrate import upgrade_async
+    from langgraph_agent_builder.app import create_app
+    from langgraph_agent_builder.db.migrate import upgrade_async
 
     await upgrade_async(settings)
     application = create_app(settings, backend_only=True)
@@ -65,9 +65,9 @@ async def boot_app(
 
 
 def _settings(tmp_path: Path, **kwargs: Any) -> Settings:
-    from lga.services.settings import Settings
+    from langgraph_agent_builder.services.settings import Settings
 
-    settings = Settings(home=tmp_path / "lga-home", env="test", **kwargs)
+    settings = Settings(home=tmp_path / "lab-home", env="test", **kwargs)
     settings.ensure_dirs()
     return settings
 
@@ -141,10 +141,10 @@ async def test_load_flows_overwrite_flag(tmp_path: Path) -> None:
 # ---------------------------------------------------------------- priority (§18.2)
 async def test_priority_in_descriptor(client: httpx.AsyncClient) -> None:
     components = (await client.get("/api/v1/components")).json()
-    start = next(c for c in components if c["component_id"] == "lga.io.start")
+    start = next(c for c in components if c["component_id"] == "lab.io.start")
     assert start["priority"] == 0
-    call = next(c for c in components if c["component_id"] == "lga.llm.llm_call")
-    agent = next(c for c in components if c["component_id"] == "lga.llm.llm_agent")
+    call = next(c for c in components if c["component_id"] == "lab.llm.llm_call")
+    agent = next(c for c in components if c["component_id"] == "lab.llm.llm_agent")
     assert call["priority"] < agent["priority"]
 
 

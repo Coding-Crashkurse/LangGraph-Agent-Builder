@@ -1,15 +1,15 @@
-"""Unit tests for lga.runtime.tools (ToolDef ⇄ LangChain, node-as-tool §4.7)."""
+"""Unit tests for langgraph_agent_builder.runtime.tools (ToolDef ⇄ LangChain, node-as-tool §4.7)."""
 
 from __future__ import annotations
 
 from types import SimpleNamespace
 from typing import Any
 
-from lga.runtime.tools import _stringify, as_langchain_tools, node_as_tool
-from lga.sdk import fields, ports
-from lga.sdk.component import BuildContext, Component
-from lga.sdk.outputs import Output
-from lga.sdk.ports import Message, ToolDef
+from langgraph_agent_builder.runtime.tools import _stringify, as_langchain_tools, node_as_tool
+from langgraph_agent_builder.sdk import fields, ports
+from langgraph_agent_builder.sdk.component import BuildContext, Component
+from langgraph_agent_builder.sdk.outputs import Output
+from langgraph_agent_builder.sdk.ports import Message, ToolDef
 
 # --------------------------------------------------------------------------- helpers
 

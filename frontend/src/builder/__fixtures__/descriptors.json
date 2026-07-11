@@ -1,6 +1,6 @@
 ﻿{
     "start":  {
-                  "component_id":  "lga.io.start",
+                  "component_id":  "lab.io.start",
                   "version":  "1.0.0",
                   "display_name":  "Start",
                   "description":  "Flow entry: exposes the inbound chat message and structured input.",
@@ -44,7 +44,7 @@
                                       "name":  "message",
                                       "display_name":  "Message",
                                       "port":  {
-                                                   "schema_ref":  "lga:Message",
+                                                   "schema_ref":  "lab:Message",
                                                    "json_schema":  {
                                                                        "$defs":  {
                                                                                      "FileRef":  {
@@ -140,7 +140,7 @@
                                       "name":  "data",
                                       "display_name":  "Data",
                                       "port":  {
-                                                   "schema_ref":  "lga:Json",
+                                                   "schema_ref":  "lab:Json",
                                                    "json_schema":  {
                                                                        "type":  "object"
                                                                    },
@@ -155,7 +155,7 @@
                                       "name":  "files",
                                       "display_name":  "Files",
                                       "port":  {
-                                                   "schema_ref":  "lga:FileRef",
+                                                   "schema_ref":  "lab:FileRef",
                                                    "json_schema":  {
                                                                        "properties":  {
                                                                                           "file_id":  {
@@ -213,7 +213,7 @@
                                     }
               },
     "prompt_template":  {
-                            "component_id":  "lga.data.prompt_template",
+                            "component_id":  "lab.data.prompt_template",
                             "version":  "1.0.0",
                             "display_name":  "Prompt Template",
                             "description":  "Standalone PromptInput: renders {vars} into Text/Message.",
@@ -256,7 +256,7 @@
                                                 "name":  "text",
                                                 "display_name":  "Text",
                                                 "port":  {
-                                                             "schema_ref":  "lga:Text",
+                                                             "schema_ref":  "lab:Text",
                                                              "json_schema":  {
                                                                                  "type":  "string"
                                                                              },
@@ -271,7 +271,7 @@
                                                 "name":  "message",
                                                 "display_name":  "Message",
                                                 "port":  {
-                                                             "schema_ref":  "lga:Message",
+                                                             "schema_ref":  "lab:Message",
                                                              "json_schema":  {
                                                                                  "$defs":  {
                                                                                                "FileRef":  {

@@ -7,10 +7,10 @@ from typing import Any
 
 from langchain_core.messages import AIMessage, SystemMessage
 
-from lga.sdk import Component, Output, fields, ports
-from lga.sdk.component import BuildContext, NodeFn
-from lga.sdk.runtime import get_run_context
-from lga.sdk.templating import PROMPT_VAR_RE, render_prompt
+from langgraph_agent_builder.sdk import Component, Output, fields, ports
+from langgraph_agent_builder.sdk.component import BuildContext, NodeFn
+from langgraph_agent_builder.sdk.runtime import get_run_context
+from langgraph_agent_builder.sdk.templating import PROMPT_VAR_RE, render_prompt
 
 
 def collect_prompt_values(
@@ -28,7 +28,7 @@ def collect_prompt_values(
 
 
 class LLMCall(Component):
-    component_id = "lga.llm.llm_call"
+    component_id = "lab.llm.llm_call"
     display_name = "LLM Call"
     description = "Single completion, no tools. {vars} in the prompt become input ports."
     icon = "sparkles"
@@ -67,7 +67,11 @@ class LLMCall(Component):
     ]
 
     def build(self, ctx: BuildContext) -> NodeFn:
-        from lga.components.llm._models import parse_json_reply, resolve_model, stream_completion
+        from langgraph_agent_builder.components.llm._models import (
+            parse_json_reply,
+            resolve_model,
+            stream_completion,
+        )
 
         async def node(state: dict[str, Any], config: Any) -> dict[str, Any]:
             rc = get_run_context(config)

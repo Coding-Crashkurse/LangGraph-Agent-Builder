@@ -5,9 +5,9 @@ draft). The flagship feature (SPEC §7.7): a canvas Human Approval node becomes
 a protocol-level A2A `input-required` interaction.
 
 ```bash
-lga run &                            # or: lga run in another terminal
-lga flow import examples/04_hitl_approval_a2a/flow.json
-lga flow publish hitl-approval
+lab run &                            # or: lab run in another terminal
+lab flow import examples/04_hitl_approval_a2a/flow.json
+lab flow publish hitl-approval
 python examples/04_hitl_approval_a2a/client.py
 # task … → input-required
 # agent asks: Release this answer?  options=['approve', 'reject']

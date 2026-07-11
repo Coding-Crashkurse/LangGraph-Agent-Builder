@@ -1,6 +1,6 @@
 """Event bus fan-out and persistence — SPEC §6.2.
 
-Covers ``lga.runtime.streams.EventBus``: monotonic per-run sequencing, live
+Covers ``langgraph_agent_builder.runtime.streams.EventBus``: monotonic per-run sequencing, live
 subscriber delivery + ordering, replay-then-tail with de-duplication,
 end-of-stream signalling (terminal events, ``close_run``), the firehose,
 backpressure drops on a full subscriber queue, the seq floor, and the
@@ -13,8 +13,8 @@ from __future__ import annotations
 import asyncio
 from typing import TYPE_CHECKING
 
-from lga.runtime.streams import EventBus
-from lga.schema.events import RunEvent
+from langgraph_agent_builder.runtime.streams import EventBus
+from langgraph_agent_builder.schema.events import RunEvent
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable

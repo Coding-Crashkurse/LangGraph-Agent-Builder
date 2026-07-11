@@ -7,10 +7,10 @@ from typing import Any
 
 import pytest
 
-from lga.compiler import compile_flow
-from lga.runtime.executor import Executor
-from lga.runtime.streams import EventBus
-from lga.schema.events import RunEvent
+from langgraph_agent_builder.compiler import compile_flow
+from langgraph_agent_builder.runtime.executor import Executor
+from langgraph_agent_builder.runtime.streams import EventBus
+from langgraph_agent_builder.schema.events import RunEvent
 from tests.conftest import approval_spec, hello_spec, slow_spec
 
 
@@ -37,7 +37,7 @@ async def test_run_completes_with_events(mem_executor: tuple[Executor, EventBus]
 
     result = await executor.execute(compiled, input_text="hi", event_sink=sink)
     assert result.status == "completed"
-    assert result.result_text == "Hello from LGA!"
+    assert result.result_text == "Hello from LAB!"
     names = [e.event for e in seen]
     assert names[0] == "run_started"
     assert names[-1] == "run_finished"
@@ -62,21 +62,21 @@ async def test_table_terminal_emits_structured_result(
         "nodes": [
             {
                 "id": "start",
-                "component_id": "lga.io.start",
+                "component_id": "lab.io.start",
                 "component_version": "1.0.0",
                 "config": {},
                 "position": {"x": 0, "y": 0},
             },
             {
                 "id": "fe",
-                "component_id": "lga.data.for_each",
+                "component_id": "lab.data.for_each",
                 "component_version": "1.0.0",
                 "config": {"template": "{{ item }}!"},
                 "position": {"x": 300, "y": 0},
             },
             {
                 "id": "end",
-                "component_id": "lga.io.end",
+                "component_id": "lab.io.end",
                 "component_version": "1.0.0",
                 "config": {},
                 "position": {"x": 600, "y": 0},
@@ -174,7 +174,7 @@ async def test_failing_node_rt103(mem_executor: tuple[Executor, EventBus]) -> No
     spec = hello_spec()
     spec["nodes"][1] = {
         "id": "fake",
-        "component_id": "lga.testing.failing_node",
+        "component_id": "lab.testing.failing_node",
         "component_version": "1.0.0",
         "config": {"error_message": "boom"},
         "position": {"x": 0, "y": 0},
@@ -211,28 +211,28 @@ async def test_recursion_limit_rt105(mem_executor: tuple[Executor, EventBus]) ->
         "nodes": [
             {
                 "id": "start",
-                "component_id": "lga.io.start",
+                "component_id": "lab.io.start",
                 "component_version": "1.0.0",
                 "config": {},
                 "position": {"x": 0, "y": 0},
             },
             {
                 "id": "fake",
-                "component_id": "lga.testing.fake_llm",
+                "component_id": "lab.testing.fake_llm",
                 "component_version": "1.0.0",
                 "config": {"replies": ["again"]},
                 "position": {"x": 0, "y": 0},
             },
             {
                 "id": "loop",
-                "component_id": "lga.flow.loop_until",
+                "component_id": "lab.flow.loop_until",
                 "component_version": "1.0.0",
                 "config": {"max_iterations": 100},
                 "position": {"x": 0, "y": 0},
             },
             {
                 "id": "end",
-                "component_id": "lga.io.end",
+                "component_id": "lab.io.end",
                 "component_version": "1.0.0",
                 "config": {},
                 "position": {"x": 0, "y": 0},
@@ -280,28 +280,28 @@ async def test_loop_until_terminates(mem_executor: tuple[Executor, EventBus]) ->
         "nodes": [
             {
                 "id": "start",
-                "component_id": "lga.io.start",
+                "component_id": "lab.io.start",
                 "component_version": "1.0.0",
                 "config": {},
                 "position": {"x": 0, "y": 0},
             },
             {
                 "id": "fake",
-                "component_id": "lga.testing.fake_llm",
+                "component_id": "lab.testing.fake_llm",
                 "component_version": "1.0.0",
                 "config": {"replies": ["draft", "draft", "APPROVED final"]},
                 "position": {"x": 0, "y": 0},
             },
             {
                 "id": "loop",
-                "component_id": "lga.flow.loop_until",
+                "component_id": "lab.flow.loop_until",
                 "component_version": "1.0.0",
                 "config": {"condition": '"APPROVED" in message', "max_iterations": 10},
                 "position": {"x": 0, "y": 0},
             },
             {
                 "id": "end",
-                "component_id": "lga.io.end",
+                "component_id": "lab.io.end",
                 "component_version": "1.0.0",
                 "config": {},
                 "position": {"x": 0, "y": 0},
@@ -342,10 +342,10 @@ async def test_loop_until_terminates(mem_executor: tuple[Executor, EventBus]) ->
 
 async def test_rt102_invalid_router_label(mem_executor: tuple[Executor, EventBus]) -> None:
     """A router emitting an undeclared label fails fast with RT102."""
-    from lga.sdk import BuildContext, Component, NodeKind, Output, ports
-    from lga.sdk import fields as sdk_fields
-    from lga.sdk.component import NodeFn
-    from lga.sdk.registry import ComponentRegistry, get_registry
+    from langgraph_agent_builder.sdk import BuildContext, Component, NodeKind, Output, ports
+    from langgraph_agent_builder.sdk import fields as sdk_fields
+    from langgraph_agent_builder.sdk.component import NodeFn
+    from langgraph_agent_builder.sdk.registry import ComponentRegistry, get_registry
 
     class BadRouter(Component):
         component_id = "test.flow.bad_router"
@@ -373,7 +373,7 @@ async def test_rt102_invalid_router_label(mem_executor: tuple[Executor, EventBus
         "nodes": [
             {
                 "id": "start",
-                "component_id": "lga.io.start",
+                "component_id": "lab.io.start",
                 "component_version": "1.0.0",
                 "config": {},
                 "position": {"x": 0, "y": 0},
@@ -387,14 +387,14 @@ async def test_rt102_invalid_router_label(mem_executor: tuple[Executor, EventBus
             },
             {
                 "id": "end",
-                "component_id": "lga.io.end",
+                "component_id": "lab.io.end",
                 "component_version": "1.0.0",
                 "config": {},
                 "position": {"x": 0, "y": 0},
             },
             {
                 "id": "end2",
-                "component_id": "lga.io.text_output",
+                "component_id": "lab.io.text_output",
                 "component_version": "1.0.0",
                 "config": {},
                 "position": {"x": 0, "y": 0},
@@ -451,7 +451,7 @@ async def test_token_streaming_events(mem_executor: tuple[Executor, EventBus]) -
 
     result = await executor.execute(compiled, input_text="hi", event_sink=sink)
     assert result.status == "completed"
-    assert "".join(tokens) == "Hello from LGA!"
+    assert "".join(tokens) == "Hello from LAB!"
 
 
 async def test_event_bus_replay_and_live() -> None:
@@ -493,10 +493,10 @@ async def test_event_bus_replay_and_live() -> None:
 
 async def test_rt101_data_write_conflict(mem_executor: tuple[Executor, EventBus]) -> None:
     """Two nodes writing the same data key in one superstep → RT101 (SPEC §5.1/§5.6)."""
-    from lga.sdk import BuildContext, Component, NodeKind, Output, ports
-    from lga.sdk import fields as sdk_fields
-    from lga.sdk.component import NodeFn
-    from lga.sdk.registry import ComponentRegistry, get_registry
+    from langgraph_agent_builder.sdk import BuildContext, Component, NodeKind, Output, ports
+    from langgraph_agent_builder.sdk import fields as sdk_fields
+    from langgraph_agent_builder.sdk.component import NodeFn
+    from langgraph_agent_builder.sdk.registry import ComponentRegistry, get_registry
 
     class DataWriter(Component):
         component_id = "test.data.conflict_writer"
@@ -524,7 +524,7 @@ async def test_rt101_data_write_conflict(mem_executor: tuple[Executor, EventBus]
         "nodes": [
             {
                 "id": "start",
-                "component_id": "lga.io.start",
+                "component_id": "lab.io.start",
                 "component_version": "1.0.0",
                 "config": {},
                 "position": {"x": 0, "y": 0},
@@ -545,14 +545,14 @@ async def test_rt101_data_write_conflict(mem_executor: tuple[Executor, EventBus]
             },
             {
                 "id": "end",
-                "component_id": "lga.io.end",
+                "component_id": "lab.io.end",
                 "component_version": "1.0.0",
                 "config": {},
                 "position": {"x": 0, "y": 0},
             },
             {
                 "id": "end2",
-                "component_id": "lga.io.text_output",
+                "component_id": "lab.io.text_output",
                 "component_version": "1.0.0",
                 "config": {},
                 "position": {"x": 0, "y": 0},
@@ -622,7 +622,7 @@ async def test_debug_step_and_continue(mem_executor: tuple[Executor, EventBus]) 
 
     done = await executor.execute(compiled, thread_id="dbg1", debug_action="continue")
     assert done.status == "completed"
-    assert done.result_text == "Hello from LGA!"
+    assert done.result_text == "Hello from LAB!"
 
 
 async def test_cancel_writes_status_before_run_cancelled_event() -> None:
@@ -697,8 +697,8 @@ async def test_unexpected_exception_fails_run_and_closes_stream() -> None:
 
 
 async def test_harness_run_in_flow() -> None:
-    from lga.components.testing.fake_llm import FakeLLM
-    from lga.sdk.testing import ComponentTestHarness
+    from langgraph_agent_builder.components.testing.fake_llm import FakeLLM
+    from langgraph_agent_builder.sdk.testing import ComponentTestHarness
 
     harness = ComponentTestHarness()
     outcome = await harness.run_in_flow(FakeLLM, config={"replies": ["harnessed"]})
@@ -707,8 +707,8 @@ async def test_harness_run_in_flow() -> None:
 
 
 async def test_harness_build() -> None:
-    from lga.components.tools.basic_tools import Calculator
-    from lga.sdk.testing import ComponentTestHarness
+    from langgraph_agent_builder.components.tools.basic_tools import Calculator
+    from langgraph_agent_builder.sdk.testing import ComponentTestHarness
 
     node = ComponentTestHarness().build(Calculator, config={"expression": "(2+3)*4"})
     result = await node()

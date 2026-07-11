@@ -1,4 +1,4 @@
-"""Unit tests for lga.cli._common — env-file precedence + exit codes (SPEC §2.6)."""
+"""Unit tests for cli._common — env-file precedence + exit codes (SPEC §2.6)."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from lga.cli._common import (
+from langgraph_agent_builder.cli._common import (
     EXIT_USAGE,
     build_settings,
     ensure_selector_policy,
@@ -30,12 +30,12 @@ def test_load_env_files_loads_provided_file(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.chdir(tmp_path)
-    monkeypatch.delenv("LGA_TEST_MARKER_VAR", raising=False)
+    monkeypatch.delenv("LAB_TEST_MARKER_VAR", raising=False)
     env_file = tmp_path / "custom.env"
-    env_file.write_text("LGA_TEST_MARKER_VAR=from_env_file\n", encoding="utf-8")
+    env_file.write_text("LAB_TEST_MARKER_VAR=from_env_file\n", encoding="utf-8")
     load_env_files(env_file)
-    assert os.environ["LGA_TEST_MARKER_VAR"] == "from_env_file"
-    monkeypatch.delenv("LGA_TEST_MARKER_VAR", raising=False)
+    assert os.environ["LAB_TEST_MARKER_VAR"] == "from_env_file"
+    monkeypatch.delenv("LAB_TEST_MARKER_VAR", raising=False)
 
 
 def test_load_env_files_none_does_not_raise(
@@ -49,7 +49,7 @@ def test_build_settings_drops_none_overrides(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.chdir(tmp_path)
-    monkeypatch.delenv("LGA_PORT", raising=False)
+    monkeypatch.delenv("LAB_PORT", raising=False)
     settings = build_settings(env_file=None, host="0.0.0.0", port=None, log_level=None)
     assert settings.host == "0.0.0.0"
     assert settings.port == 8000  # None override dropped → default kept

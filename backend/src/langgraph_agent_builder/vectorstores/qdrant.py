@@ -19,8 +19,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, ClassVar, cast
 
-from lga.sdk.ports import Document
-from lga.vectorstores.base import (
+from langgraph_agent_builder.sdk.ports import Document
+from langgraph_agent_builder.vectorstores.base import (
     BackendExtraMissing,
     CollectionInfo,
     CollectionMissing,

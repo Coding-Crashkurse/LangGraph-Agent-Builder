@@ -1,4 +1,4 @@
-"""Unit tests for `lga flow` HTTP plumbing (SPEC §2.6).
+"""Unit tests for `lab flow` HTTP plumbing (SPEC §2.6).
 
 `_check` maps HTTP failures to styled messages + exit codes; the commands pass
 slugs straight to the slug-first routes (§9) and use the server-side import
@@ -16,9 +16,9 @@ import pytest
 import typer
 from typer.testing import CliRunner
 
-from lga.cli._common import EXIT_CONNECTION, EXIT_ERROR, EXIT_VALIDATION
-from lga.cli.flow import _check
-from lga.cli.main import app
+from langgraph_agent_builder.cli._common import EXIT_CONNECTION, EXIT_ERROR, EXIT_VALIDATION
+from langgraph_agent_builder.cli.flow import _check
+from langgraph_agent_builder.cli.main import app
 
 runner = CliRunner()
 
@@ -68,7 +68,7 @@ def _mock_server(
     def fake_client(server: str, api_key: str | None) -> httpx.Client:
         return httpx.Client(transport=httpx.MockTransport(wrapped), base_url="http://t")
 
-    monkeypatch.setattr("lga.cli.flow._client", fake_client)
+    monkeypatch.setattr("langgraph_agent_builder.cli.flow._client", fake_client)
 
 
 def test_flow_import_uses_server_upsert(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

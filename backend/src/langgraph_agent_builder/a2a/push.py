@@ -18,19 +18,19 @@ from a2a.types import PushNotificationConfig, Task, TaskState
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from lga.a2a.tasks import TERMINAL_STATES
-from lga.db.models import PushConfigRow
-from lga.errors import LgaValueError
-from lga.services.settings import Settings
+from langgraph_agent_builder.a2a.tasks import TERMINAL_STATES
+from langgraph_agent_builder.db.models import PushConfigRow
+from langgraph_agent_builder.errors import LabValueError
+from langgraph_agent_builder.services.settings import Settings
 
-logger = logging.getLogger("lga.a2a.push")
+logger = logging.getLogger("langgraph_agent_builder.a2a.push")
 
 # §7.9: input-required + terminal always notify; `working` needs notify_working opt-in
 NOTIFY_STATES = TERMINAL_STATES | {TaskState.input_required}
 RETRIES = 3
 
 
-class SsrfError(LgaValueError):
+class SsrfError(LabValueError):
     pass
 
 
@@ -53,7 +53,7 @@ def _ensure_global(host: str, addresses: Sequence[str]) -> None:
         if not ip.is_global or ip.is_multicast:
             raise SsrfError(
                 f"webhook host {host!r} resolves to a private address ({raw}); "
-                "set LGA_PUSH_ALLOW_PRIVATE=true to allow (dev only)"
+                "set LAB_PUSH_ALLOW_PRIVATE=true to allow (dev only)"
             )
 
 
@@ -101,7 +101,7 @@ async def resolve_and_pin_webhook(url: str, settings: Settings) -> PinnedWebhook
 
     Pinning closes the DNS-rebinding TOCTOU between our validation and httpx's
     own re-resolution at connect time (§7.9/§10.5). Returns None when
-    `LGA_PUSH_ALLOW_PRIVATE` disables the guard (dev only): deliver unpinned.
+    `LAB_PUSH_ALLOW_PRIVATE` disables the guard (dev only): deliver unpinned.
     """
     parsed = urlparse(url)
     _check_scheme_policy(parsed.scheme, settings)

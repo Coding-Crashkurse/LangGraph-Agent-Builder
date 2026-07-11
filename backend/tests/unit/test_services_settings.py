@@ -1,4 +1,4 @@
-"""Unit tests for lga.services.settings (SPEC §14): URL normalization, derived
+"""Unit tests for langgraph_agent_builder.services.settings (SPEC §14): URL normalization, derived
 defaults, secret-key resolution, component dirs, and env vectorstore descriptors."""
 
 from __future__ import annotations
@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from lga.services.settings import Settings, get_settings, new_api_key
+from langgraph_agent_builder.services.settings import Settings, get_settings, new_api_key
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -24,7 +24,7 @@ def test_sqlite_defaults_and_flags(tmp_path: Path) -> None:
     assert settings.is_postgres is False
     assert settings.storage_tier == "sqlite"
     assert settings.async_database_url.startswith("sqlite+aiosqlite:///")
-    assert settings.sqlite_db_path.name == "lga.db"
+    assert settings.sqlite_db_path.name == "langgraph_agent_builder.db"
 
 
 def test_sqlite_plain_scheme_is_upgraded_to_aiosqlite(tmp_path: Path) -> None:
@@ -90,7 +90,7 @@ def test_resolve_secret_key_returns_explicit(tmp_path: Path) -> None:
 
 def test_resolve_secret_key_prod_requires_key(tmp_path: Path) -> None:
     settings = Settings(home=tmp_path / "h", env="prod")
-    with pytest.raises(RuntimeError, match="LGA_SECRET_KEY"):
+    with pytest.raises(RuntimeError, match="LAB_SECRET_KEY"):
         settings.resolve_secret_key()
 
 
@@ -124,9 +124,9 @@ def test_component_dirs_splits_pathsep(tmp_path: Path) -> None:
 def test_vectorstore_env_connections_parses_valid_json(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("LGA_VECTORSTORE_PROD_DB", '{"backend": "qdrant", "url": "http://q"}')
-    monkeypatch.setenv("LGA_VECTORSTORE_BAD", "{not json")
-    monkeypatch.setenv("LGA_UNRELATED", "ignored")
+    monkeypatch.setenv("LAB_VECTORSTORE_PROD_DB", '{"backend": "qdrant", "url": "http://q"}')
+    monkeypatch.setenv("LAB_VECTORSTORE_BAD", "{not json")
+    monkeypatch.setenv("LAB_UNRELATED", "ignored")
     conns = _mk(tmp_path).vectorstore_env_connections()
     assert conns["prod-db"] == {"backend": "qdrant", "url": "http://q"}
     assert "bad" not in conns  # invalid JSON silently skipped
@@ -136,7 +136,7 @@ def test_vectorstore_env_connections_parses_valid_json(
 # --------------------------------------------------------------------- misc helpers
 def test_new_api_key_prefix_and_uniqueness() -> None:
     a, b = new_api_key(), new_api_key()
-    assert a.startswith("lga_sk_")
+    assert a.startswith("lab_sk_")
     assert a != b
 
 

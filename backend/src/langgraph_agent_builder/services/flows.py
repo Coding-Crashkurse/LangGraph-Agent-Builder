@@ -11,11 +11,11 @@ from sqlalchemy import delete, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from lga.db.models import FlowRow, FlowVersionRow
-from lga.schema.diagnostics import Diagnostic, DiagnosticCode, has_errors
-from lga.schema.flowspec import FlowSpec, parse_flowspec
-from lga.sdk.component import NodeKind
-from lga.services.errors import FlowLockedError, SlugConflictError
+from langgraph_agent_builder.db.models import FlowRow, FlowVersionRow
+from langgraph_agent_builder.schema.diagnostics import Diagnostic, DiagnosticCode, has_errors
+from langgraph_agent_builder.schema.flowspec import FlowSpec, parse_flowspec
+from langgraph_agent_builder.sdk.component import NodeKind
+from langgraph_agent_builder.services.errors import FlowLockedError, SlugConflictError
 
 SEMVER_RE = re.compile(r"^(\d+)\.(\d+)\.(\d+)$")
 

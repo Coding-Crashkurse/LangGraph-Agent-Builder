@@ -1,7 +1,7 @@
 """Dynamic-form dispatch (SPEC §9.2): ``on_field_change`` outside the HTTP layer.
 
 The Studio route translates the plain exceptions raised here into HTTP codes;
-this module stays importable standalone — ``lga.sdk`` never imports FastAPI
+this module stays importable standalone — ``langgraph_agent_builder.sdk`` never imports FastAPI
 (SPEC §2.7).
 """
 
@@ -10,13 +10,13 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
-from lga.errors import LgaValueError
-from lga.sdk.component import Component, NodeConfig
+from langgraph_agent_builder.errors import LabValueError
+from langgraph_agent_builder.sdk.component import Component, NodeConfig
 
 DEFAULT_FIELD_CHANGE_TIMEOUT_S = 10.0
 
 
-class ComponentInitError(LgaValueError):
+class ComponentInitError(LabValueError):
     """The component's ``__init__`` failed before ``on_field_change`` could run."""
 
 

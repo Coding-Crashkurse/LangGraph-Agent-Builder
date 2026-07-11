@@ -1,13 +1,13 @@
-"""Unit tests for lga.compiler.subgraph ("Run to node" induced subgraphs, §6.4)."""
+"""Unit tests for compiler.subgraph ("Run to node" induced subgraphs, §6.4)."""
 
 from __future__ import annotations
 
 import pytest
 
-from lga.compiler import compile_flow
-from lga.compiler.subgraph import ancestors_of, induce_subgraph
-from lga.runtime.executor import run_compiled_once
-from lga.schema.diagnostics import DiagnosticCode
+from langgraph_agent_builder.compiler import compile_flow
+from langgraph_agent_builder.compiler.subgraph import ancestors_of, induce_subgraph
+from langgraph_agent_builder.runtime.executor import run_compiled_once
+from langgraph_agent_builder.schema.diagnostics import DiagnosticCode
 from tests.conftest import approval_spec, hello_spec
 
 
@@ -75,7 +75,7 @@ def test_induced_subgraph_diagnostics_scoped_to_kept_nodes() -> None:
     spec["nodes"].append(
         {
             "id": "island",
-            "component_id": "lga.io.text_output",
+            "component_id": "lab.io.text_output",
             "component_version": "1.0.0",
             "config": {},
             "position": {"x": 0, "y": 0},

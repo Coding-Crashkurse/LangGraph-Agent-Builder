@@ -1,4 +1,4 @@
-"""Unit tests for lga.sdk.ports payload conversions & the edge-compat internals.
+"""Unit tests for langgraph_agent_builder.sdk.ports payload conversions & the edge-compat internals.
 
 Covers the branches left uncovered by tests/test_ports.py and test_coerce.py:
 - Message <-> LangChain BaseMessage (all four roles, both directions)
@@ -16,7 +16,7 @@ from langchain_core.messages import (
     ToolMessage,
 )
 
-from lga.sdk.ports import (
+from langgraph_agent_builder.sdk.ports import (
     LazyToolset,
     Message,
     ToolDef,

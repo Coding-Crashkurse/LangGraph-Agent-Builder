@@ -6,16 +6,16 @@
     "description": "Split the input text and ingest the chunks into the local vector store collection 'kb'."
   },
   "nodes": [
-    { "id": "start", "component_id": "lga.io.start", "component_version": "1.0.0", "config": {}, "position": { "x": 0, "y": 200 } },
-    { "id": "split", "component_id": "lga.rag.text_splitter", "component_version": "1.0.0", "config": { "chunk_size": 90, "chunk_overlap": 0 }, "position": { "x": 300, "y": 200 } },
+    { "id": "start", "component_id": "lab.io.start", "component_version": "1.0.0", "config": {}, "position": { "x": 0, "y": 200 } },
+    { "id": "split", "component_id": "lab.rag.text_splitter", "component_version": "1.0.0", "config": { "chunk_size": 90, "chunk_overlap": 0 }, "position": { "x": 300, "y": 200 } },
     {
       "id": "writer",
-      "component_id": "lga.rag.writer",
+      "component_id": "lab.rag.writer",
       "component_version": "1.0.0",
       "config": { "vector_store": { "$vectorstore": "local", "collection": "kb" } },
       "position": { "x": 620, "y": 200 }
     },
-    { "id": "end", "component_id": "lga.io.end", "component_version": "1.0.0", "config": {}, "position": { "x": 940, "y": 200 } }
+    { "id": "end", "component_id": "lab.io.end", "component_version": "1.0.0", "config": {}, "position": { "x": 940, "y": 200 } }
   ],
   "edges": [
     { "id": "e0", "kind": "data", "source": { "node": "start", "output": "message" }, "target": { "node": "split", "input": "text" } },

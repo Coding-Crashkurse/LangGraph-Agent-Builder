@@ -4,14 +4,14 @@ from __future__ import annotations
 
 from typing import Any
 
-from lga.sdk import BuildContext, Component, NodeKind, Output, fields, ports
-from lga.sdk.component import NodeConfig, NodeFn
-from lga.sdk.runtime import get_run_context
-from lga.sdk.templating import eval_predicate, last_message_text
+from langgraph_agent_builder.sdk import BuildContext, Component, NodeKind, Output, fields, ports
+from langgraph_agent_builder.sdk.component import NodeConfig, NodeFn
+from langgraph_agent_builder.sdk.runtime import get_run_context
+from langgraph_agent_builder.sdk.templating import eval_predicate, last_message_text
 
 
 class LLMRouter(Component):
-    component_id = "lga.flow.llm_router"
+    component_id = "lab.flow.llm_router"
     display_name = "LLM Router"
     description = (
         "Routes the conversation into one of the configured labels. Uses the "
@@ -53,7 +53,7 @@ class LLMRouter(Component):
             model_cfg = ctx.get_input(state, "model")
             label: str | None = None
             if model_cfg:
-                from lga.components.llm._models import resolve_model
+                from langgraph_agent_builder.components.llm._models import resolve_model
 
                 model = resolve_model(model_cfg)
                 prompt = (
@@ -91,7 +91,7 @@ class LLMRouter(Component):
 
 
 class RuleRouter(Component):
-    component_id = "lga.flow.rule_router"
+    component_id = "lab.flow.rule_router"
     display_name = "Rule Router"
     description = "Routes on data/message predicates (sandboxed jinja expressions)."
     icon = "list-tree"

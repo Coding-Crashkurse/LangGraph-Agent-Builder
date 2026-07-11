@@ -1,7 +1,7 @@
 """RunContext — what a NodeFn can reach at runtime (SPEC §4.1).
 
 Nodes obtain it via ``get_run_context(config)``. When the compiled graph runs
-under vanilla LangGraph (no lga runtime), a no-op context is returned so
+under vanilla LangGraph (no lab runtime), a no-op context is returned so
 components degrade gracefully (custom events become no-ops).
 """
 
@@ -13,7 +13,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import Any
 
-logger = logging.getLogger("lga.runtime")
+logger = logging.getLogger("langgraph_agent_builder.runtime")
 
 RUN_CTX_KEY = "__lga_run_ctx__"
 

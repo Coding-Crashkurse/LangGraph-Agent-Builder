@@ -12,14 +12,14 @@ from fastapi import APIRouter, Header, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
 
-from lga.api.deps import Services, StudioAuth, header_vars
-from lga.db.models import RunRow
-from lga.schema.events import HEARTBEAT_INTERVAL_S
-from lga.services.orchestrator import FlowNotRunnableError
+from langgraph_agent_builder.api.deps import Services, StudioAuth, header_vars
+from langgraph_agent_builder.db.models import RunRow
+from langgraph_agent_builder.schema.events import HEARTBEAT_INTERVAL_S
+from langgraph_agent_builder.services.orchestrator import FlowNotRunnableError
 
 if TYPE_CHECKING:
-    from lga.app import AppServices
-    from lga.runtime.executor import RunResult
+    from langgraph_agent_builder.app import AppServices
+    from langgraph_agent_builder.runtime.executor import RunResult
 
 router = APIRouter(tags=["runs"], dependencies=[StudioAuth])
 

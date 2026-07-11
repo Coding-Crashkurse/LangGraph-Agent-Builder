@@ -1,4 +1,4 @@
-"""Pluggable task store (LGA_A2A_TASK_STORE) + slug-based flow API endpoint."""
+"""Pluggable task store (LAB_A2A_TASK_STORE) + slug-based flow API endpoint."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, cast
 
 import pytest
 
-from lga.a2a.tasks import DbTaskStore, resolve_task_store
+from langgraph_agent_builder.a2a.tasks import DbTaskStore, resolve_task_store
 from tests.conftest import create_and_publish, hello_spec
 
 if TYPE_CHECKING:
@@ -14,8 +14,8 @@ if TYPE_CHECKING:
     from a2a.server.tasks import TaskStore
     from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-    from lga.app import AppServices
-    from lga.services.settings import Settings
+    from langgraph_agent_builder.app import AppServices
+    from langgraph_agent_builder.services.settings import Settings
 
 
 # ---------------------------------------------------------------- store resolution
@@ -60,7 +60,7 @@ def test_resolve_custom_dotted_path() -> None:
 
 
 def test_resolve_rejects_garbage() -> None:
-    with pytest.raises(ValueError, match="invalid LGA_A2A_TASK_STORE"):
+    with pytest.raises(ValueError, match="invalid LAB_A2A_TASK_STORE"):
         resolve_task_store("not-a-mode", sessions=_fake_sessions(), flow_slug="s")
 
 
@@ -101,7 +101,7 @@ async def test_run_by_slug_base_url(client: httpx.AsyncClient) -> None:
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["status"] == "completed"
-    assert body["result_text"] == "Hello from LGA!"
+    assert body["result_text"] == "Hello from LAB!"
 
 
 # ---------------------------------------------------------------- run trace deletion

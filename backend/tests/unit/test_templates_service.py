@@ -1,12 +1,12 @@
-"""Unit tests for lga.services.templates (SPEC §9.9).
+"""Unit tests for langgraph_agent_builder.services.templates (SPEC §9.9).
 
 Pure module over the bundled STARTER_FLOWS — no DB needed.
 """
 
 from __future__ import annotations
 
-from lga.services import templates
-from lga.services.bootstrap import STARTER_FLOWS
+from langgraph_agent_builder.services import templates
+from langgraph_agent_builder.services.bootstrap import STARTER_FLOWS
 
 
 def test_list_templates_metadata() -> None:

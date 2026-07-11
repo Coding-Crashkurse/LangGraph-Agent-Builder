@@ -1,7 +1,7 @@
-"""Unit tests for lga.sdk.registry (component discovery, SPEC §4.8).
+"""Unit tests for langgraph_agent_builder.sdk.registry (component discovery, SPEC §4.8).
 
 Exercises registration invariants (duplicate detection, missing id), filesystem
-discovery from a temp component dir (LGA_COMPONENTS_PATH style), the
+discovery from a temp component dir (LAB_COMPONENTS_PATH style), the
 testing-category filter, error isolation (broken/missing sources become
 diagnostics, never crashes), and the fingerprint/etag identity helpers.
 """
@@ -12,8 +12,8 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
-from lga.sdk.component import BuildContext, Component, NodeFn
-from lga.sdk.registry import (
+from langgraph_agent_builder.sdk.component import BuildContext, Component, NodeFn
+from langgraph_agent_builder.sdk.registry import (
     ComponentRegistry,
     DuplicateComponentError,
     get_registry,
@@ -130,7 +130,7 @@ def test_fingerprint_changes_with_contents() -> None:
 # ------------------------------------------------------------------- discovery
 _COMPONENT_SRC = """
 from typing import Any
-from lga.sdk.component import BuildContext, Component, NodeFn
+from langgraph_agent_builder.sdk.component import BuildContext, Component, NodeFn
 
 
 class Widget(Component):
@@ -157,7 +157,7 @@ class LabTool(Component):
 
 _HIDDEN_SRC = """
 from typing import Any
-from lga.sdk.component import BuildContext, Component, NodeFn
+from langgraph_agent_builder.sdk.component import BuildContext, Component, NodeFn
 
 
 class Hidden(Component):
@@ -219,7 +219,7 @@ def test_missing_dir_records_diagnostic(tmp_path: Path) -> None:
 
 _TREE_GOOD_SRC = """
 from typing import Any
-from lga.sdk.component import BuildContext, Component, NodeFn
+from langgraph_agent_builder.sdk.component import BuildContext, Component, NodeFn
 
 
 class TreeGood(Component):
@@ -261,7 +261,7 @@ def test_get_registry_is_cached_and_populated() -> None:
     second = get_registry()
     assert first is second  # lazy singleton
     assert first.components  # built-ins discovered
-    assert first.get("lga.io.start") is not None
+    assert first.get("lab.io.start") is not None
 
 
 def test_reset_registry_forces_rediscovery() -> None:

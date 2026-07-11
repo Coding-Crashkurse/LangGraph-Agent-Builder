@@ -16,11 +16,13 @@ from dataclasses import field as dc_field
 from enum import StrEnum
 from typing import Any, ClassVar
 
-from lga.sdk.fields import Field, MultiselectInput, PromptInput
-from lga.sdk.outputs import Output
-from lga.sdk.ports import ROUTE, TEXT, PortSpec, ToolDef
-from lga.sdk.ports import coerce as _coerce
-from lga.sdk.templating import PROMPT_VAR_RE  # single source: port spawning ≡ rendering
+from langgraph_agent_builder.sdk.fields import Field, MultiselectInput, PromptInput
+from langgraph_agent_builder.sdk.outputs import Output
+from langgraph_agent_builder.sdk.ports import ROUTE, TEXT, PortSpec, ToolDef
+from langgraph_agent_builder.sdk.ports import coerce as _coerce
+from langgraph_agent_builder.sdk.templating import (
+    PROMPT_VAR_RE,  # single source: port spawning ≡ rendering
+)
 
 NodeConfig = dict[str, Any]
 NodeFn = Callable[..., Awaitable[dict[str, Any]]]
@@ -91,10 +93,10 @@ class BuildContext:
     config: NodeConfig = dc_field(default_factory=dict)
     secrets: SecretsResolver = dc_field(default_factory=SecretsResolver)
     registry: Any = None
-    logger: logging.Logger = dc_field(default_factory=lambda: logging.getLogger("lga.component"))
+    logger: logging.Logger = dc_field(default_factory=lambda: logging.getLogger("lab.component"))
     input_bindings: dict[str, InputBinding] = dc_field(default_factory=dict)
     tools: list[ToolDef] = dc_field(default_factory=list)
-    settings: Any = None  # lga Settings when compiled server-side; None headless
+    settings: Any = None  # lab Settings when compiled server-side; None headless
 
     def get_field(self, name: str) -> Any:
         """Resolved config value (tweaks + $var/$secret refs already applied in P2)."""
@@ -117,7 +119,7 @@ class Component(ABC):
     """Base class for all components (SPEC §4.1)."""
 
     # ---- identity (stability rules §4.9) ----
-    component_id: ClassVar[str]  # REQUIRED, immutable, e.g. "lga.llm.llm_call"
+    component_id: ClassVar[str]  # REQUIRED, immutable, e.g. "lab.llm.llm_call"
     version: ClassVar[str] = "1.0.0"
     display_name: ClassVar[str] = ""
     description: ClassVar[str] = ""
@@ -190,7 +192,7 @@ class Component(ABC):
             and cls.tool_mode_enabled(config)
             and not any(o.name == "toolset" for o in outs)
         ):
-            from lga.sdk.ports import TOOLSET
+            from langgraph_agent_builder.sdk.ports import TOOLSET
 
             outs = [*outs, Output(name="toolset", display_name="Toolset", port=TOOLSET)]
         return outs
@@ -279,7 +281,7 @@ class Component(ABC):
         lesson: names/descriptions drive agent tool selection."""
         if not cls.tool_mode_supported:
             return []
-        from lga.sdk.fields import BoolInput, MultilineInput, StrInput
+        from langgraph_agent_builder.sdk.fields import BoolInput, MultilineInput, StrInput
 
         return [
             BoolInput(

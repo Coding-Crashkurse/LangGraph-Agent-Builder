@@ -1,4 +1,4 @@
-"""Unit tests for the LLM Agent component (lga.llm.llm_agent).
+"""Unit tests for the LLM Agent component (lab.llm.llm_agent).
 
 Exercises the reachable branches of the explicit tool-calling loop: the
 no-tools single turn, RAG document injection (object + dict docs), the
@@ -14,10 +14,10 @@ import pytest
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.tools import StructuredTool
 
-from lga.components.llm.llm_agent import LLMAgent
-from lga.sdk.ports import Document, Message, ToolDef
-from lga.sdk.runtime import RUN_CTX_KEY, RunContext
-from lga.sdk.testing import ComponentTestHarness
+from langgraph_agent_builder.components.llm.llm_agent import LLMAgent
+from langgraph_agent_builder.sdk.ports import Document, Message, ToolDef
+from langgraph_agent_builder.sdk.runtime import RUN_CTX_KEY, RunContext
+from langgraph_agent_builder.sdk.testing import ComponentTestHarness
 
 
 async def test_no_tools_single_turn_echoes_conversation() -> None:

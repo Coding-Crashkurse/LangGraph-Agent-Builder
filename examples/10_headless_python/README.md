@@ -13,4 +13,4 @@ python examples/10_headless_python/main.py
 python examples/10_headless_python/exported_flow.py   # runs under vanilla LangGraph
 ```
 
-Same thing via the CLI: `lga flow run examples/10_headless_python/flow.json --local`.
+Same thing via the CLI: `lab flow run examples/10_headless_python/flow.json --local`.

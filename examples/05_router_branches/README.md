@@ -8,8 +8,8 @@ deterministic keyword matching, so CI needs no keys) feeding a `Rule Router`
 predicates, exactly-one-branch execution.
 
 ```bash
-lga flow run examples/05_router_branches/flow.json --local --input "I found a bug"
+lab flow run examples/05_router_branches/flow.json --local --input "I found a bug"
 # → Routed to BUG: filed in the tracker.
-lga flow run examples/05_router_branches/flow.json --local --input "need help asap"
+lab flow run examples/05_router_branches/flow.json --local --input "need help asap"
 # → Routed to OTHER/URGENT: escalating now.
 ```

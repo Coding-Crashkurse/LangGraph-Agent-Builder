@@ -1,12 +1,12 @@
-"""Unit tests for lga.compiler.parse (P1: FlowSpec JSON → IR skeleton, E00x)."""
+"""Unit tests for langgraph_agent_builder.compiler.parse (P1: FlowSpec JSON → IR skeleton, E00x)."""
 
 from __future__ import annotations
 
 import copy
 from typing import Any
 
-from lga.compiler import parse as parse_pass
-from lga.schema.diagnostics import DiagnosticCode
+from langgraph_agent_builder.compiler import parse as parse_pass
+from langgraph_agent_builder.schema.diagnostics import DiagnosticCode
 from tests.conftest import hello_spec
 
 
@@ -40,11 +40,11 @@ def test_duplicate_node_id_is_e003() -> None:
 
 def test_reserved_node_id_wrong_component_is_e003() -> None:
     raw = hello_spec()
-    raw["nodes"][0]["component_id"] = "lga.testing.fake_llm"  # "start" must be lga.io.start
+    raw["nodes"][0]["component_id"] = "lab.testing.fake_llm"  # "start" must be lab.io.start
     _, diagnostics = parse_pass.parse(raw)
     diag = next(d for d in diagnostics if d.code == DiagnosticCode.E003)
     assert diag.node_id == "start"
-    assert "lga.io.start" in diag.message
+    assert "lab.io.start" in diag.message
 
 
 def test_duplicate_edge_id_is_e001() -> None:

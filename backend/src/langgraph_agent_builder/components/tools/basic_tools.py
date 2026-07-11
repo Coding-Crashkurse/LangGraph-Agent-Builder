@@ -7,8 +7,8 @@ import operator
 from collections.abc import Callable
 from typing import Any
 
-from lga.sdk import BuildContext, Component, Output, fields, ports
-from lga.sdk.component import NodeConfig, NodeFn
+from langgraph_agent_builder.sdk import BuildContext, Component, Output, fields, ports
+from langgraph_agent_builder.sdk.component import NodeConfig, NodeFn
 
 _OPS: dict[type[ast.AST], Callable[..., float]] = {
     ast.Add: operator.add,
@@ -43,7 +43,7 @@ def safe_eval(expression: str) -> float:
 
 
 class Calculator(Component):
-    component_id = "lga.tools.calculator"
+    component_id = "lab.tools.calculator"
     display_name = "Calculator"
     description = "Evaluate an arithmetic expression (safe AST — demo tool)."
     icon = "calculator"
@@ -81,7 +81,7 @@ _MAX_REDIRECTS = 5
 
 
 class HttpRequest(Component):
-    component_id = "lga.tools.http_request"
+    component_id = "lab.tools.http_request"
     display_name = "HTTP Request"
     description = "GET/POST a URL (SSRF-guarded). Usable as an agent tool."
     icon = "globe"
@@ -113,8 +113,8 @@ class HttpRequest(Component):
         async def node(state: dict[str, Any], config: Any) -> dict[str, Any]:
             import httpx
 
-            from lga.a2a.push import SsrfError, validate_webhook_url
-            from lga.services.settings import Settings
+            from langgraph_agent_builder.a2a.push import SsrfError, validate_webhook_url
+            from langgraph_agent_builder.services.settings import Settings
 
             guard_settings = settings or Settings()
             url = str(ctx.get_input(state, "url") or ctx.get_field("url") or "")
@@ -157,7 +157,7 @@ class HttpRequest(Component):
 
 
 class WebSearch(Component):
-    component_id = "lga.tools.web_search"
+    component_id = "lab.tools.web_search"
     display_name = "Web Search"
     description = "Provider-agnostic web search → Table (SSRF-guarded searxng)."
     icon = "search"
@@ -249,8 +249,8 @@ class WebSearch(Component):
                                 }
                             )
                     elif provider == "searxng":
-                        from lga.a2a.push import SsrfError, validate_webhook_url
-                        from lga.services.settings import Settings
+                        from langgraph_agent_builder.a2a.push import SsrfError, validate_webhook_url
+                        from langgraph_agent_builder.services.settings import Settings
 
                         base = str(ctx.get_field("searxng_url") or "")
                         try:

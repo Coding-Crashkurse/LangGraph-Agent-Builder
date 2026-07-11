@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-from lga.sdk import fields
-from lga.sdk.fields import FIELD_TYPES
-from lga.sdk.ports import TEXT
+from langgraph_agent_builder.sdk import fields
+from langgraph_agent_builder.sdk.fields import FIELD_TYPES
+from langgraph_agent_builder.sdk.ports import TEXT
 
 
 def test_all_spec_field_types_exist() -> None:

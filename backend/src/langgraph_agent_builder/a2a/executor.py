@@ -1,4 +1,4 @@
-"""LGAAgentExecutor — the A2A ⇄ LangGraph bridge (SPEC §7.6–§7.8, normative).
+"""LabAgentExecutor — the A2A ⇄ LangGraph bridge (SPEC §7.6–§7.8, normative).
 
 contextId == thread_id (scoped per client for public agents), one task == one
 run + its interrupt-resume chain, interrupt → input-required (final), follow-up
@@ -32,15 +32,15 @@ from a2a.types import (
 from a2a.utils import new_task
 from a2a.utils.errors import ServerError
 
-from lga.a2a.scope import resolve_client_scope
-from lga.a2a.tasks import TERMINAL_STATES
-from lga.runtime.executor import Executor, RunResult
-from lga.schema.events import RunEvent
-from lga.sdk.interrupts import parse_approval_resume, parse_input_resume
-from lga.services.orchestrator import Orchestrator, scoped_thread_id
-from lga.services.settings import Settings
+from langgraph_agent_builder.a2a.scope import resolve_client_scope
+from langgraph_agent_builder.a2a.tasks import TERMINAL_STATES
+from langgraph_agent_builder.runtime.executor import Executor, RunResult
+from langgraph_agent_builder.schema.events import RunEvent
+from langgraph_agent_builder.sdk.interrupts import parse_approval_resume, parse_input_resume
+from langgraph_agent_builder.services.orchestrator import Orchestrator, scoped_thread_id
+from langgraph_agent_builder.services.settings import Settings
 
-logger = logging.getLogger("lga.a2a.executor")
+logger = logging.getLogger("langgraph_agent_builder.a2a.executor")
 
 STATUS_THROTTLE_S = 0.5  # max 2/s working updates (SPEC §7.8)
 
@@ -50,7 +50,7 @@ def _mime_allowed(mime: str, allowlist: str) -> bool:
     return any(fnmatch.fnmatch(mime, p) for p in patterns)
 
 
-class LGAAgentExecutor(AgentExecutor):
+class LabAgentExecutor(AgentExecutor):
     def __init__(
         self,
         *,

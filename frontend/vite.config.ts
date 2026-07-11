@@ -4,7 +4,7 @@ import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vitest/config";
 
-// lga defaults to :8000; on this machine 8000 is occupied, so dev runs on 8010
+// lab defaults to :8000; on this machine 8000 is occupied, so dev runs on 8010
 // (override with VITE_BACKEND_URL). The wheel serves the built frontend itself.
 const BACKEND = process.env.VITE_BACKEND_URL ?? "http://localhost:8010";
 

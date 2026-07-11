@@ -5,10 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from lga.schema.flowspec import EdgeSpec, FlowSpec, NodeSpec
-from lga.sdk.component import BuildContext, Component, NodeKind
-from lga.sdk.outputs import Output
-from lga.sdk.ports import PortSpec
+from langgraph_agent_builder.schema.flowspec import EdgeSpec, FlowSpec, NodeSpec
+from langgraph_agent_builder.sdk.component import BuildContext, Component, NodeKind
+from langgraph_agent_builder.sdk.outputs import Output
+from langgraph_agent_builder.sdk.ports import PortSpec
 
 
 @dataclass

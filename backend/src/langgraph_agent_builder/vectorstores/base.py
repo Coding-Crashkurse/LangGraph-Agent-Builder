@@ -1,7 +1,7 @@
 """Vector store abstraction — provider protocol & shared types (SPEC §8b.1).
 
 One typed abstraction, named connections, backends as extras — the same
-pattern as MCP servers and model providers. ``import lga`` must never import a
+pattern as MCP servers and model providers. ``import langgraph_agent_builder`` must never import a
 vendor client (import-linter contract): every backend lazy-imports its client
 inside its own module and is only constructed on demand.
 
@@ -46,8 +46,8 @@ from typing import Any, ClassVar, Literal, Protocol, runtime_checkable
 
 from pydantic import BaseModel
 
-from lga.errors import LgaError
-from lga.sdk.ports import Document
+from langgraph_agent_builder.errors import LabError
+from langgraph_agent_builder.sdk.ports import Document
 
 Metric = Literal["cosine", "l2", "ip"]
 
@@ -64,7 +64,7 @@ class UpsertResult(BaseModel):
     ids: list[str] = []
 
 
-class VectorStoreError(LgaError):
+class VectorStoreError(LabError):
     """Backend failure → surfaced as RT107 at runtime / E902 at deep-validate."""
 
     def __init__(self, backend: str, detail: str) -> None:

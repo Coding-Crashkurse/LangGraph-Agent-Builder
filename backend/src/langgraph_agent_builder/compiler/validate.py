@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from collections import defaultdict
 
-from lga.compiler.ir import FlowIR, NodeIR
-from lga.schema.diagnostics import Diagnostic, DiagnosticCode
-from lga.sdk.component import NodeKind
-from lga.sdk.ports import PortFamily, check_compatibility
+from langgraph_agent_builder.compiler.ir import FlowIR, NodeIR
+from langgraph_agent_builder.schema.diagnostics import Diagnostic, DiagnosticCode
+from langgraph_agent_builder.sdk.component import NodeKind
+from langgraph_agent_builder.sdk.ports import PortFamily, check_compatibility
 
 
 def router_like(node: NodeIR) -> bool:

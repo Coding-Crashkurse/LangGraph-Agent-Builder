@@ -8,8 +8,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from lga.sdk import Component, Output, fields, ports
-from lga.sdk.ports import PortFamily, PortSpec
+from langgraph_agent_builder.sdk import Component, Output, fields, ports
+from langgraph_agent_builder.sdk.ports import PortFamily, PortSpec
 
 
 class Ticket(BaseModel):

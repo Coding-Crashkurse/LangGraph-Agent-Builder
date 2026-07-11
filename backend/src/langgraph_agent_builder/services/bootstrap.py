@@ -8,15 +8,15 @@ import json
 import logging
 from typing import TYPE_CHECKING, Any
 
-from lga.schema.flowspec import FlowSpecError, parse_flowspec
-from lga.services.errors import FlowLockedError
+from langgraph_agent_builder.schema.flowspec import FlowSpecError, parse_flowspec
+from langgraph_agent_builder.services.errors import FlowLockedError
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 
-    from lga.app import AppServices
+    from langgraph_agent_builder.app import AppServices
 
-logger = logging.getLogger("lga.bootstrap")
+logger = logging.getLogger("lab.bootstrap")
 
 SWEEP_INTERVAL_S = 3600
 
@@ -32,21 +32,21 @@ STARTER_FLOWS: list[dict[str, Any]] = [
         "nodes": [
             {
                 "id": "start",
-                "component_id": "lga.io.start",
+                "component_id": "lab.io.start",
                 "component_version": "1.0.0",
                 "config": {},
                 "position": {"x": 0, "y": 120},
             },
             {
                 "id": "fake_llm",
-                "component_id": "lga.testing.fake_llm",
+                "component_id": "lab.testing.fake_llm",
                 "component_version": "1.0.0",
-                "config": {"replies": ["Hello from lga! Wire in a real model when ready."]},
+                "config": {"replies": ["Hello from lab! Wire in a real model when ready."]},
                 "position": {"x": 320, "y": 120},
             },
             {
                 "id": "end",
-                "component_id": "lga.io.end",
+                "component_id": "lab.io.end",
                 "component_version": "1.0.0",
                 "config": {},
                 "position": {"x": 660, "y": 120},
@@ -78,28 +78,28 @@ STARTER_FLOWS: list[dict[str, Any]] = [
         "nodes": [
             {
                 "id": "start",
-                "component_id": "lga.io.start",
+                "component_id": "lab.io.start",
                 "component_version": "1.0.0",
                 "config": {},
                 "position": {"x": 0, "y": 140},
             },
             {
                 "id": "draft",
-                "component_id": "lga.testing.fake_llm",
+                "component_id": "lab.testing.fake_llm",
                 "component_version": "1.0.0",
                 "config": {"replies": ["Draft answer — replace me with LLM Call."]},
                 "position": {"x": 280, "y": 140},
             },
             {
                 "id": "review",
-                "component_id": "lga.flow.human_approval",
+                "component_id": "lab.flow.human_approval",
                 "component_version": "1.0.0",
                 "config": {"prompt": "Release this answer?"},
                 "position": {"x": 580, "y": 140},
             },
             {
                 "id": "end",
-                "component_id": "lga.io.end",
+                "component_id": "lab.io.end",
                 "component_version": "1.0.0",
                 "config": {},
                 "position": {"x": 900, "y": 80},
@@ -138,7 +138,7 @@ STARTER_FLOWS: list[dict[str, Any]] = [
 async def provision(svc: AppServices) -> None:
     """Boot provisioning (SPEC §18.1) — runs before the protocol mounts so
     published imports are served from the first request."""
-    await svc.vectorstores.provision()  # default `local` + LGA_VECTORSTORE_* (§8b.3)
+    await svc.vectorstores.provision()  # default `local` + LAB_VECTORSTORE_* (§8b.3)
     await seed_starter_flows(svc)
     await load_flows_from_path(svc)
     await svc.remount()
@@ -181,7 +181,7 @@ def start_background_tasks(svc: AppServices) -> None:
 
 
 async def seed_starter_flows(svc: AppServices) -> int:
-    """Seed bundled templates into an EMPTY database (LGA_CREATE_STARTER_FLOWS)."""
+    """Seed bundled templates into an EMPTY database (LAB_CREATE_STARTER_FLOWS)."""
     if not svc.settings.create_starter_flows:
         return 0
     if await svc.flows.list():
@@ -199,13 +199,13 @@ async def seed_starter_flows(svc: AppServices) -> int:
 
 
 async def load_flows_from_path(svc: AppServices) -> int:
-    """Import FlowSpec *.json from LGA_LOAD_FLOWS_PATH at boot (SPEC §18.1)."""
+    """Import FlowSpec *.json from LAB_LOAD_FLOWS_PATH at boot (SPEC §18.1)."""
     path = svc.settings.load_flows_path
     if path is None:
         return 0
     path = path.expanduser()
     if not path.is_dir():
-        logger.warning("LGA_LOAD_FLOWS_PATH %s is not a directory", path)
+        logger.warning("LAB_LOAD_FLOWS_PATH %s is not a directory", path)
         return 0
     loaded = 0
     for file in sorted(path.glob("*.json")):
@@ -267,7 +267,7 @@ async def watch_component_dirs(svc: AppServices) -> None:
         try:
             for directory in dirs:
                 svc.registry.scan_dir(directory)
-            from lga.compiler import clear_compile_cache
+            from langgraph_agent_builder.compiler import clear_compile_cache
 
             clear_compile_cache()
             logger.info(

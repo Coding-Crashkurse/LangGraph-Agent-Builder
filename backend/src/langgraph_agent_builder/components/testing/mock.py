@@ -8,8 +8,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from lga.sdk import BuildContext, Component, Output, fields, ports
-from lga.sdk.component import NodeFn
+from langgraph_agent_builder.sdk import BuildContext, Component, Output, fields, ports
+from langgraph_agent_builder.sdk.component import NodeFn
 
 _LOREM = (
     "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod "
@@ -18,7 +18,7 @@ _LOREM = (
 
 
 class FakeEmbeddings(Component):
-    component_id = "lga.testing.fake_embeddings"
+    component_id = "lab.testing.fake_embeddings"
     display_name = "Fake Embeddings (testing)"
     description = "Deterministic hash embeddings — RAG without API keys."
     icon = "binary"
@@ -37,7 +37,7 @@ class FakeEmbeddings(Component):
 
 
 class MockData(Component):
-    component_id = "lga.testing.mock_data"
+    component_id = "lab.testing.mock_data"
     display_name = "Mock Data (testing)"
     description = "Emit sample Message / Json / Table data (Langflow parity)."
     icon = "table"

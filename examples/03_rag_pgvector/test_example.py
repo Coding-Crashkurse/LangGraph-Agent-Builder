@@ -16,16 +16,16 @@ def test_deep_validate_flags_sqlite_tier():
     import asyncio
 
     async def _run():
-        from lga.compiler import compile_flow
-        from lga.schema.diagnostics import DiagnosticCode
-        from lga.services.settings import Settings
+        from langgraph_agent_builder.compiler import compile_flow
+        from langgraph_agent_builder.schema.diagnostics import DiagnosticCode
+        from langgraph_agent_builder.services.settings import Settings
 
         settings = Settings(env="test")  # sqlite tier
         compiled = compile_flow(load_flow(HERE), use_cache=False, settings=settings)
         assert compiled.ok
         # replicate the orchestrator's deep check for the retriever
         assert any(
-            n.component.component_id == "lga.rag.pgvector_retriever"
+            n.component.component_id == "lab.rag.pgvector_retriever"
             for n in compiled.ir.nodes.values()
         )
         return DiagnosticCode.E901

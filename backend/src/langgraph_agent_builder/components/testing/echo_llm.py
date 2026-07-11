@@ -6,13 +6,13 @@ from typing import Any
 
 from langchain_core.messages import AIMessage
 
-from lga.sdk import BuildContext, Component, Output, fields, ports
-from lga.sdk.component import NodeFn
-from lga.sdk.templating import last_message_text, message_text
+from langgraph_agent_builder.sdk import BuildContext, Component, Output, fields, ports
+from langgraph_agent_builder.sdk.component import NodeFn
+from langgraph_agent_builder.sdk.templating import last_message_text, message_text
 
 
 class EchoLLM(Component):
-    component_id = "lga.testing.echo_llm"
+    component_id = "lab.testing.echo_llm"
     display_name = "Echo LLM (testing)"
     description = "Echoes the incoming message back. Zero-dependency pipeline testing."
     icon = "repeat-2"

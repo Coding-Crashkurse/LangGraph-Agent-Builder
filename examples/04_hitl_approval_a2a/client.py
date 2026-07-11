@@ -1,4 +1,4 @@
-"""Full A2A input-required round trip against a running lga server (SPEC §13/04).
+"""Full A2A input-required round trip against a running lab server (SPEC §13/04).
 
 Usage: python client.py [server-base] [agent-slug]
        (defaults: http://127.0.0.1:8000 hitl-approval)

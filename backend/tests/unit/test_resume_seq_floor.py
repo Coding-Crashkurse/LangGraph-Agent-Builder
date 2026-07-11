@@ -17,7 +17,7 @@ from tests.conftest import approval_spec, create_and_publish
 if TYPE_CHECKING:
     import httpx
 
-    from lga.app import AppServices
+    from langgraph_agent_builder.app import AppServices
 
 
 async def test_resume_after_restart_restores_seq_floor(

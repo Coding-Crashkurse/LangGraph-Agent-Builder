@@ -4,13 +4,13 @@ from __future__ import annotations
 
 from typing import Any
 
-from lga.sdk import BuildContext, Component, NodeKind, Output, fields, ports
-from lga.sdk.component import NodeFn
-from lga.sdk.templating import last_message_text
+from langgraph_agent_builder.sdk import BuildContext, Component, NodeKind, Output, fields, ports
+from langgraph_agent_builder.sdk.component import NodeFn
+from langgraph_agent_builder.sdk.templating import last_message_text
 
 
 class TextInput(Component):
-    component_id = "lga.io.text_input"
+    component_id = "lab.io.text_input"
     display_name = "Text Input"
     description = "A literal or run-supplied text value."
     icon = "type"
@@ -39,7 +39,7 @@ class TextInput(Component):
 
 
 class TextOutput(Component):
-    component_id = "lga.io.text_output"
+    component_id = "lab.io.text_output"
     display_name = "Text Output"
     description = "Terminal node emitting plain text."
     icon = "align-left"
@@ -57,7 +57,7 @@ class TextOutput(Component):
 
 
 class WebhookInput(Component):
-    component_id = "lga.io.webhook_input"
+    component_id = "lab.io.webhook_input"
     display_name = "Webhook Input"
     description = "Exposes data.webhook_payload, optionally typed via a JSON schema."
     icon = "webhook"

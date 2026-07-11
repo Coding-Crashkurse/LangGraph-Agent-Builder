@@ -5,13 +5,13 @@ from __future__ import annotations
 import copy
 from typing import Any
 
-from lga.compiler import CompiledFlow, compile_flow, validate_flow
-from lga.schema.diagnostics import DiagnosticCode
-from lga.schema.state import FlowState
-from lga.sdk import BuildContext, Component, Output, fields
-from lga.sdk.component import NodeFn
-from lga.sdk.ports import TEXT
-from lga.sdk.registry import ComponentRegistry, get_registry
+from langgraph_agent_builder.compiler import CompiledFlow, compile_flow, validate_flow
+from langgraph_agent_builder.schema.diagnostics import DiagnosticCode
+from langgraph_agent_builder.schema.state import FlowState
+from langgraph_agent_builder.sdk import BuildContext, Component, Output, fields
+from langgraph_agent_builder.sdk.component import NodeFn
+from langgraph_agent_builder.sdk.ports import TEXT
+from langgraph_agent_builder.sdk.registry import ComponentRegistry, get_registry
 from tests.conftest import approval_spec, hello_spec
 
 
@@ -78,16 +78,16 @@ def test_e001_schema_invalid() -> None:
 
 def test_e002_unknown_component() -> None:
     spec = hello_spec()
-    spec["nodes"][1]["component_id"] = "lga.nope.missing"
+    spec["nodes"][1]["component_id"] = "lab.nope.missing"
     compiled = compile_flow(spec, use_cache=False)
     diag = next(d for d in compiled.diagnostics if d.code == DiagnosticCode.E002)
     assert diag.node_id == "fake"
-    assert "LGA_COMPONENTS_PATH" in (diag.fix_hint or "")
+    assert "LAB_COMPONENTS_PATH" in (diag.fix_hint or "")
 
 
 def test_e003_reserved_id_misuse() -> None:
     spec = hello_spec()
-    spec["nodes"][0]["component_id"] = "lga.testing.fake_llm"
+    spec["nodes"][0]["component_id"] = "lab.testing.fake_llm"
     compiled = compile_flow(spec, use_cache=False)
     assert DiagnosticCode.E003 in [d.code for d in compiled.diagnostics]
 
@@ -98,7 +98,7 @@ def test_e010_required_field_empty() -> None:
         2,
         {
             "id": "call",
-            "component_id": "lga.llm.llm_call",
+            "component_id": "lab.llm.llm_call",
             "component_version": "1.0.0",
             "config": {"model": {"provider": "fake", "model": "x"}},  # prompt missing
             "position": {"x": 0, "y": 0},
@@ -130,7 +130,7 @@ def test_e012_missing_secret_ref() -> None:
     spec["nodes"].append(
         {
             "id": "t",
-            "component_id": "lga.io.text_input",
+            "component_id": "lab.io.text_input",
             "component_version": "1.0.0",
             "config": {"value": {"$var": "definitely_missing_var_xyz"}},
             "position": {"x": 0, "y": 0},
@@ -154,7 +154,7 @@ def test_e014_credential_in_non_secret_field() -> None:
     spec["nodes"].append(
         {
             "id": "t",
-            "component_id": "lga.io.text_input",
+            "component_id": "lab.io.text_input",
             "component_version": "1.0.0",
             "config": {"value": {"$secret": "OPENAI_API_KEY"}},  # `value` is not a Secret field
             "position": {"x": 0, "y": 0},
@@ -180,7 +180,7 @@ def test_e014_allows_secret_in_secret_field() -> None:
     spec["nodes"].append(
         {
             "id": "ws",
-            "component_id": "lga.tools.web_search",
+            "component_id": "lab.tools.web_search",
             "component_version": "1.0.0",
             "config": {"api_key": {"$secret": "TAVILY_KEY"}},  # api_key IS a SecretInput
             "position": {"x": 0, "y": 0},
@@ -196,7 +196,7 @@ def test_e020_incompatible_edge_names_both_refs() -> None:
     spec["nodes"].append(
         {
             "id": "tools",
-            "component_id": "lga.tools.calculator",
+            "component_id": "lab.tools.calculator",
             "component_version": "1.0.0",
             "config": {"expression": "1"},
             "position": {"x": 0, "y": 0},
@@ -212,8 +212,8 @@ def test_e020_incompatible_edge_names_both_refs() -> None:
     )
     compiled = compile_flow(spec, use_cache=False)
     diag = next(d for d in compiled.diagnostics if d.code == DiagnosticCode.E020)
-    assert "lga:Toolset" in diag.message
-    assert "lga:Message" in diag.message
+    assert "lab:Toolset" in diag.message
+    assert "lab:Message" in diag.message
 
 
 def test_e021_tool_edge_rules() -> None:
@@ -292,7 +292,7 @@ def test_e031_required_port_unconnected() -> None:
     spec["nodes"].append(
         {
             "id": "out",
-            "component_id": "lga.io.text_output",
+            "component_id": "lab.io.text_output",
             "component_version": "1.0.0",
             "config": {},
             "position": {"x": 0, "y": 0},
@@ -309,7 +309,7 @@ def test_e032_unguarded_cycle() -> None:
         2,
         {
             "id": "echo",
-            "component_id": "lga.testing.fake_llm",
+            "component_id": "lab.testing.fake_llm",
             "component_version": "1.0.0",
             "config": {"replies": ["loop"]},
             "position": {"x": 0, "y": 0},
@@ -367,7 +367,7 @@ def test_tool_provider_not_a_graph_node() -> None:
     spec["nodes"].append(
         {
             "id": "calc",
-            "component_id": "lga.tools.calculator",
+            "component_id": "lab.tools.calculator",
             "component_version": "1.0.0",
             "config": {"expression": "1+1"},
             "position": {"x": 0, "y": 0},
@@ -376,7 +376,7 @@ def test_tool_provider_not_a_graph_node() -> None:
     spec["nodes"].append(
         {
             "id": "agent",
-            "component_id": "lga.llm.llm_agent",
+            "component_id": "lab.llm.llm_agent",
             "component_version": "1.0.0",
             "config": {"model": {"provider": "fake", "model": "ok"}},
             "position": {"x": 0, "y": 0},
@@ -443,7 +443,7 @@ def test_compile_cache_missed_when_secret_rotates() -> None:
     spec["nodes"].append(
         {
             "id": "ws",
-            "component_id": "lga.tools.web_search",
+            "component_id": "lab.tools.web_search",
             "component_version": "1.0.0",
             "config": {"query": "x", "api_key": {"$secret": "K"}},
             "position": {"x": 0, "y": 0},
@@ -585,7 +585,7 @@ def test_e014_nested_secret_ref_is_caught() -> None:
     spec["nodes"].append(
         {
             "id": "t",
-            "component_id": "lga.io.text_input",
+            "component_id": "lab.io.text_input",
             "component_version": "1.0.0",
             "config": {"value": {"headers": {"auth": {"$secret": "OPENAI_KEY"}}}},
             "position": {"x": 0, "y": 0},

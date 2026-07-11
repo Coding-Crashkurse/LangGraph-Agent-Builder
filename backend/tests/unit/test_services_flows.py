@@ -1,4 +1,4 @@
-"""Unit tests for lga.services.flows (SPEC §9.1): semver bumping, publish guards
+"""Unit tests for langgraph_agent_builder.services.flows (SPEC §9.1): semver bumping, publish guards
 (E060-E063), draft CRUD, versioning, publish/rollback, and serving helpers."""
 
 from __future__ import annotations
@@ -7,15 +7,15 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
-from lga.schema.diagnostics import DiagnosticCode, has_errors
-from lga.schema.flowspec import parse_flowspec
-from lga.sdk.registry import get_registry
-from lga.services.flows import FlowService, bump_semver, publish_guards
+from langgraph_agent_builder.schema.diagnostics import DiagnosticCode, has_errors
+from langgraph_agent_builder.schema.flowspec import parse_flowspec
+from langgraph_agent_builder.sdk.registry import get_registry
+from langgraph_agent_builder.services.flows import FlowService, bump_semver, publish_guards
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-    from lga.services.settings import Settings
+    from langgraph_agent_builder.services.settings import Settings
 
 SqliteStack = tuple["Settings", "async_sessionmaker[AsyncSession]"]
 
@@ -41,14 +41,14 @@ def _spec(
         or [
             {
                 "id": "start",
-                "component_id": "lga.io.start",
+                "component_id": "lab.io.start",
                 "component_version": "1.0.0",
                 "config": {},
                 "position": {"x": 0, "y": 0},
             },
             {
                 "id": "end",
-                "component_id": "lga.io.end",
+                "component_id": "lab.io.end",
                 "component_version": "1.0.0",
                 "config": {},
                 "position": {"x": 300, "y": 0},
@@ -121,21 +121,21 @@ def test_publish_guards_e063_mcp_with_unresolved_interrupt() -> None:
     nodes = [
         {
             "id": "start",
-            "component_id": "lga.io.start",
+            "component_id": "lab.io.start",
             "component_version": "1.0.0",
             "config": {},
             "position": {"x": 0, "y": 0},
         },
         {
             "id": "review",
-            "component_id": "lga.flow.human_approval",
+            "component_id": "lab.flow.human_approval",
             "component_version": "1.0.0",
             "config": {"prompt": "ok?"},
             "position": {"x": 300, "y": 0},
         },
         {
             "id": "end",
-            "component_id": "lga.io.end",
+            "component_id": "lab.io.end",
             "component_version": "1.0.0",
             "config": {},
             "position": {"x": 600, "y": 0},
@@ -227,7 +227,7 @@ async def test_upgrade_node_repins_version(flows: FlowService) -> None:
     nodes = [
         {
             "id": "fake",
-            "component_id": "lga.testing.fake_llm",
+            "component_id": "lab.testing.fake_llm",
             "component_version": "0.9.0",
             "config": {"replies": ["hi"]},
             "position": {"x": 0, "y": 0},
@@ -237,7 +237,7 @@ async def test_upgrade_node_repins_version(flows: FlowService) -> None:
     updated, err = await flows.upgrade_node(row.id, "fake", get_registry())
     assert err is None
     assert updated is not None
-    cls = get_registry().get("lga.testing.fake_llm")
+    cls = get_registry().get("lab.testing.fake_llm")
     assert cls is not None
     assert updated.spec["nodes"][0]["component_version"] == cls.version
 
@@ -281,7 +281,7 @@ async def test_publish_blocked_by_error_diagnostic(flows: FlowService) -> None:
 
 
 async def test_publish_carries_compile_diagnostics(flows: FlowService) -> None:
-    from lga.schema.diagnostics import Diagnostic
+    from langgraph_agent_builder.schema.diagnostics import Diagnostic
 
     row = await flows.create(_spec("blk2"))
     upstream = [Diagnostic.make(DiagnosticCode.E001, "boom")]

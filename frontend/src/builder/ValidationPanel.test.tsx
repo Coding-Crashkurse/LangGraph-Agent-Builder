@@ -65,16 +65,16 @@ describe("ValidationPanel", () => {
 
   it("surfaces a (disabled) Update-all button when pinned versions are stale", () => {
     const descriptor = {
-      component_id: "lga.llm.model",
+      component_id: "lab.llm.model",
       version: "1.1.0",
       legacy: false,
     } as unknown as ComponentDescriptor;
     const node: CanvasNode = {
       id: "model_1",
-      type: "lga",
+      type: "lab",
       position: { x: 0, y: 0 },
       data: {
-        componentId: "lga.llm.model",
+        componentId: "lab.llm.model",
         componentVersion: "1.0.0",
         label: "Model",
         config: {},
@@ -83,7 +83,7 @@ describe("ValidationPanel", () => {
     };
     useBuilder.setState({
       nodes: [node],
-      descriptors: new Map([["lga.llm.model", descriptor]]),
+      descriptors: new Map([["lab.llm.model", descriptor]]),
     });
     render(<ValidationPanel onFocusNode={() => {}} needsValidation={false} />);
 
@@ -94,16 +94,16 @@ describe("ValidationPanel", () => {
 
   it("hides Update-all when every node matches the installed version", () => {
     const descriptor = {
-      component_id: "lga.llm.model",
+      component_id: "lab.llm.model",
       version: "1.0.0",
       legacy: false,
     } as unknown as ComponentDescriptor;
     const node: CanvasNode = {
       id: "model_1",
-      type: "lga",
+      type: "lab",
       position: { x: 0, y: 0 },
       data: {
-        componentId: "lga.llm.model",
+        componentId: "lab.llm.model",
         componentVersion: "1.0.0",
         label: "Model",
         config: {},
@@ -112,7 +112,7 @@ describe("ValidationPanel", () => {
     };
     useBuilder.setState({
       nodes: [node],
-      descriptors: new Map([["lga.llm.model", descriptor]]),
+      descriptors: new Map([["lab.llm.model", descriptor]]),
     });
     render(<ValidationPanel onFocusNode={() => {}} needsValidation={false} />);
 

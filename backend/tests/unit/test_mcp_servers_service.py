@@ -1,10 +1,10 @@
-"""Unit tests for lga.services.mcp_servers (SPEC §8.3, §11.7)."""
+"""Unit tests for langgraph_agent_builder.services.mcp_servers (SPEC §8.3, §11.7)."""
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from lga.services.mcp_servers import McpServersService
+from langgraph_agent_builder.services.mcp_servers import McpServersService
 
 if TYPE_CHECKING:
     from tests.unit.conftest import SqliteStack

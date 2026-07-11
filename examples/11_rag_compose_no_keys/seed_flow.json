@@ -8,14 +8,14 @@
   "nodes": [
     {
       "id": "start",
-      "component_id": "lga.io.start",
+      "component_id": "lab.io.start",
       "component_version": "1.0.0",
       "config": {},
       "position": { "x": 0, "y": 140 }
     },
     {
       "id": "corpus",
-      "component_id": "lga.io.text_input",
+      "component_id": "lab.io.text_input",
       "component_version": "1.0.0",
       "config": {
         "value": "The Left Hand of Darkness was written by Ursula K. Le Guin and published in 1969. It explores gender and society on the planet Gethen.\n\nDune was written by Frank Herbert in 1965. It follows Paul Atreides on the desert planet Arrakis, source of the spice melange.\n\nNeuromancer was written by William Gibson in 1984 and coined the term cyberspace. It is the founding novel of the cyberpunk genre."
@@ -24,14 +24,14 @@
     },
     {
       "id": "splitter",
-      "component_id": "lga.rag.text_splitter",
+      "component_id": "lab.rag.text_splitter",
       "component_version": "1.0.0",
       "config": { "chunk_size": 200, "chunk_overlap": 0 },
       "position": { "x": 520, "y": 140 }
     },
     {
       "id": "writer",
-      "component_id": "lga.rag.pgvector_writer",
+      "component_id": "lab.rag.pgvector_writer",
       "component_version": "1.0.0",
       "config": {
         "collection": "mini-library",
@@ -41,7 +41,7 @@
     },
     {
       "id": "end",
-      "component_id": "lga.io.end",
+      "component_id": "lab.io.end",
       "component_version": "1.0.0",
       "config": {},
       "position": { "x": 1040, "y": 140 }

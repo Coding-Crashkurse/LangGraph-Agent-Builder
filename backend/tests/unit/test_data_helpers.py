@@ -1,4 +1,4 @@
-"""Unit tests for lga.components.data.helpers (MessageHistory, CurrentDate)."""
+"""Unit tests for langgraph_agent_builder.components.data.helpers (MessageHistory, CurrentDate)."""
 
 from __future__ import annotations
 
@@ -6,9 +6,9 @@ from datetime import UTC, datetime
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
-from lga.components.data.helpers import CurrentDate, MessageHistory
-from lga.sdk.ports import Message
-from lga.sdk.testing import ComponentTestHarness
+from langgraph_agent_builder.components.data.helpers import CurrentDate, MessageHistory
+from langgraph_agent_builder.sdk.ports import Message
+from langgraph_agent_builder.sdk.testing import ComponentTestHarness
 
 # --------------------------------------------------------------------------- MessageHistory
 

@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
-from lga.services.settings import Settings
+from langgraph_agent_builder.services.settings import Settings
 
 
 def create_engine(settings: Settings) -> AsyncEngine:

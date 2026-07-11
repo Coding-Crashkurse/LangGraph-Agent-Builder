@@ -142,7 +142,7 @@ export function useSaveValidate(): SaveValidate {
     };
   }, []);
 
-  // ------------------------------------------------ autosave (LGA_AUTO_SAVING)
+  // ------------------------------------------------ autosave (LAB_AUTO_SAVING)
   useEffect(() => {
     let timer: number | undefined;
     const unsub = useBuilder.subscribe((state, prev) => {

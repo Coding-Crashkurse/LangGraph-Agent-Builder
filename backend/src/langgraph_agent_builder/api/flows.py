@@ -7,9 +7,9 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from lga.api.deps import Services, StudioAuth
-from lga.db.models import FlowRow, FlowVersionRow
-from lga.schema.flowspec import FlowSpecError, parse_flowspec
+from langgraph_agent_builder.api.deps import Services, StudioAuth
+from langgraph_agent_builder.db.models import FlowRow, FlowVersionRow
+from langgraph_agent_builder.schema.flowspec import FlowSpecError, parse_flowspec
 
 router = APIRouter(prefix="/flows", tags=["flows"], dependencies=[StudioAuth])
 
@@ -238,7 +238,7 @@ async def export_flow(id_or_slug: str, svc: Services, format: str = Query(defaul
     if format == "python":
         from fastapi.responses import PlainTextResponse
 
-        from lga.compiler.export_python import export_python
+        from langgraph_agent_builder.compiler.export_python import export_python
 
         return PlainTextResponse(export_python(parse_flowspec(row.spec), svc.registry))
     return row.spec

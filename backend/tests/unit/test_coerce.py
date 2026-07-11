@@ -1,10 +1,10 @@
-"""Unit tests for lga.sdk.ports.coerce (registered edge coercions, SPEC §4.3)."""
+"""Unit tests for sdk.ports.coerce (registered edge coercions, SPEC §4.3)."""
 
 from __future__ import annotations
 
 import pytest
 
-from lga.sdk.ports import (
+from langgraph_agent_builder.sdk.ports import (
     DOCUMENTS,
     JSON,
     MESSAGE,

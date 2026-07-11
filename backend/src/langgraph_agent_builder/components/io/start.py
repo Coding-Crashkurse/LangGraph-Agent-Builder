@@ -4,13 +4,13 @@ from __future__ import annotations
 
 from typing import Any
 
-from lga.sdk import BuildContext, Component, Output, fields, ports
-from lga.sdk.component import NodeFn
-from lga.sdk.templating import last_message_text
+from langgraph_agent_builder.sdk import BuildContext, Component, Output, fields, ports
+from langgraph_agent_builder.sdk.component import NodeFn
+from langgraph_agent_builder.sdk.templating import last_message_text
 
 
 class Start(Component):
-    component_id = "lga.io.start"
+    component_id = "lab.io.start"
     display_name = "Chat Input"
     description = "Flow entry: exposes the inbound chat message and structured input."
     icon = "messages-square"

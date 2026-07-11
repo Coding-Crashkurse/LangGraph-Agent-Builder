@@ -38,7 +38,7 @@ def test_flows_validate_clean():
 
 def test_echo_provider_needs_no_keys():
     """The echo model works standalone — flows are testable without secrets."""
-    from lga.components.llm._models import resolve_model
+    from langgraph_agent_builder.components.llm._models import resolve_model
 
     async def _run() -> str:
         model = resolve_model({"provider": "echo"})
@@ -50,7 +50,7 @@ def test_echo_provider_needs_no_keys():
 
 @pytest.mark.skipif(not _postgres_up(), reason="postgres :55432 down (docker compose up)")
 def test_seed_then_retrieve_end_to_end():
-    from lga.services.settings import Settings
+    from langgraph_agent_builder.services.settings import Settings
 
     collection = f"mini-library-{uuid.uuid4().hex[:8]}"
     settings = Settings(env="test", database_url=REPO_PG_URL)
@@ -68,7 +68,7 @@ def test_seed_then_retrieve_end_to_end():
             node["config"]["k"] = 3
 
     def _compile(spec):
-        from lga.compiler import compile_flow
+        from langgraph_agent_builder.compiler import compile_flow
 
         return compile_flow(spec, use_cache=False, settings=settings)
 
@@ -84,7 +84,7 @@ def test_seed_then_retrieve_end_to_end():
 
 
 def run_local_compiled(compiled, input_text: str):
-    from lga.runtime.executor import Executor
+    from langgraph_agent_builder.runtime.executor import Executor
 
     async def _run():
         from langgraph.checkpoint.memory import InMemorySaver

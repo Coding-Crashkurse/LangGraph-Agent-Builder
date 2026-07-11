@@ -1,4 +1,4 @@
-"""Unit tests for the LLM Call component (lga.llm.llm_call).
+"""Unit tests for the LLM Call component (lab.llm.llm_call).
 
 Covers dynamic {var} prompt resolution (port > data), token-streaming vs
 one-shot invoke, and the structured-output JSON parse (success + fallback).
@@ -8,10 +8,10 @@ from __future__ import annotations
 
 from langchain_core.messages import AIMessage
 
-from lga.components.llm.llm_call import LLMCall, collect_prompt_values
-from lga.sdk.component import BuildContext, InputBinding
-from lga.sdk.ports import Message
-from lga.sdk.testing import ComponentTestHarness
+from langgraph_agent_builder.components.llm.llm_call import LLMCall, collect_prompt_values
+from langgraph_agent_builder.sdk.component import BuildContext, InputBinding
+from langgraph_agent_builder.sdk.ports import Message
+from langgraph_agent_builder.sdk.testing import ComponentTestHarness
 
 
 async def test_streams_rendered_prompt_from_connected_port() -> None:

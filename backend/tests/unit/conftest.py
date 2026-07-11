@@ -15,15 +15,15 @@ if TYPE_CHECKING:
 
     from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-    from lga.services.settings import Settings
+    from langgraph_agent_builder.services.settings import Settings
 
 SqliteStack = tuple["Settings", "async_sessionmaker[AsyncSession]"]
 
 
 @pytest.fixture
 async def sqlite_stack(sqlite_settings: Settings) -> AsyncIterator[SqliteStack]:
-    from lga.db.migrate import upgrade_async
-    from lga.services.db import create_engine, create_sessionmaker
+    from langgraph_agent_builder.db.migrate import upgrade_async
+    from langgraph_agent_builder.services.db import create_engine, create_sessionmaker
 
     await upgrade_async(sqlite_settings)
     engine = create_engine(sqlite_settings)

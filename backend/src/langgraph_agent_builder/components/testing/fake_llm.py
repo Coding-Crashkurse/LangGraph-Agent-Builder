@@ -6,13 +6,13 @@ from typing import Any
 
 from langchain_core.messages import AIMessage
 
-from lga.sdk import BuildContext, Component, Output, fields, ports
-from lga.sdk.component import NodeFn
-from lga.sdk.runtime import get_run_context
+from langgraph_agent_builder.sdk import BuildContext, Component, Output, fields, ports
+from langgraph_agent_builder.sdk.component import NodeFn
+from langgraph_agent_builder.sdk.runtime import get_run_context
 
 
 class FakeLLM(Component):
-    component_id = "lga.testing.fake_llm"
+    component_id = "lab.testing.fake_llm"
     display_name = "Fake LLM (testing)"
     description = "Deterministic scripted replies; cycles through `replies`. No API keys."
     icon = "bot"

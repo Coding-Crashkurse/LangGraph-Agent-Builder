@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 import httpx
 
 if TYPE_CHECKING:
-    from lga.app import AppServices
+    from langgraph_agent_builder.app import AppServices
 
 
 async def test_list_templates_exposes_metadata(client: httpx.AsyncClient) -> None:

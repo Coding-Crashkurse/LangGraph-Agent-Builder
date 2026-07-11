@@ -18,14 +18,14 @@ if TYPE_CHECKING:
 
     from fastapi import FastAPI
 
-    from lga.app import AppServices
-    from lga.services.settings import Settings
+    from langgraph_agent_builder.app import AppServices
+    from langgraph_agent_builder.services.settings import Settings
 
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 POSTGRES_HOST, POSTGRES_PORT = "localhost", 55432
-POSTGRES_ADMIN_URL = "postgresql+asyncpg://graphforge:graphforge@localhost:55432/graphforge"
+POSTGRES_ADMIN_URL = "postgresql+asyncpg://lab:lab@localhost:55432/lab"
 
 
 def _postgres_available() -> bool:
@@ -50,16 +50,16 @@ async def _ensure_pg_database(name: str) -> str:
         if exists.scalar() is None:
             await conn.execute(text(f'CREATE DATABASE "{name}"'))
     await engine.dispose()
-    return f"postgresql+asyncpg://graphforge:graphforge@localhost:55432/{name}"
+    return f"postgresql+asyncpg://lab:lab@localhost:55432/{name}"
 
 
 @pytest.fixture(params=TIERS)
 async def settings(request: pytest.FixtureRequest, tmp_path: Path) -> Settings:
     """Fresh Settings per test; postgres tier gets its own throwaway database."""
-    from lga.services.settings import Settings
+    from langgraph_agent_builder.services.settings import Settings
 
     kwargs: dict[str, Any] = {
-        "home": tmp_path / "lga-home",
+        "home": tmp_path / "lab-home",
         "env": "test",
         "create_starter_flows": False,  # keep test DBs empty (see test_langflow_parity)
     }
@@ -73,9 +73,9 @@ async def settings(request: pytest.FixtureRequest, tmp_path: Path) -> Settings:
 
 @pytest.fixture
 async def sqlite_settings(tmp_path: Path) -> Settings:
-    from lga.services.settings import Settings
+    from langgraph_agent_builder.services.settings import Settings
 
-    settings = Settings(home=tmp_path / "lga-home", env="test", create_starter_flows=False)
+    settings = Settings(home=tmp_path / "lab-home", env="test", create_starter_flows=False)
     settings.ensure_dirs()
     return settings
 
@@ -88,8 +88,8 @@ async def app(settings: Settings) -> AsyncIterator[FastAPI]:
     down in a different task, which anyio cancel scopes (MCP session manager)
     reject.
     """
-    from lga.app import create_app
-    from lga.db.migrate import upgrade_async
+    from langgraph_agent_builder.app import create_app
+    from langgraph_agent_builder.db.migrate import upgrade_async
 
     await upgrade_async(settings)
     application = create_app(settings, backend_only=True)
@@ -151,21 +151,21 @@ def hello_spec(slug: str = "hello", **flow_extra: Any) -> dict[str, Any]:
         "nodes": [
             {
                 "id": "start",
-                "component_id": "lga.io.start",
+                "component_id": "lab.io.start",
                 "component_version": "1.0.0",
                 "config": {},
                 "position": {"x": 0, "y": 0},
             },
             {
                 "id": "fake",
-                "component_id": "lga.testing.fake_llm",
+                "component_id": "lab.testing.fake_llm",
                 "component_version": "1.0.0",
-                "config": {"replies": ["Hello from LGA!"]},
+                "config": {"replies": ["Hello from LAB!"]},
                 "position": {"x": 300, "y": 0},
             },
             {
                 "id": "end",
-                "component_id": "lga.io.end",
+                "component_id": "lab.io.end",
                 "component_version": "1.0.0",
                 "config": {},
                 "position": {"x": 600, "y": 0},
@@ -204,28 +204,28 @@ def approval_spec(slug: str = "hitl") -> dict[str, Any]:
         "nodes": [
             {
                 "id": "start",
-                "component_id": "lga.io.start",
+                "component_id": "lab.io.start",
                 "component_version": "1.0.0",
                 "config": {},
                 "position": {"x": 0, "y": 0},
             },
             {
                 "id": "fake",
-                "component_id": "lga.testing.fake_llm",
+                "component_id": "lab.testing.fake_llm",
                 "component_version": "1.0.0",
                 "config": {"replies": ["draft answer", "revised answer"]},
                 "position": {"x": 200, "y": 0},
             },
             {
                 "id": "review",
-                "component_id": "lga.flow.human_approval",
+                "component_id": "lab.flow.human_approval",
                 "component_version": "1.0.0",
                 "config": {"prompt": "Release this answer?"},
                 "position": {"x": 400, "y": 0},
             },
             {
                 "id": "end",
-                "component_id": "lga.io.end",
+                "component_id": "lab.io.end",
                 "component_version": "1.0.0",
                 "config": {},
                 "position": {"x": 600, "y": 0},
@@ -272,21 +272,21 @@ def slow_spec(slug: str = "slow", seconds: float = 10.0) -> dict[str, Any]:
         "nodes": [
             {
                 "id": "start",
-                "component_id": "lga.io.start",
+                "component_id": "lab.io.start",
                 "component_version": "1.0.0",
                 "config": {},
                 "position": {"x": 0, "y": 0},
             },
             {
                 "id": "slow",
-                "component_id": "lga.testing.slow_node",
+                "component_id": "lab.testing.slow_node",
                 "component_version": "1.0.0",
                 "config": {"seconds": seconds},
                 "position": {"x": 300, "y": 0},
             },
             {
                 "id": "end",
-                "component_id": "lga.io.end",
+                "component_id": "lab.io.end",
                 "component_version": "1.0.0",
                 "config": {},
                 "position": {"x": 600, "y": 0},

@@ -6,17 +6,17 @@ The canonical fixture (SPEC Appendix A): `start → Fake LLM → end`. No API ke
 
 ```bash
 # headless, no server:
-lga flow validate examples/01_hello_flow/flow.json
-lga flow run examples/01_hello_flow/flow.json --local --input "hi"
-# → Hello from LGA!
+lab flow validate examples/01_hello_flow/flow.json
+lab flow run examples/01_hello_flow/flow.json --local --input "hi"
+# → Hello from LAB!
 
 # against a running server:
-lga flow import examples/01_hello_flow/flow.json
-lga flow publish hello
+lab flow import examples/01_hello_flow/flow.json
+lab flow publish hello
 curl -N -X POST http://127.0.0.1:8000/api/v1/flows/<id>/run \
   -H 'Content-Type: application/json' \
   -d '{"input_text": "hi", "stream": true}'
 ```
 
 Expected transcript: one `run_started`, `node_started/finished` per node, a
-`fake.thinking` custom event, `run_finished` with `Hello from LGA!`.
+`fake.thinking` custom event, `run_finished` with `Hello from LAB!`.

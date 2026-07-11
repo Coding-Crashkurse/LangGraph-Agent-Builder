@@ -1,4 +1,4 @@
-"""Unit tests for lga.services.secrets (SPEC §10.3).
+"""Unit tests for langgraph_agent_builder.services.secrets (SPEC §10.3).
 
 Covers kind switching, delete outcomes, decryption error paths, and the
 SnapshotVariablesProvider case-insensitive lookups.
@@ -11,8 +11,8 @@ from typing import TYPE_CHECKING
 import pytest
 from sqlalchemy import select
 
-from lga.db.models import GlobalVariableRow
-from lga.services.secrets import SecretsService, SnapshotVariablesProvider
+from langgraph_agent_builder.db.models import GlobalVariableRow
+from langgraph_agent_builder.services.secrets import SecretsService, SnapshotVariablesProvider
 
 if TYPE_CHECKING:
     from tests.unit.conftest import SqliteStack
@@ -117,8 +117,8 @@ async def test_snapshot_env_promotion(
     sqlite_stack: SqliteStack, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     settings, sessions = sqlite_stack
-    monkeypatch.setenv("LGA_VAR_TENANT", "acme")
-    monkeypatch.setenv("LGA_CRED_STRIPE_KEY", "sk-stripe")
+    monkeypatch.setenv("LAB_VAR_TENANT", "acme")
+    monkeypatch.setenv("LAB_CRED_STRIPE_KEY", "sk-stripe")
     service = SecretsService(settings, sessions)
     variables, secrets = await service.snapshot()
     # promoted under both original-cased and lowercased names

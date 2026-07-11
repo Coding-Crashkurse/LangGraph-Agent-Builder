@@ -1,8 +1,8 @@
 """Component discovery & registry (SPEC §4.8) — no eval, ever.
 
 Sources:
-1. Entry points: ``[project.entry-points."lga.components"]`` → package walked.
-2. Component dirs (``LGA_COMPONENTS_PATH``): ``<dir>/<category>/<module>.py``
+1. Entry points: ``[project.entry-points."langgraph_agent_builder.components"]`` → package walked.
+2. Component dirs (``LAB_COMPONENTS_PATH``): ``<dir>/<category>/<module>.py``
    imported via importlib; syntax errors become registry diagnostics.
 """
 
@@ -20,15 +20,15 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from types import ModuleType
 
-from lga.errors import LgaRuntimeError
-from lga.sdk.component import Component
+from langgraph_agent_builder.errors import LabRuntimeError
+from langgraph_agent_builder.sdk.component import Component
 
-logger = logging.getLogger("lga.registry")
+logger = logging.getLogger("lab.registry")
 
-ENTRY_POINT_GROUP = "lga.components"
+ENTRY_POINT_GROUP = "langgraph_agent_builder.components"
 
 
-class DuplicateComponentError(LgaRuntimeError):
+class DuplicateComponentError(LabRuntimeError):
     pass
 
 
@@ -121,7 +121,7 @@ class ComponentRegistry:
             if py.name.startswith("_"):
                 continue
             rel = py.relative_to(directory).with_suffix("")
-            mod_name = "lga_user_components." + ".".join(rel.parts)
+            mod_name = "lab_user_components." + ".".join(rel.parts)
             try:
                 spec = importlib.util.spec_from_file_location(mod_name, py)
                 assert spec
@@ -157,7 +157,7 @@ def get_registry() -> ComponentRegistry:
         reg.discover()
         if not reg.components:
             # entry points unavailable (e.g. non-installed checkout): walk built-ins directly
-            import lga.components as builtin
+            import langgraph_agent_builder.components as builtin
 
             reg._register_module_tree(builtin, origin="builtin")
         _default_registry = reg

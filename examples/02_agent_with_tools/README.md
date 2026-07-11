@@ -10,6 +10,6 @@ model never emits tool calls, but the compile report proves the binding
 `{"provider": "openai", "model": "gpt-4o-mini"}` for a live agent:
 
 ```bash
-LGA_CRED_OPENAI_API_KEY=sk-… lga flow run examples/02_agent_with_tools/flow.json \
+LAB_CRED_OPENAI_API_KEY=sk-… lab flow run examples/02_agent_with_tools/flow.json \
   --local --input "what is (2+3)*4?"
 ```

@@ -31,7 +31,7 @@ def test_orchestrator_delegates_over_a2a():
 
             orchestrator = _load("orchestrator.json")
             for node in orchestrator["nodes"]:
-                if node["component_id"] == "lga.tools.a2a_remote_agent":
+                if node["component_id"] == "lab.tools.a2a_remote_agent":
                     slug = node["config"]["agent_url"].rstrip("/").split("/")[-1]
                     node["config"]["agent_url"] = f"{server.base}/a2a/{slug}"
             await server.publish(orchestrator)

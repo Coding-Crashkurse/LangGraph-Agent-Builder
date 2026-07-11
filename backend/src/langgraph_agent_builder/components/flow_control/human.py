@@ -7,14 +7,14 @@ from typing import Any
 from langchain_core.messages import HumanMessage
 from langgraph.types import interrupt
 
-from lga.sdk import BuildContext, Component, NodeKind, Output, fields, ports
-from lga.sdk.component import NodeFn
-from lga.sdk.interrupts import ApprovalRequest, InputRequest
-from lga.sdk.templating import last_message_text
+from langgraph_agent_builder.sdk import BuildContext, Component, NodeKind, Output, fields, ports
+from langgraph_agent_builder.sdk.component import NodeFn
+from langgraph_agent_builder.sdk.interrupts import ApprovalRequest, InputRequest
+from langgraph_agent_builder.sdk.templating import last_message_text
 
 
 class HumanApproval(Component):
-    component_id = "lga.flow.human_approval"
+    component_id = "lab.flow.human_approval"
     display_name = "Human Approval"
     description = "Pauses the flow (interrupt) until a human approves or rejects."
     icon = "user-check"
@@ -72,7 +72,7 @@ class HumanApproval(Component):
 
 
 class HumanInput(Component):
-    component_id = "lga.flow.human_input"
+    component_id = "lab.flow.human_input"
     display_name = "Human Input"
     description = "Pauses the flow for free-text (or schema-validated) human input."
     icon = "message-square"

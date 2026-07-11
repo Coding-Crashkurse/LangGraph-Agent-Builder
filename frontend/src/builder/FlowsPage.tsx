@@ -117,7 +117,7 @@ export function FlowsPage() {
   return (
     <div className="min-h-screen bg-canvas px-8 py-6 text-text-1">
       <header className="mb-6 flex items-center gap-3">
-        <h1 className="text-lg font-bold">lga</h1>
+        <h1 className="text-lg font-bold">LangGraph Agent Builder</h1>
         <span className="text-xs text-text-3">
           flows compile to LangGraph · publish = A2A agent + MCP tool
         </span>

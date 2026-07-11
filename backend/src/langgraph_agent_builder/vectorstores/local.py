@@ -1,6 +1,6 @@
 """Local vector store backend (SPEC §8b.2) — zero-config, no server.
 
-Backed by a per-connection SQLite file under ``LGA_HOME/vectors/<name>.db``
+Backed by a per-connection SQLite file under ``LAB_HOME/vectors/<name>.db``
 (``aiosqlite``, already a core dependency). Search is *exact* (brute-force
 cosine/l2/ip over stored vectors): deterministic, dependency-light, and correct
 on every platform and both storage tiers — the right trade-off for the local
@@ -27,8 +27,8 @@ from typing import Any, ClassVar, cast
 
 import aiosqlite
 
-from lga.sdk.ports import Document
-from lga.vectorstores.base import (
+from langgraph_agent_builder.sdk.ports import Document
+from langgraph_agent_builder.vectorstores.base import (
     CollectionInfo,
     CollectionMissing,
     DimensionMismatch,

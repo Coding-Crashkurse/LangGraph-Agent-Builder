@@ -5,13 +5,13 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
-from lga.sdk import BuildContext, Component, Output, fields, ports
-from lga.sdk.component import NodeFn
-from lga.sdk.runtime import get_run_context
+from langgraph_agent_builder.sdk import BuildContext, Component, Output, fields, ports
+from langgraph_agent_builder.sdk.component import NodeFn
+from langgraph_agent_builder.sdk.runtime import get_run_context
 
 
 class SlowNode(Component):
-    component_id = "lga.testing.slow_node"
+    component_id = "lab.testing.slow_node"
     display_name = "Slow Node (testing)"
     description = "Sleeps `seconds`, checking the cancellation token every 100ms."
     icon = "timer"
@@ -45,7 +45,7 @@ class SlowNode(Component):
 
 
 class FailingNode(Component):
-    component_id = "lga.testing.failing_node"
+    component_id = "lab.testing.failing_node"
     display_name = "Failing Node (testing)"
     description = "Raises a configured error — exercises RT103 and A2A `failed`."
     icon = "bomb"
@@ -70,7 +70,7 @@ class FailingNode(Component):
 
 
 class EchoData(Component):
-    component_id = "lga.testing.echo_data"
+    component_id = "lab.testing.echo_data"
     display_name = "Echo Data (testing)"
     description = "Echoes its json input to output and into `data.echo`."
     icon = "copy"

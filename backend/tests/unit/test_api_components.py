@@ -13,7 +13,7 @@ async def test_list_components_returns_descriptors_with_etag(
     assert response.status_code == 200
     assert response.headers.get("ETag")
     ids = {c["component_id"] for c in response.json()}
-    assert "lga.io.start" in ids
+    assert "lab.io.start" in ids
     # legacy components are filtered out of the listing
     assert all(c.get("legacy") is not True for c in response.json())
 
@@ -30,7 +30,7 @@ async def test_list_components_conditional_get_returns_304(
 async def test_config_change_roundtrips_value(client: httpx.AsyncClient) -> None:
     # default on_field_change writes value into config and echoes the descriptor.
     response = await client.post(
-        "/api/v1/components/lga.io.start/config",
+        "/api/v1/components/lab.io.start/config",
         json={"config": {}, "changed_field": "input_type", "value": "chat"},
     )
     assert response.status_code == 200, response.text
@@ -45,8 +45,8 @@ async def test_config_change_unknown_component_is_404(
     client: httpx.AsyncClient,
 ) -> None:
     response = await client.post(
-        "/api/v1/components/lga.not.real/config",
+        "/api/v1/components/lab.not.real/config",
         json={"config": {}, "changed_field": "x", "value": 1},
     )
     assert response.status_code == 404
-    assert "lga.not.real" in response.json()["detail"]
+    assert "lab.not.real" in response.json()["detail"]

@@ -1,4 +1,4 @@
-"""Unit tests for lga.services.orchestrator (SPEC §6.1): the single run path.
+"""Unit tests for langgraph_agent_builder.services.orchestrator (SPEC §6.1): the single run path.
 
 Drives real flows (hello / approval) end-to-end through the executor via the
 ``svc`` fixture, covering compile, validate, run, resume, thread state, and the
@@ -10,12 +10,16 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
-from lga.runtime.executor import RunHandle, RunResult
-from lga.services.orchestrator import FlowNotRunnableError, Orchestrator, scoped_thread_id
+from langgraph_agent_builder.runtime.executor import RunHandle, RunResult
+from langgraph_agent_builder.services.orchestrator import (
+    FlowNotRunnableError,
+    Orchestrator,
+    scoped_thread_id,
+)
 from tests.conftest import approval_spec, hello_spec
 
 if TYPE_CHECKING:
-    from lga.app import AppServices
+    from langgraph_agent_builder.app import AppServices
 
 
 def _orch(svc: AppServices) -> Orchestrator:
@@ -25,7 +29,7 @@ def _orch(svc: AppServices) -> Orchestrator:
 def _broken_spec() -> dict[str, Any]:
     spec = hello_spec("broken")
     # point a node at a component that is not installed → compile error
-    spec["nodes"][1]["component_id"] = "lga.does.not.exist"
+    spec["nodes"][1]["component_id"] = "lab.does.not.exist"
     return spec
 
 
@@ -81,7 +85,7 @@ async def test_start_run_completes(svc: AppServices) -> None:
     )
     assert isinstance(result, RunResult)
     assert result.status == "completed"
-    assert result.result_text == "Hello from LGA!"
+    assert result.result_text == "Hello from LAB!"
     row = await svc.runs.get(run_id)
     assert row is not None
     assert row.status == "completed"

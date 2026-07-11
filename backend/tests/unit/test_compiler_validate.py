@@ -1,4 +1,4 @@
-"""Unit tests for lga.compiler.validate (P3): edge/router/port/graph-shape
+"""Unit tests for langgraph_agent_builder.compiler.validate (P3): edge/router/port/graph-shape
 diagnostics that the goldens in tests/test_compiler.py do not already pin."""
 
 from __future__ import annotations
@@ -6,8 +6,8 @@ from __future__ import annotations
 import copy
 from typing import Any
 
-from lga.compiler import CompiledFlow, compile_flow
-from lga.schema.diagnostics import DiagnosticCode
+from langgraph_agent_builder.compiler import CompiledFlow, compile_flow
+from langgraph_agent_builder.schema.diagnostics import DiagnosticCode
 from tests.conftest import approval_spec, hello_spec
 
 
@@ -82,7 +82,7 @@ def test_any_typed_edge_warns_w201() -> None:
     spec["nodes"].append(
         {
             "id": "sink",
-            "component_id": "lga.io.set_data",
+            "component_id": "lab.io.set_data",
             "component_version": "1.0.0",
             "config": {"entries": [{"key": "k", "template": "v"}]},
             "position": {"x": 0, "y": 0},
@@ -106,7 +106,7 @@ def test_required_input_port_unconnected_is_e031() -> None:
     spec["nodes"].append(
         {
             "id": "agent",
-            "component_id": "lga.llm.llm_agent",
+            "component_id": "lab.llm.llm_agent",
             "component_version": "1.0.0",
             "config": {},
             "position": {"x": 0, "y": 0},
@@ -143,35 +143,35 @@ def test_interrupt_in_parallel_branch_is_e040() -> None:
         "nodes": [
             {
                 "id": "start",
-                "component_id": "lga.io.start",
+                "component_id": "lab.io.start",
                 "component_version": "1.0.0",
                 "config": {},
                 "position": {"x": 0, "y": 0},
             },
             {
                 "id": "fan",
-                "component_id": "lga.testing.fake_llm",
+                "component_id": "lab.testing.fake_llm",
                 "component_version": "1.0.0",
                 "config": {"replies": ["a"]},
                 "position": {"x": 100, "y": 0},
             },
             {
                 "id": "review",
-                "component_id": "lga.flow.human_approval",
+                "component_id": "lab.flow.human_approval",
                 "component_version": "1.0.0",
                 "config": {"prompt": "ok?"},
                 "position": {"x": 200, "y": 0},
             },
             {
                 "id": "other",
-                "component_id": "lga.testing.fake_llm",
+                "component_id": "lab.testing.fake_llm",
                 "component_version": "1.0.0",
                 "config": {"replies": ["b"]},
                 "position": {"x": 200, "y": 100},
             },
             {
                 "id": "end",
-                "component_id": "lga.io.end",
+                "component_id": "lab.io.end",
                 "component_version": "1.0.0",
                 "config": {},
                 "position": {"x": 400, "y": 0},

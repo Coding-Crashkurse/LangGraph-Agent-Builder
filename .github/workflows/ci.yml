@@ -18,12 +18,12 @@ jobs:
       postgres:
         image: pgvector/pgvector:pg17
         env:
-          POSTGRES_USER: graphforge
-          POSTGRES_PASSWORD: graphforge
-          POSTGRES_DB: graphforge
+          POSTGRES_USER: lab
+          POSTGRES_PASSWORD: lab
+          POSTGRES_DB: lab
         ports: ["55432:5432"]
         options: >-
-          --health-cmd "pg_isready -U graphforge"
+          --health-cmd "pg_isready -U lab"
           --health-interval 5s --health-timeout 5s --health-retries 20
     steps:
       - uses: actions/checkout@v4
@@ -40,7 +40,7 @@ jobs:
           uv run ruff format --check
       - name: no eval/exec of user code (SPEC §17)
         run: |
-          ! grep -rnE '(^|[^.a-zA-Z_])(eval|exec)\(' backend/src/lga \
+          ! grep -rnE '(^|[^.a-zA-Z_])(eval|exec)\(' backend/src/langgraph_agent_builder \
             --include='*.py' \
             | grep -v 'exec_module' | grep -v '# grep-ok'
       - name: import-linter (sdk stays lightweight)
@@ -51,7 +51,7 @@ jobs:
         env:
           # the suite parametrizes tiers itself when 55432 is reachable;
           # the sqlite job simply has no postgres service exposed
-          LGA_TEST_TIER: ${{ matrix.tier }}
+          LAB_TEST_TIER: ${{ matrix.tier }}
         run: uv run pytest tests -q
       - name: example matrix
         working-directory: backend
@@ -73,7 +73,7 @@ jobs:
         run: uv run mypy
       - name: coverage >= 85% on core (REFACTOR.md §4)
         working-directory: backend
-        run: uv run pytest tests -q --cov=lga --cov-report=term-missing
+        run: uv run pytest tests -q --cov=langgraph_agent_builder --cov-report=term-missing
 
   frontend:
     runs-on: ubuntu-latest
@@ -124,21 +124,21 @@ jobs:
           import glob, zipfile
           wheel = glob.glob('backend/dist/*.whl')[0]
           names = zipfile.ZipFile(wheel).namelist()
-          assert any(n.endswith('lga/_static/index.html') for n in names), names[:20]
+          assert any(n.endswith('langgraph_agent_builder/_static/index.html') for n in names), names[:20]
           print('wheel bundles the frontend ✔')
           "
       - name: install into a fresh venv WITHOUT Node and smoke it (SPEC §15.6)
         run: |
           uv venv /tmp/fresh
           uv pip install --python /tmp/fresh/bin/python backend/dist/*.whl
-          /tmp/fresh/bin/lga version
-          /tmp/fresh/bin/lga init /tmp/ws
+          /tmp/fresh/bin/lab version
+          /tmp/fresh/bin/lab init /tmp/ws
           test -f /tmp/ws/.env
-          /tmp/fresh/bin/lga flow validate examples/01_hello_flow/flow.json
-          LGA_HOME=/tmp/lga-home timeout 40 /tmp/fresh/bin/lga run --port 8765 --no-open &
+          /tmp/fresh/bin/lab flow validate examples/01_hello_flow/flow.json
+          LAB_HOME=/tmp/lab-home timeout 40 /tmp/fresh/bin/lab run --port 8765 --no-open &
           for i in $(seq 1 60); do
             curl -sf http://127.0.0.1:8765/api/v1/health && break || sleep 1
           done
           curl -sf http://127.0.0.1:8765/api/v1/health | grep '"status":"ok"'
       - name: uvx from wheel
-        run: uvx --from backend/dist/*.whl lga version
+        run: uvx --from backend/dist/*.whl lab version

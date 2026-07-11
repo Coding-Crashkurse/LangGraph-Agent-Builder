@@ -28,7 +28,7 @@ Point the same FlowSpec at Qdrant by declaring a connection via env — the
 `$vectorstore` name resolves to whatever backend the connection uses:
 
 ```bash
-export LGA_VECTORSTORE_KB='{"backend":"qdrant","url":"http://localhost:6333"}'
+export LAB_VECTORSTORE_KB='{"backend":"qdrant","url":"http://localhost:6333"}'
 # then reference {"$vectorstore":"kb", ...} instead of "local"
 uv pip install "langgraph-agent-builder[qdrant]"
 ```

@@ -1,4 +1,4 @@
-"""Unit tests for lga.db.migrate — URL rewriting, config, offline SQL, upgrade."""
+"""Unit tests for db.migrate — URL rewriting, config, offline SQL, upgrade."""
 
 from __future__ import annotations
 
@@ -6,14 +6,14 @@ from pathlib import Path
 
 import sqlalchemy as sa
 
-from lga.db.migrate import (
+from langgraph_agent_builder.db.migrate import (
     MIGRATIONS_DIR,
     build_config,
     sync_url,
     upgrade,
     upgrade_async,
 )
-from lga.services.settings import Settings
+from langgraph_agent_builder.services.settings import Settings
 
 
 def _sqlite_settings(tmp_path: Path) -> Settings:

@@ -1,4 +1,4 @@
-"""API keys (SPEC §10.4): `lga_sk_…`, stored hashed, scoped, revocable."""
+"""API keys (SPEC §10.4): `lab_sk_…`, stored hashed, scoped, revocable."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from lga.db.models import ApiKeyRow
+from langgraph_agent_builder.db.models import ApiKeyRow
 
 SCOPES = ("studio:*", "a2a:invoke", "mcp:invoke", "webhook:invoke")
 
@@ -31,7 +31,7 @@ class ApiKeyService:
         for scope in scopes:
             if scope not in SCOPES:
                 raise ValueError(f"unknown scope {scope!r} (valid: {', '.join(SCOPES)})")
-        key = "lga_sk_" + secrets.token_urlsafe(32)
+        key = "lab_sk_" + secrets.token_urlsafe(32)
         row = ApiKeyRow(name=name, key_hash=_hash(key), prefix=key[:14], scopes=scopes)
         async with self._sessions() as session:
             session.add(row)

@@ -12,7 +12,7 @@ import httpx
 from tests.conftest import hello_spec
 
 if TYPE_CHECKING:
-    from lga.app import AppServices
+    from langgraph_agent_builder.app import AppServices
 
 
 async def _create_draft(client: httpx.AsyncClient, spec: dict[str, Any]) -> str:
@@ -84,7 +84,7 @@ async def test_webhook_header_vars_do_not_break_run(
     response = await client.post(
         "/api/v1/webhook/wh-vars",
         json={"hello": "world"},
-        headers={"X-LGA-Var-Tenant": "acme"},
+        headers={"X-LAB-Var-Tenant": "acme"},
     )
     assert response.status_code == 202, response.text
     assert response.json()["run_id"]
@@ -96,7 +96,7 @@ async def test_webhook_non_runnable_flow_is_422(
     svc.settings.webhook_auth = False
     spec = copy.deepcopy(hello_spec("wh-broken"))
     # unknown component: parses fine (schema-only) but fails to compile → 422
-    spec["nodes"][1]["component_id"] = "lga.nope.missing"
+    spec["nodes"][1]["component_id"] = "lab.nope.missing"
     await _create_draft(client, spec)
     response = await client.post("/api/v1/webhook/wh-broken", json={})
     assert response.status_code == 422, response.text

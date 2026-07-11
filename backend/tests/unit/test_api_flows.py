@@ -23,9 +23,9 @@ def _unrunnable_spec(slug: str = "broken") -> dict[str, Any]:
         "schema_version": "1",
         "flow": {"name": slug, "slug": slug},
         "nodes": [
-            {"id": "start", "component_id": "lga.io.start", "config": {}},
-            {"id": "ghost", "component_id": "lga.does.not.exist", "config": {}},
-            {"id": "end", "component_id": "lga.io.end", "config": {}},
+            {"id": "start", "component_id": "lab.io.start", "config": {}},
+            {"id": "ghost", "component_id": "lab.does.not.exist", "config": {}},
+            {"id": "end", "component_id": "lab.io.end", "config": {}},
         ],
         "edges": [],
     }

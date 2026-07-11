@@ -4,13 +4,13 @@ from __future__ import annotations
 
 from typing import Any
 
-from lga.sdk import BuildContext, Component, Output, fields, ports
-from lga.sdk.component import NodeFn
-from lga.sdk.templating import last_message_text, render_jinja
+from langgraph_agent_builder.sdk import BuildContext, Component, Output, fields, ports
+from langgraph_agent_builder.sdk.component import NodeFn
+from langgraph_agent_builder.sdk.templating import last_message_text, render_jinja
 
 
 class SetData(Component):
-    component_id = "lga.io.set_data"
+    component_id = "lab.io.set_data"
     display_name = "Set Data"
     description = "Write literal or jinja-templated values into the shared data dict."
     icon = "database"

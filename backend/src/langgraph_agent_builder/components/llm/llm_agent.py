@@ -10,18 +10,18 @@ from typing import TYPE_CHECKING, Any, cast
 
 from langchain_core.messages import BaseMessage, SystemMessage, ToolMessage
 
-from lga.sdk import Component, Output, fields, ports
-from lga.sdk.component import BuildContext, NodeFn
-from lga.sdk.ports import LazyToolset, ToolDef, resolve_toolsets
+from langgraph_agent_builder.sdk import Component, Output, fields, ports
+from langgraph_agent_builder.sdk.component import BuildContext, NodeFn
+from langgraph_agent_builder.sdk.ports import LazyToolset, ToolDef, resolve_toolsets
 
 if TYPE_CHECKING:
     from langchain_core.language_models.chat_models import BaseChatModel
-from lga.sdk.runtime import get_run_context
-from lga.sdk.templating import message_text
+from langgraph_agent_builder.sdk.runtime import get_run_context
+from langgraph_agent_builder.sdk.templating import message_text
 
 
 class LLMAgent(Component):
-    component_id = "lga.llm.llm_agent"
+    component_id = "lab.llm.llm_agent"
     display_name = "LLM Agent"
     description = "Chat model with attached tools; loops until no more tool calls."
     icon = "brain"
@@ -55,10 +55,10 @@ class LLMAgent(Component):
     outputs = [Output(name="message", display_name="Message", port=ports.MESSAGE)]
 
     def build(self, ctx: BuildContext) -> NodeFn:
-        from lga.components.llm._models import resolve_model
-        from lga.components.llm.llm_call import collect_prompt_values
-        from lga.runtime.tools import as_langchain_tools
-        from lga.sdk.templating import render_prompt
+        from langgraph_agent_builder.components.llm._models import resolve_model
+        from langgraph_agent_builder.components.llm.llm_call import collect_prompt_values
+        from langgraph_agent_builder.runtime.tools import as_langchain_tools
+        from langgraph_agent_builder.sdk.templating import render_prompt
 
         async def node(state: dict[str, Any], config: Any) -> dict[str, Any]:
             rc = get_run_context(config)

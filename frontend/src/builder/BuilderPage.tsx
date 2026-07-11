@@ -118,7 +118,7 @@ function Canvas({ needsValidation }: { needsValidation: boolean }) {
       target: connection.target,
       targetHandle: verdict.kind === "router" ? ROUTER_TARGET_HANDLE : connection.targetHandle,
       data: { kind: verdict.kind },
-      type: "lga",
+      type: "lab",
     };
     useBuilder.getState().addEdge(edge);
   }, []);
@@ -131,7 +131,7 @@ function Canvas({ needsValidation }: { needsValidation: boolean }) {
   const onDrop = useCallback(
     (event: React.DragEvent) => {
       event.preventDefault();
-      const componentId = event.dataTransfer.getData("application/lga-component");
+      const componentId = event.dataTransfer.getData("application/lab-component");
       if (componentId) addComponent(componentId, { x: event.clientX, y: event.clientY });
     },
     [addComponent],

@@ -1,4 +1,4 @@
-"""`lga component new` — scaffold a custom component package (SPEC §2.6)."""
+"""`lab component new` — scaffold a custom component package (SPEC §2.6)."""
 
 from __future__ import annotations
 
@@ -7,17 +7,17 @@ from typing import Annotated
 
 import typer
 
-from lga.cli._common import EXIT_USAGE, console, err_console
+from langgraph_agent_builder.cli._common import EXIT_USAGE, console, err_console
 
 PYPROJECT_TPL = """\
 [project]
 name = "{pkg}"
 version = "0.1.0"
-description = "Custom lga component: {display}"
+description = "Custom lab component: {display}"
 requires-python = ">=3.12"
 dependencies = ["langgraph-agent-builder"]
 
-[project.entry-points."lga.components"]
+[project.entry-points."langgraph_agent_builder.components"]
 {name} = "{pkg}"
 
 [dependency-groups]
@@ -35,11 +35,11 @@ asyncio_mode = "auto"
 """
 
 COMPONENT_TPL = '''\
-"""{display} — custom lga component."""
+"""{display} — custom lab component."""
 
 from typing import Any
 
-from lga.sdk import Component, Output, fields, ports
+from langgraph_agent_builder.sdk import Component, Output, fields, ports
 
 
 class {cls}(Component):
@@ -64,7 +64,7 @@ class {cls}(Component):
 '''
 
 TEST_TPL = """\
-from lga.sdk.testing import ComponentTestHarness
+from langgraph_agent_builder.sdk.testing import ComponentTestHarness
 
 from {pkg} import {cls}
 
@@ -106,4 +106,4 @@ def component_new(
     (src / "__init__.py").write_text(COMPONENT_TPL.format(**fmt), encoding="utf-8")
     (root / "tests" / f"test_{name}.py").write_text(TEST_TPL.format(**fmt), encoding="utf-8")
     console.print(f"[green]component package created:[/green] {root}")
-    console.print(f"install it with: [bold]uv pip install -e {root}[/bold] and restart lga")
+    console.print(f"install it with: [bold]uv pip install -e {root}[/bold] and restart lab")

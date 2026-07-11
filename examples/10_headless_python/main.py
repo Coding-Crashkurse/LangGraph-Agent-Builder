@@ -17,14 +17,14 @@ FLOW = json.loads((Path(__file__).parent / "flow.json").read_text(encoding="utf-
 
 
 async def main() -> None:
-    from lga.compiler import compile_flow
-    from lga.runtime import arun_flow
+    from langgraph_agent_builder.compiler import compile_flow
+    from langgraph_agent_builder.runtime import arun_flow
 
     compiled = compile_flow(FLOW)
     print("diagnostics:", [f"{d.code.value}: {d.message}" for d in compiled.diagnostics])
     print("nodes:", [n["id"] for n in compiled.report.nodes])
 
-    # 1) the compiled graph is vanilla LangGraph — usable without any lga runtime
+    # 1) the compiled graph is vanilla LangGraph — usable without any lab runtime
     from langchain_core.messages import HumanMessage
 
     state = await compiled.graph.ainvoke(
@@ -33,14 +33,14 @@ async def main() -> None:
     )
     print("vanilla result:", state["ports"]["end.result"].content)
 
-    # 2) or with the lga runtime (events, interrupts, RT codes)
+    # 2) or with the lab runtime (events, interrupts, RT codes)
     result = await arun_flow(FLOW, input_text="hi again")
     print("runtime result:", result.status, "->", result.result_text)
 
     # 3) export to a standalone python file (SPEC §5.7)
-    from lga.compiler.export_python import export_python
-    from lga.schema.flowspec import parse_flowspec
-    from lga.sdk.registry import get_registry
+    from langgraph_agent_builder.compiler.export_python import export_python
+    from langgraph_agent_builder.schema.flowspec import parse_flowspec
+    from langgraph_agent_builder.sdk.registry import get_registry
 
     exported = export_python(parse_flowspec(FLOW), get_registry())
     out = Path(__file__).parent / "exported_flow.py"

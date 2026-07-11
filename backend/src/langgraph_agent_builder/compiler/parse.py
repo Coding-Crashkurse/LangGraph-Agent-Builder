@@ -5,8 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from lga.schema.diagnostics import Diagnostic, DiagnosticCode
-from lga.schema.flowspec import (
+from langgraph_agent_builder.schema.diagnostics import Diagnostic, DiagnosticCode
+from langgraph_agent_builder.schema.flowspec import (
     RESERVED_NODE_IDS,
     FlowSpec,
     FlowSpecError,
@@ -38,7 +38,7 @@ def parse(
             )
         seen.add(node.id)
         if node.id in RESERVED_NODE_IDS:
-            expected = f"lga.io.{node.id}"
+            expected = f"lab.io.{node.id}"
             if node.component_id != expected:
                 diagnostics.append(
                     Diagnostic.make(

@@ -1,4 +1,4 @@
-"""`lga flow` — headless flow ops (SPEC §2.6): import/export/validate/publish/run."""
+"""`lab flow` — headless flow ops (SPEC §2.6): import/export/validate/publish/run."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from typing import Annotated, Any
 import httpx
 import typer
 
-from lga.cli._common import (
+from langgraph_agent_builder.cli._common import (
     EXIT_CONNECTION,
     EXIT_ERROR,
     EXIT_VALIDATION,
@@ -20,8 +20,8 @@ from lga.cli._common import (
 
 flow_app = typer.Typer(help="Headless flow operations (server-based or --local).")
 
-ServerOpt = Annotated[str, typer.Option(envvar="LGA_SERVER_URL", help="lga server URL")]
-ApiKeyOpt = Annotated[str | None, typer.Option(envvar="LGA_API_KEY", help="API key (studio scope)")]
+ServerOpt = Annotated[str, typer.Option(envvar="LAB_SERVER_URL", help="lab server URL")]
+ApiKeyOpt = Annotated[str | None, typer.Option(envvar="LAB_API_KEY", help="API key (studio scope)")]
 
 
 def _client(server: str, api_key: str | None) -> httpx.Client:
@@ -34,7 +34,7 @@ def _check(response: httpx.Response) -> httpx.Response:
     if response.is_success:
         return response
     if response.status_code in (401, 403):
-        err_console.print("[red]authentication failed[/red] (set --api-key / LGA_API_KEY)")
+        err_console.print("[red]authentication failed[/red] (set --api-key / LAB_API_KEY)")
         raise typer.Exit(EXIT_CONNECTION)
     try:
         body = response.json()
@@ -93,8 +93,8 @@ def validate_flow(
     format: Annotated[str, typer.Option(help="text | json")] = "text",
 ) -> None:
     """In-process compile+validate; exits 3 on ERROR diagnostics (CI-friendly)."""
-    from lga.compiler import compile_flow
-    from lga.schema.diagnostics import Severity
+    from langgraph_agent_builder.compiler import compile_flow
+    from langgraph_agent_builder.schema.diagnostics import Severity
 
     compiled = compile_flow(json.loads(path.read_text(encoding="utf-8")), use_cache=False)
     diags = compiled.diagnostics
@@ -152,7 +152,7 @@ def run_flow_cmd(
 ) -> None:
     payload_data = json.loads(data) if data else None
     if local:
-        from lga.runtime import arun_flow
+        from langgraph_agent_builder.runtime import arun_flow
 
         result = run_async(
             arun_flow(

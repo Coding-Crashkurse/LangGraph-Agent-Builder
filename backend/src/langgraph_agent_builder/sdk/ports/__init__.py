@@ -32,7 +32,7 @@ class PortFamily(StrEnum):
 
 
 class PortSpec(BaseModel):
-    schema_ref: str  # e.g. "lga:Message", "myco:TicketBatch"
+    schema_ref: str  # e.g. "lab:Message", "myco:TicketBatch"
     json_schema: dict[str, Any] = Field(default_factory=dict)
     family: PortFamily
     is_list: bool = False
@@ -173,45 +173,45 @@ def _schema(model: type[BaseModel]) -> dict[str, Any]:
 
 
 MESSAGE = PortSpec(
-    schema_ref="lga:Message", json_schema=_schema(Message), family=PortFamily.MESSAGE
+    schema_ref="lab:Message", json_schema=_schema(Message), family=PortFamily.MESSAGE
 )
 MESSAGES = PortSpec(
-    schema_ref="lga:Messages",
+    schema_ref="lab:Messages",
     json_schema={"type": "array", "items": _schema(Message)},
     family=PortFamily.MESSAGE,
     is_list=True,
 )
-TEXT = PortSpec(schema_ref="lga:Text", json_schema={"type": "string"}, family=PortFamily.DATA)
-JSON = PortSpec(schema_ref="lga:Json", json_schema={"type": "object"}, family=PortFamily.DATA)
+TEXT = PortSpec(schema_ref="lab:Text", json_schema={"type": "string"}, family=PortFamily.DATA)
+JSON = PortSpec(schema_ref="lab:Json", json_schema={"type": "object"}, family=PortFamily.DATA)
 TABLE = PortSpec(
-    schema_ref="lga:Table",
+    schema_ref="lab:Table",
     json_schema={"type": "array", "items": {"type": "object"}},
     family=PortFamily.TABLE,
     is_list=True,
 )
 DOCUMENTS = PortSpec(
-    schema_ref="lga:Documents",
+    schema_ref="lab:Documents",
     json_schema={"type": "array", "items": _schema(Document)},
     family=PortFamily.DOCUMENTS,
     is_list=True,
 )
-EMBEDDING = PortSpec(schema_ref="lga:Embedding", json_schema={}, family=PortFamily.EMBEDDING)
-LANGUAGE_MODEL = PortSpec(schema_ref="lga:LanguageModel", json_schema={}, family=PortFamily.MODEL)
+EMBEDDING = PortSpec(schema_ref="lab:Embedding", json_schema={}, family=PortFamily.EMBEDDING)
+LANGUAGE_MODEL = PortSpec(schema_ref="lab:LanguageModel", json_schema={}, family=PortFamily.MODEL)
 VECTOR_STORE = PortSpec(
-    schema_ref="lga:VectorStore",
+    schema_ref="lab:VectorStore",
     json_schema=_schema(VectorStoreHandle),
     family=PortFamily.VECTORSTORE,
 )
 TOOLSET = PortSpec(
-    schema_ref="lga:Toolset",
+    schema_ref="lab:Toolset",
     json_schema={"type": "array", "items": _schema(ToolDef)},
     family=PortFamily.TOOLSET,
     is_list=True,
 )
 TOOLSET_LIST = TOOLSET
-ROUTE = PortSpec(schema_ref="lga:Route", json_schema={"type": "string"}, family=PortFamily.ROUTE)
-FILE_REF = PortSpec(schema_ref="lga:FileRef", json_schema=_schema(FileRef), family=PortFamily.FILE)
-ANY = PortSpec(schema_ref="lga:Any", json_schema={}, family=PortFamily.ANY)
+ROUTE = PortSpec(schema_ref="lab:Route", json_schema={"type": "string"}, family=PortFamily.ROUTE)
+FILE_REF = PortSpec(schema_ref="lab:FileRef", json_schema=_schema(FileRef), family=PortFamily.FILE)
+ANY = PortSpec(schema_ref="lab:Any", json_schema={}, family=PortFamily.ANY)
 
 CORE_PORTS: dict[str, PortSpec] = {
     p.schema_ref: p
@@ -233,7 +233,7 @@ CORE_PORTS: dict[str, PortSpec] = {
 }
 
 
-def json_port(schema: dict[str, Any] | None = None, ref: str = "lga:Json") -> PortSpec:
+def json_port(schema: dict[str, Any] | None = None, ref: str = "lab:Json") -> PortSpec:
     """A Json port carrying a declared payload schema → structural edge checks."""
     return PortSpec(
         schema_ref=ref, json_schema=schema or {"type": "object"}, family=PortFamily.DATA
@@ -279,7 +279,7 @@ def _structural_subset(source: dict[str, Any], target: dict[str, Any]) -> bool:
 
 
 def _check(source: PortSpec, target: PortSpec) -> Compat:
-    from lga.sdk.ports import coerce
+    from langgraph_agent_builder.sdk.ports import coerce
 
     # 1. ANY matches everything, with W201
     if source.family == PortFamily.ANY or target.family == PortFamily.ANY:

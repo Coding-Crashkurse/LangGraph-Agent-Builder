@@ -1,14 +1,14 @@
-"""Unit tests for lga.runtime.checkpoint (CheckpointerFactory, sqlite tier + serde)."""
+"""Unit tests for runtime.checkpoint (CheckpointerFactory, sqlite tier + serde)."""
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from lga.runtime.checkpoint import CheckpointerFactory
-from lga.sdk.ports import Message
+from langgraph_agent_builder.runtime.checkpoint import CheckpointerFactory
+from langgraph_agent_builder.sdk.ports import Message
 
 if TYPE_CHECKING:
-    from lga.services.settings import Settings
+    from langgraph_agent_builder.services.settings import Settings
 
 
 async def test_sqlite_checkpointer_is_created_and_cached(sqlite_settings: Settings) -> None:

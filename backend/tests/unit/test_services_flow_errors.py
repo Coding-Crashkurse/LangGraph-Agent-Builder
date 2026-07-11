@@ -1,7 +1,7 @@
 """FlowService domain errors (SPEC §9.1): slug uniqueness is enforced by the
 UNIQUE constraint (race-safe, no TOCTOU pre-check) and surfaces as
 SlugConflictError; locked flows refuse edits with FlowLockedError. The
-exception-handler layer in lga.app maps these to 409."""
+exception-handler layer in langgraph_agent_builder.app maps these to 409."""
 
 from __future__ import annotations
 
@@ -9,9 +9,13 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
-from lga.errors import LgaError
-from lga.services.errors import ConflictError, FlowLockedError, SlugConflictError
-from lga.services.flows import FlowService
+from langgraph_agent_builder.errors import LabError
+from langgraph_agent_builder.services.errors import (
+    ConflictError,
+    FlowLockedError,
+    SlugConflictError,
+)
+from langgraph_agent_builder.services.flows import FlowService
 
 if TYPE_CHECKING:
     from tests.unit.conftest import SqliteStack
@@ -24,14 +28,14 @@ def _spec(slug: str, description: str = "a flow") -> dict[str, Any]:
         "nodes": [
             {
                 "id": "start",
-                "component_id": "lga.io.start",
+                "component_id": "lab.io.start",
                 "component_version": "1.0.0",
                 "config": {},
                 "position": {"x": 0, "y": 0},
             },
             {
                 "id": "end",
-                "component_id": "lga.io.end",
+                "component_id": "lab.io.end",
                 "component_version": "1.0.0",
                 "config": {},
                 "position": {"x": 300, "y": 0},
@@ -82,14 +86,14 @@ async def test_update_locked_flow_raises(flows: FlowService) -> None:
 
 
 async def test_domain_errors_are_lga_errors(flows: FlowService) -> None:
-    # `except LgaError` catches everything the domain raises on purpose
+    # `except LabError` catches everything the domain raises on purpose
     assert issubclass(SlugConflictError, ConflictError)
     assert issubclass(FlowLockedError, ConflictError)
-    assert issubclass(ConflictError, LgaError)
+    assert issubclass(ConflictError, LabError)
 
 
 async def test_latest_versions_batch_matches_per_flow(flows: FlowService) -> None:
-    from lga.sdk.registry import get_registry
+    from langgraph_agent_builder.sdk.registry import get_registry
 
     a = await flows.create(_spec("batch-a"))
     b = await flows.create(_spec("batch-b"))

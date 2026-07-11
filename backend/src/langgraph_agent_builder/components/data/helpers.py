@@ -8,13 +8,13 @@ from __future__ import annotations
 
 from typing import Any
 
-from lga.sdk import Component, Output, fields, ports
-from lga.sdk.component import BuildContext, NodeFn
-from lga.sdk.ports import Message
+from langgraph_agent_builder.sdk import Component, Output, fields, ports
+from langgraph_agent_builder.sdk.component import BuildContext, NodeFn
+from langgraph_agent_builder.sdk.ports import Message
 
 
 class MessageHistory(Component):
-    component_id = "lga.data.message_history"
+    component_id = "lab.data.message_history"
     display_name = "Message History"
     description = "Read the checkpointed thread's messages (Langflow parity)."
     icon = "history"
@@ -56,7 +56,7 @@ _TIMEZONES = ["UTC", "US/Eastern", "US/Pacific", "Europe/Berlin", "Europe/London
 
 
 class CurrentDate(Component):
-    component_id = "lga.data.current_date"
+    component_id = "lab.data.current_date"
     display_name = "Current Date"
     description = "Current date/time in a chosen timezone → Text (tool-ready)."
     icon = "calendar-clock"

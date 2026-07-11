@@ -9,7 +9,7 @@ schema_refs.
 
 ```bash
 uv pip install -e examples/09_custom_component/pkg
-lga run    # sidebar now shows Ticket Parser + Ticket Summary
+lab run    # sidebar now shows Ticket Parser + Ticket Summary
 ```
 
-Scaffold your own with `lga component new my_component`.
+Scaffold your own with `lab component new my_component`.

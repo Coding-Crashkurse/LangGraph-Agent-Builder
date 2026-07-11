@@ -6,11 +6,11 @@ Contract notes (see ``base.py``): the provider memoizes one sync client
 params: ``url`` (parsed with ``urlsplit``; scheme-aware default ports 443/80),
 ``api_key``, and ``grpc_host``/``grpc_port``/``grpc_secure`` overrides.
 
-Weaviate capitalizes collection names, so lga names must match
+Weaviate capitalizes collection names, so lab names must match
 ``[a-z][A-Za-z0-9_]*`` to round-trip (``docs`` ↔ ``Docs``); anything else is
 rejected at :meth:`ensure_collection` with a clear error, and
 ``list_collections`` translates back. The collection ``description`` field
-carries ``lga:dim=<n>;metric=<m>`` so dim/metric survive round-trips (weaviate
+carries ``lab:dim=<n>;metric=<m>`` so dim/metric survive round-trips (weaviate
 itself has no collection metadata). Object ids must be UUIDs: default ids are
 the sha256 content hash in UUID form, non-UUID ``metadata["id"]`` values map
 deterministically via ``coerce_uuid_id``. Portable filters translate to native
@@ -29,8 +29,8 @@ import threading
 from typing import TYPE_CHECKING, Any, ClassVar
 from urllib.parse import urlsplit
 
-from lga.sdk.ports import Document
-from lga.vectorstores.base import (
+from langgraph_agent_builder.sdk.ports import Document
+from langgraph_agent_builder.vectorstores.base import (
     BackendExtraMissing,
     CollectionInfo,
     CollectionMissing,
@@ -48,7 +48,7 @@ if TYPE_CHECKING:
     import weaviate
 
 _NAME = re.compile(r"^[a-z][A-Za-z0-9_]*$")
-_DESC = re.compile(r"lga:dim=(\d+);metric=(\w+)")
+_DESC = re.compile(r"lab:dim=(\d+);metric=(\w+)")
 _DELETE_CHUNK = 500
 
 
@@ -66,7 +66,7 @@ def _endpoints(params: dict[str, Any]) -> tuple[str, int, bool, str, int, bool]:
 
 
 def _cname(name: str) -> str:
-    """lga name → Weaviate collection name; reject names that can't round-trip."""
+    """lab name → Weaviate collection name; reject names that can't round-trip."""
     if not _NAME.match(name):
         raise VectorStoreError(
             "weaviate",
@@ -217,7 +217,7 @@ class WeaviateVectorStore:
                 }
                 client.collections.create(
                     cname,
-                    description=f"lga:dim={dim};metric={metric}",
+                    description=f"lab:dim={dim};metric={metric}",
                     vectorizer_config=wc.Configure.Vectorizer.none(),
                     vector_index_config=wc.Configure.VectorIndex.hnsw(
                         distance_metric=distances[metric]

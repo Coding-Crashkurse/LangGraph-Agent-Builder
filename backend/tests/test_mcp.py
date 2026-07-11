@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 
     from mcp.types import TextContent
 
-    from lga.services.settings import Settings
+    from langgraph_agent_builder.services.settings import Settings
 
 
 def _free_port() -> int:
@@ -29,8 +29,8 @@ def _free_port() -> int:
 @pytest.fixture
 async def server(sqlite_settings: Settings) -> AsyncIterator[str]:
     """Real uvicorn server — the mcp client needs actual HTTP."""
-    from lga.app import create_app
-    from lga.db.migrate import upgrade_async
+    from langgraph_agent_builder.app import create_app
+    from langgraph_agent_builder.db.migrate import upgrade_async
 
     port = _free_port()
     sqlite_settings.port = port
@@ -86,7 +86,7 @@ async def test_mcp_list_and_call(server: str) -> None:
                 for c in result.content
                 if getattr(c, "type", "") == "text"
             )
-            assert "Hello from LGA!" in text
+            assert "Hello from LAB!" in text
 
 
 async def test_mcp_tool_name_never_uuid(server: str) -> None:
@@ -117,21 +117,21 @@ def _json_flow(slug: str) -> dict[str, Any]:
         "nodes": [
             {
                 "id": "start",
-                "component_id": "lga.io.start",
+                "component_id": "lab.io.start",
                 "component_version": "1.0.0",
                 "config": {},
                 "position": {"x": 0, "y": 0},
             },
             {
                 "id": "sd",
-                "component_id": "lga.io.set_data",
+                "component_id": "lab.io.set_data",
                 "component_version": "1.0.0",
                 "config": {"entries": [{"key": "greeting", "template": "hi {{ message }}"}]},
                 "position": {"x": 0, "y": 0},
             },
             {
                 "id": "end",
-                "component_id": "lga.io.end",
+                "component_id": "lab.io.end",
                 "component_version": "1.0.0",
                 "config": {},
                 "position": {"x": 0, "y": 0},
@@ -197,7 +197,7 @@ def test_tool_registry_canary_pins_fastmcp_privates() -> None:
     rebuild()."""
     from mcp.server.fastmcp import FastMCP
 
-    from lga.mcp.server import _ToolRegistry
+    from langgraph_agent_builder.mcp.server import _ToolRegistry
 
     mcp = FastMCP("canary")
 

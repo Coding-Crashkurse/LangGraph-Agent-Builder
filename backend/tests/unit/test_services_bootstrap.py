@@ -1,4 +1,4 @@
-"""Unit tests for lga.services.bootstrap (SPEC §18.1): starter-flow seeding,
+"""Unit tests for langgraph_agent_builder.services.bootstrap (SPEC §18.1): starter-flow seeding,
 disk flow import (skip/overwrite/auto-publish), and the component-watch guard."""
 
 from __future__ import annotations
@@ -6,7 +6,7 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING
 
-from lga.services.bootstrap import (
+from langgraph_agent_builder.services.bootstrap import (
     load_flows_from_path,
     seed_starter_flows,
     watch_component_dirs,
@@ -16,7 +16,7 @@ from tests.conftest import hello_spec
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from lga.app import AppServices
+    from langgraph_agent_builder.app import AppServices
 
 
 # --------------------------------------------------------------------- seeding

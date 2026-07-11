@@ -1,4 +1,4 @@
-"""Unit tests for lga.schema.state — reducers and initial_state (SPEC §5.1)."""
+"""Unit tests for langgraph_agent_builder.schema.state — reducers and initial_state (SPEC §5.1)."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from typing import Any
 
 from langchain_core.messages import AIMessage, HumanMessage
 
-from lga.schema.state import initial_state, keep_first, merge_data, merge_keyed
+from langgraph_agent_builder.schema.state import initial_state, keep_first, merge_data, merge_keyed
 
 
 def test_merge_data_last_write_wins() -> None:

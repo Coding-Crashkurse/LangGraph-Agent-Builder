@@ -1,4 +1,4 @@
-"""LGARequestHandler — DefaultRequestHandler + replay-capable resubscribe.
+"""LabRequestHandler — DefaultRequestHandler + replay-capable resubscribe.
 
 SPEC §7.5: tasks/resubscribe re-attaches SSE "replaying from persisted event
 seq". The sdk only taps live queues, which (a) races with its immediate-close
@@ -35,13 +35,13 @@ from a2a.types import (
 )
 from a2a.utils.errors import ServerError
 
-from lga.a2a.tasks import FINAL_STATES
+from langgraph_agent_builder.a2a.tasks import FINAL_STATES
 
 WATCHDOG_INTERVAL_S = 1.0
 OVERALL_DEADLINE_S = 120.0
 
 
-class LGARequestHandler(DefaultRequestHandler):
+class LabRequestHandler(DefaultRequestHandler):
     def __init__(self, *args: Any, push_supported: bool = True, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self._push_supported = push_supported
@@ -148,13 +148,13 @@ class LGARequestHandler(DefaultRequestHandler):
             await asyncio.sleep(0.25)
 
 
-class LGAJSONRPCHandler(JSONRPCHandler):
+class LabJSONRPCHandler(JSONRPCHandler):
     """JSONRPC-layer push honesty for `tasks/pushNotificationConfig/set`.
 
     The sdk's `@validate` gate on `set_push_notification_config` raises a bare
     ServerError when `capabilities.pushNotifications` is false, which surfaces
     as -32603/-32004 on the wire — SPEC §7.9/§7.10 pin -32003. Intercept before
-    the gate; every other method reaches LGARequestHandler's own gates.
+    the gate; every other method reaches LabRequestHandler's own gates.
     """
 
     async def set_push_notification_config(

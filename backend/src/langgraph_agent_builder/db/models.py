@@ -150,7 +150,7 @@ class ApiKeyRow(Base):
     id: Mapped[str] = mapped_column(sa.String(36), primary_key=True, default=new_id)
     name: Mapped[str] = mapped_column(sa.String(120), default="")
     key_hash: Mapped[str] = mapped_column(sa.String(64), unique=True, index=True)
-    prefix: Mapped[str] = mapped_column(sa.String(16), default="")  # display: lga_sk_ab…
+    prefix: Mapped[str] = mapped_column(sa.String(16), default="")  # display: lab_sk_ab…
     scopes: Mapped[list[str]] = mapped_column(JSONVariant, default=list)
     created_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), default=utcnow)
     last_used_at: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True), nullable=True)
@@ -188,7 +188,7 @@ class VectorStoreConnectionRow(Base):
 
     ``config`` holds ``{backend, params}``; credential params are ``$secret``
     refs — never plaintext. Local backend data lives outside the app DB
-    (``LGA_HOME/vectors/*.db``).
+    (``LAB_HOME/vectors/*.db``).
     """
 
     __tablename__ = "vector_store_connections"

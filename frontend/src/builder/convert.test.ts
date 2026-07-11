@@ -21,28 +21,28 @@ const FIXTURE: FlowSpec = {
   nodes: [
     {
       id: "start",
-      component_id: "lga.io.start",
+      component_id: "lab.io.start",
       component_version: "1.0.0",
       config: {},
       position: { x: 0, y: 0 },
     },
     {
       id: "fake_llm_1",
-      component_id: "lga.testing.fake_llm",
+      component_id: "lab.testing.fake_llm",
       component_version: "1.0.0",
-      config: { replies: ["Hello from LGA!"] },
+      config: { replies: ["Hello from LAB!"] },
       position: { x: 300, y: 0 },
     },
     {
       id: "review",
-      component_id: "lga.flow.human_approval",
+      component_id: "lab.flow.human_approval",
       component_version: "1.0.0",
       config: {},
       position: { x: 450, y: 0 },
     },
     {
       id: "end",
-      component_id: "lga.io.end",
+      component_id: "lab.io.end",
       component_version: "1.0.0",
       config: {},
       position: { x: 600, y: 0 },
@@ -72,7 +72,7 @@ const FIXTURE: FlowSpec = {
 
 /** minimal descriptor: `start` with a MESSAGE output named `message` */
 const START_DESCRIPTOR = {
-  component_id: "lga.io.start",
+  component_id: "lab.io.start",
   version: "1.0.0",
   category: "io",
   node_kind: "task",
@@ -82,7 +82,7 @@ const START_DESCRIPTOR = {
     {
       name: "message",
       display_name: "Message",
-      port: { schema_ref: "lga:Message", json_schema: {}, family: "MESSAGE", is_list: false },
+      port: { schema_ref: "lab:Message", json_schema: {}, family: "MESSAGE", is_list: false },
       method: null,
       group: null,
     },
@@ -90,7 +90,7 @@ const START_DESCRIPTOR = {
   input_ports: {},
 } as unknown as ComponentDescriptor;
 
-const DESCRIPTORS = new Map([["lga.io.start", START_DESCRIPTOR]]);
+const DESCRIPTORS = new Map([["lab.io.start", START_DESCRIPTOR]]);
 
 describe("FlowSpec ⇄ canvas mapping (SPEC §5.2)", () => {
   it("round-trips nodes and edges losslessly", () => {

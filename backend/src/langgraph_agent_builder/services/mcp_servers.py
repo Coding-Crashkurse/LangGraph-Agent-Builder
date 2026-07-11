@@ -7,7 +7,7 @@ from typing import Any, cast
 from sqlalchemy import CursorResult, delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from lga.db.models import McpServerRow
+from langgraph_agent_builder.db.models import McpServerRow
 
 
 class McpServersService:

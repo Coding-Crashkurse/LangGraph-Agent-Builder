@@ -1,7 +1,7 @@
 """Global variables & secrets (SPEC §10.3).
 
 Kinds: `generic` (plain) | `credential` (Fernet-encrypted at rest, write-only
-through the API). Env promotion: LGA_VAR_<NAME> / LGA_CRED_<NAME>.
+through the API). Env promotion: LAB_VAR_<NAME> / LAB_CRED_<NAME>.
 """
 
 from __future__ import annotations
@@ -14,14 +14,14 @@ from cryptography.fernet import Fernet, InvalidToken
 from sqlalchemy import CursorResult, delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from lga.db.models import GlobalVariableRow
-from lga.services.settings import Settings
+from langgraph_agent_builder.db.models import GlobalVariableRow
+from langgraph_agent_builder.services.settings import Settings
 
 if TYPE_CHECKING:
-    from lga.db.models import FlowRow
+    from langgraph_agent_builder.db.models import FlowRow
 
-ENV_VAR_PREFIX = "LGA_VAR_"
-ENV_CRED_PREFIX = "LGA_CRED_"
+ENV_VAR_PREFIX = "LAB_VAR_"
+ENV_CRED_PREFIX = "LAB_CRED_"
 
 
 def _spec_refs(value: Any) -> Iterator[str]:

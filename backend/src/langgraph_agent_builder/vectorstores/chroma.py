@@ -21,8 +21,8 @@ import asyncio
 import math
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from lga.sdk.ports import Document
-from lga.vectorstores.base import (
+from langgraph_agent_builder.sdk.ports import Document
+from langgraph_agent_builder.vectorstores.base import (
     BackendExtraMissing,
     CollectionInfo,
     CollectionMissing,

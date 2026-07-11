@@ -1,4 +1,4 @@
-"""Unit tests for lga.components.tools.basic_tools.
+"""Unit tests for langgraph_agent_builder.components.tools.basic_tools.
 
 safe_eval + Calculator (pure); HttpRequest / WebSearch drive an in-repo fake
 httpx client and the real SSRF guard (no network).
@@ -11,15 +11,15 @@ from typing import Any
 import httpx
 import pytest
 
-from lga.components.tools.basic_tools import (
+from langgraph_agent_builder.components.tools.basic_tools import (
     Calculator,
     HttpRequest,
     WebSearch,
     safe_eval,
 )
-from lga.sdk.component import BuildContext, Component, NodeFn
-from lga.sdk.testing import ComponentTestHarness
-from lga.services.settings import Settings
+from langgraph_agent_builder.sdk.component import BuildContext, Component, NodeFn
+from langgraph_agent_builder.sdk.testing import ComponentTestHarness
+from langgraph_agent_builder.services.settings import Settings
 
 # --------------------------------------------------------------------------- safe_eval
 

@@ -1,13 +1,13 @@
 """Vector store abstraction (SPEC §8b).
 
-``import lga.vectorstores`` must not import any vendor client — backends are
+``import langgraph_agent_builder.vectorstores`` must not import any vendor client — backends are
 constructed lazily via :func:`build_provider`, and each vendor module imports
 its client only inside its methods (import-linter contract).
 
 One registry drives everything: the pip extra (E901 hints), the probe module
 (:func:`installed_backends`) and the lazy factory (:func:`build_provider`)
 live in a single ``_REGISTRY`` entry per backend, merged with third-party
-backends discovered via the ``lga.vectorstores`` entry point.
+backends discovered via the ``langgraph_agent_builder.vectorstores`` entry point.
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, NamedTuple, cast
 
-from lga.vectorstores.base import (
+from langgraph_agent_builder.vectorstores.base import (
     BackendExtraMissing,
     CollectionInfo,
     CollectionMissing,
@@ -37,32 +37,32 @@ if TYPE_CHECKING:
 
 
 def _local(name: str, params: dict[str, Any], home: Path | None) -> VectorStoreProvider:
-    from lga.vectorstores.local import LocalVectorStore
+    from langgraph_agent_builder.vectorstores.local import LocalVectorStore
 
-    root = (home or Path.home() / ".lga") / "vectors"
+    root = (home or Path.home() / ".langgraph-agent-builder") / "vectors"
     return LocalVectorStore(name, root)
 
 
 def _pgvector(name: str, params: dict[str, Any], home: Path | None) -> VectorStoreProvider:
-    from lga.vectorstores.pgvector import PgVectorStore
+    from langgraph_agent_builder.vectorstores.pgvector import PgVectorStore
 
     return PgVectorStore(name, params)
 
 
 def _qdrant(name: str, params: dict[str, Any], home: Path | None) -> VectorStoreProvider:
-    from lga.vectorstores.qdrant import QdrantVectorStore
+    from langgraph_agent_builder.vectorstores.qdrant import QdrantVectorStore
 
     return QdrantVectorStore(name, params)
 
 
 def _weaviate(name: str, params: dict[str, Any], home: Path | None) -> VectorStoreProvider:
-    from lga.vectorstores.weaviate import WeaviateVectorStore
+    from langgraph_agent_builder.vectorstores.weaviate import WeaviateVectorStore
 
     return WeaviateVectorStore(name, params)
 
 
 def _chroma(name: str, params: dict[str, Any], home: Path | None) -> VectorStoreProvider:
-    from lga.vectorstores.chroma import ChromaVectorStore
+    from langgraph_agent_builder.vectorstores.chroma import ChromaVectorStore
 
     return ChromaVectorStore(name, params)
 
@@ -102,14 +102,14 @@ def installed_backends() -> list[str]:
 
 
 def _custom_backends() -> dict[str, Any]:
-    """Discover third-party backends via the ``lga.vectorstores`` entry point."""
+    """Discover third-party backends via the package's ``vectorstores`` entry point."""
     import importlib.metadata as md
 
     found: dict[str, Any] = {}
     try:
-        eps = md.entry_points(group="lga.vectorstores")
+        eps = md.entry_points(group="langgraph_agent_builder.vectorstores")
     except TypeError:  # pragma: no cover - older API
-        eps = md.entry_points().get("lga.vectorstores", [])  # type: ignore[attr-defined]
+        eps = md.entry_points().get("langgraph_agent_builder.vectorstores", [])  # type: ignore[attr-defined]
     for ep in eps:
         try:
             found[ep.name] = ep.load()

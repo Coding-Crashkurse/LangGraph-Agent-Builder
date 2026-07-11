@@ -9,16 +9,16 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, ClassVar, cast
 
-from lga.sdk import Component, Output, fields, ports
-from lga.sdk.component import BuildContext, NodeConfig, NodeFn
-from lga.sdk.ports import Document, VectorStoreHandle
-from lga.sdk.runtime import get_run_context
-from lga.sdk.templating import last_message_text
+from langgraph_agent_builder.sdk import Component, Output, fields, ports
+from langgraph_agent_builder.sdk.component import BuildContext, NodeConfig, NodeFn
+from langgraph_agent_builder.sdk.ports import Document, VectorStoreHandle
+from langgraph_agent_builder.sdk.runtime import get_run_context
+from langgraph_agent_builder.sdk.templating import last_message_text
 
 if TYPE_CHECKING:
     from langchain_core.embeddings import Embeddings as LangchainEmbeddings
 
-    from lga.vectorstores.base import VectorStoreProvider
+    from langgraph_agent_builder.vectorstores.base import VectorStoreProvider
 
 
 # --------------------------------------------------------------------------- helpers
@@ -36,7 +36,7 @@ def _handle(value: Any) -> VectorStoreHandle:
 def _services() -> Any:
     """Best-effort service locator: the running server's services, else None."""
     try:
-        from lga.services.locator import get_services
+        from langgraph_agent_builder.services.locator import get_services
 
         return get_services()
     except Exception:
@@ -49,15 +49,15 @@ async def _provider(handle: VectorStoreHandle, settings: Any) -> VectorStoreProv
     svc = _services()
     if svc is not None and getattr(svc, "vectorstores", None) is not None:
         return cast("VectorStoreProvider", await svc.vectorstores.provider(handle.connection))
-    from lga.services.settings import get_settings
-    from lga.vectorstores import build_provider
+    from langgraph_agent_builder.services.settings import get_settings
+    from langgraph_agent_builder.vectorstores import build_provider
 
     st = settings or get_settings()
     return build_provider("local", handle.connection, {}, home=st.home)
 
 
 def _embeddings(value: Any) -> LangchainEmbeddings:
-    from lga.components.llm._models import resolve_embeddings
+    from langgraph_agent_builder.components.llm._models import resolve_embeddings
 
     return resolve_embeddings(value or {"provider": "fake"})
 
@@ -115,7 +115,7 @@ def _as_document(d: Any) -> Document:
 
 # --------------------------------------------------------------------------- retriever
 class VectorRetriever(Component):
-    component_id = "lga.rag.retriever"
+    component_id = "lab.rag.retriever"
     display_name = "Vector Retriever"
     description = "Similarity search over a Vector Store Connection → Documents."
     icon = "search"
@@ -180,7 +180,10 @@ class VectorRetriever(Component):
                     raw_filter=raw_filter,
                 )
             except Exception as exc:
-                from lga.schema.diagnostics import RuntimeError_, RuntimeErrorCode
+                from langgraph_agent_builder.schema.diagnostics import (
+                    RuntimeError_,
+                    RuntimeErrorCode,
+                )
 
                 raise RuntimeError_(RuntimeErrorCode.RT107, str(exc), node_id=ctx.node_id) from exc
             rc.emit(
@@ -195,8 +198,8 @@ class VectorRetriever(Component):
         """Deep validate (SPEC §8b.4): reachability (E902), collection
         existence (E903), embedding-dimension match (E904).
 
-        Raises :class:`~lga.vectorstores.base.CollectionMissing` /
-        :class:`~lga.vectorstores.base.DimensionMismatch` /
+        Raises :class:`~langgraph_agent_builder.vectorstores.base.CollectionMissing` /
+        :class:`~langgraph_agent_builder.vectorstores.base.DimensionMismatch` /
         ``VectorStoreError`` — mapped to E903/E904/E902 by
         ``services/orchestrator.py``. The dim check is skipped when the
         embedding dimension is not statically determinable or the backend
@@ -209,7 +212,7 @@ class VectorRetriever(Component):
         if svc is not None and getattr(svc, "vectorstores", None) is not None:
             await svc.vectorstores.check_collection(handle.connection, collection, dim)
             return
-        from lga.vectorstores.base import CollectionMissing, DimensionMismatch
+        from langgraph_agent_builder.vectorstores.base import CollectionMissing, DimensionMismatch
 
         provider = await _provider(handle, ctx.settings)
         await provider.health()
@@ -223,7 +226,7 @@ class VectorRetriever(Component):
 
 # --------------------------------------------------------------------------- writer
 class VectorWriter(Component):
-    component_id = "lga.rag.writer"
+    component_id = "lab.rag.writer"
     display_name = "Vector Writer"
     description = "Embed Documents and upsert into a Vector Store collection."
     icon = "database"
@@ -260,7 +263,10 @@ class VectorWriter(Component):
                 await provider.ensure_collection(collection, dim)
                 result = await provider.upsert(collection, docs, vectors)
             except Exception as exc:
-                from lga.schema.diagnostics import RuntimeError_, RuntimeErrorCode
+                from langgraph_agent_builder.schema.diagnostics import (
+                    RuntimeError_,
+                    RuntimeErrorCode,
+                )
 
                 raise RuntimeError_(RuntimeErrorCode.RT107, str(exc), node_id=ctx.node_id) from exc
             return {
@@ -274,7 +280,7 @@ class VectorWriter(Component):
 
 # --------------------------------------------------------------------------- embeddings
 class Embeddings(Component):
-    component_id = "lga.rag.embeddings"
+    component_id = "lab.rag.embeddings"
     display_name = "Embeddings"
     description = "Embedding model handle for retrievers/writers."
     icon = "binary"
@@ -288,7 +294,7 @@ class Embeddings(Component):
 
     def build(self, ctx: BuildContext) -> NodeFn:
         async def node(state: dict[str, Any], config: Any) -> dict[str, Any]:
-            from lga.components.llm._models import parse_model_value
+            from langgraph_agent_builder.components.llm._models import parse_model_value
 
             # the EMBEDDING port carries serializable provider config — never a client
             return {"embedding": parse_model_value(ctx.get_field("model") or {"provider": "fake"})}
@@ -298,7 +304,7 @@ class Embeddings(Component):
 
 # --------------------------------------------------------------------------- text splitter
 class TextSplitter(Component):
-    component_id = "lga.rag.text_splitter"
+    component_id = "lab.rag.text_splitter"
     display_name = "Text Splitter"
     description = "Recursive character splitting: Text/Documents → Documents."
     icon = "scissors-line-dashed"
@@ -369,7 +375,7 @@ def _split(text: str, size: int, overlap: int) -> list[str]:
 
 # --------------------------------------------------------------------------- file loader
 class FileLoader(Component):
-    component_id = "lga.rag.file_loader"
+    component_id = "lab.rag.file_loader"
     display_name = "File Loader"
     description = "Load uploaded files (txt/md/pdf/csv/json) into Documents."
     icon = "file-input"
@@ -391,7 +397,7 @@ class FileLoader(Component):
 
     def build(self, ctx: BuildContext) -> NodeFn:
         async def node(state: dict[str, Any], config: Any) -> dict[str, Any]:
-            from lga.services.locator import require_services
+            from langgraph_agent_builder.services.locator import require_services
 
             svc = require_services("file_loader")
             file_ids: list[str] = list(ctx.get_field("files") or [])
@@ -449,11 +455,11 @@ def _load_file(name: str, mime: str, content: bytes) -> list[Document]:
 
 # --------------------------------------------------------------------------- legacy (§8b.4)
 class PgvectorRetriever(VectorRetriever):
-    component_id = "lga.rag.pgvector_retriever"
+    component_id = "lab.rag.pgvector_retriever"
     display_name = "pgvector Retriever"
     description = "Legacy pgvector retriever — replaced by Vector Retriever (§8b.4)."
     legacy = True
-    successor = "lga.rag.retriever"
+    successor = "lab.rag.retriever"
     priority: ClassVar[int | None] = None
 
     inputs = [
@@ -486,11 +492,11 @@ class PgvectorRetriever(VectorRetriever):
 
 
 class PgvectorWriter(VectorWriter):
-    component_id = "lga.rag.pgvector_writer"
+    component_id = "lab.rag.pgvector_writer"
     display_name = "pgvector Writer"
     description = "Legacy pgvector writer — replaced by Vector Writer (§8b.4)."
     legacy = True
-    successor = "lga.rag.writer"
+    successor = "lab.rag.writer"
     priority: ClassVar[int | None] = None
 
     inputs = [

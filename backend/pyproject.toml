@@ -64,10 +64,11 @@ chroma = ["chromadb>=0.5"]
 all = ["langgraph-agent-builder[openai,anthropic,ollama,postgres,pgvector,qdrant,weaviate,chroma]"]
 
 [project.scripts]
-lga = "lga.cli.main:app"
+lab = "langgraph_agent_builder.cli.main:app"
+langgraph-agent-builder = "langgraph_agent_builder.cli.main:app"
 
-[project.entry-points."lga.components"]
-builtin = "lga.components"
+[project.entry-points."langgraph_agent_builder.components"]
+builtin = "langgraph_agent_builder.components"
 
 [dependency-groups]
 dev = [
@@ -94,11 +95,11 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/lga"]
-artifacts = ["src/lga/_static/**"]
+packages = ["src/langgraph_agent_builder"]
+artifacts = ["src/langgraph_agent_builder/_static/**"]
 
 [tool.hatch.build.targets.sdist]
-include = ["src/lga", "hatch_build.py", "README.md"]
+include = ["src/langgraph_agent_builder", "hatch_build.py", "README.md"]
 
 [tool.hatch.build.targets.wheel.hooks.custom]
 path = "hatch_build.py"
@@ -107,7 +108,7 @@ path = "hatch_build.py"
 line-length = 100
 target-version = "py312"
 src = ["src", "tests"]
-extend-exclude = ["src/graphforge", "src/lga/_static"]
+extend-exclude = ["src/langgraph_agent_builder/_static"]
 
 [tool.ruff.lint]
 # REFACTOR.md §8: E,F,I (basics+imports), UP (pyupgrade), B (bugbear),
@@ -121,8 +122,8 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 # Component metadata are ClassVars declared on Component; overriding them in
 # subclasses without re-annotating is the component-DSL convention.
-"src/lga/components/**" = ["RUF012"]
-"src/lga/sdk/**" = ["RUF012"]
+"src/langgraph_agent_builder/components/**" = ["RUF012"]
+"src/langgraph_agent_builder/sdk/**" = ["RUF012"]
 "tests/**" = ["RUF012"]
 
 [tool.pytest.ini_options]
@@ -140,31 +141,31 @@ filterwarnings = [
 ]
 
 [tool.importlinter]
-root_package = "lga"
+root_package = "langgraph_agent_builder"
 include_external_packages = true
 
 [[tool.importlinter.contracts]]
 name = "sdk stays lightweight (no fastapi/db imports)"
 type = "forbidden"
-source_modules = ["lga.sdk"]
-forbidden_modules = ["fastapi", "lga.services.db", "lga.api", "sqlalchemy", "alembic"]
+source_modules = ["langgraph_agent_builder.sdk"]
+forbidden_modules = ["fastapi", "langgraph_agent_builder.services.db", "langgraph_agent_builder.api", "sqlalchemy", "alembic"]
 
-# SPEC §8b.2 / §15.6: `import lga` must not import a vendor vector client — the
+# SPEC §8b.2 / §15.6: `import langgraph_agent_builder` must not import a vendor vector client — the
 # slim-core promise. The five backends live behind the VectorStoreProvider
 # protocol and import their client lazily *inside methods*; only those specific
-# adapter modules may reference the vendor package. Any other lga module reaching
+# adapter modules may reference the vendor package. Any other lab module reaching
 # for a vector client (or an eager top-level import that would load one at
-# `import lga`) fails this contract. A runtime backstop asserting the clients are
-# absent from `sys.modules` after `import lga` lives in tests/test_slim_core.py.
+# `import langgraph_agent_builder`) fails this contract. A runtime backstop asserting the clients are
+# absent from `sys.modules` after `import langgraph_agent_builder` lives in tests/test_slim_core.py.
 [[tool.importlinter.contracts]]
-name = "core stays vector-vendor-free (importing lga must not import a vector client)"
+name = "core stays vector-vendor-free (importing the package must not import a vector client)"
 type = "forbidden"
-source_modules = ["lga"]
+source_modules = ["langgraph_agent_builder"]
 forbidden_modules = ["qdrant_client", "weaviate", "chromadb", "pgvector"]
 ignore_imports = [
-    "lga.vectorstores.qdrant -> qdrant_client",
-    "lga.vectorstores.weaviate -> weaviate",
-    "lga.vectorstores.chroma -> chromadb",
+    "langgraph_agent_builder.vectorstores.qdrant -> qdrant_client",
+    "langgraph_agent_builder.vectorstores.weaviate -> weaviate",
+    "langgraph_agent_builder.vectorstores.chroma -> chromadb",
 ]
 
 # --------------------------------------------------------------------------- mypy
@@ -219,20 +220,20 @@ ignore_missing_imports = true
 # REFACTOR.md §4: ≥85 % on core logic. Branch coverage so untested routing /
 # error paths (the ones that matter) show up. `--cov` is opt-in; CI passes it.
 [tool.coverage.run]
-source = ["lga"]
+source = ["langgraph_agent_builder"]
 branch = true
 omit = [
-    "*/lga/db/migrations/*",
-    "*/lga/_static/*",
+    "*/langgraph_agent_builder/db/migrations/*",
+    "*/langgraph_agent_builder/_static/*",
     # Vendor vector backends are integration-tier adapters (SPEC §8b: "backends
     # as extras, lazy import"). They require an uninstalled vendor client AND a
     # live server, so they are exercised by the integration tier (extras + real
     # servers, separate CI job), NOT the unit gate. The `local` (sqlite-vec)
     # backend ships in core and IS unit-covered here.
-    "*/lga/vectorstores/chroma.py",
-    "*/lga/vectorstores/pgvector.py",
-    "*/lga/vectorstores/weaviate.py",
-    "*/lga/vectorstores/qdrant.py",
+    "*/langgraph_agent_builder/vectorstores/chroma.py",
+    "*/langgraph_agent_builder/vectorstores/pgvector.py",
+    "*/langgraph_agent_builder/vectorstores/weaviate.py",
+    "*/langgraph_agent_builder/vectorstores/qdrant.py",
 ]
 
 [tool.coverage.report]

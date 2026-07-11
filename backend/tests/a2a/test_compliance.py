@@ -18,7 +18,7 @@ import pytest
 from tests.conftest import approval_spec, create_and_publish, hello_spec, slow_spec
 
 if TYPE_CHECKING:
-    from lga.app import AppServices
+    from langgraph_agent_builder.app import AppServices
 
 
 def rpc_body(method: str, params: dict[str, Any], id: int | str = 1) -> dict[str, Any]:
@@ -98,7 +98,7 @@ async def test_message_send_completes_with_artifact(client: httpx.AsyncClient) -
     task = body["result"]
     assert task["status"]["state"] == "completed"
     parts = task["artifacts"][0]["parts"]
-    assert {"kind": "text", "text": "Hello from LGA!"} in [
+    assert {"kind": "text", "text": "Hello from LAB!"} in [
         {"kind": p["kind"], "text": p.get("text")} for p in parts
     ]
     assert task["contextId"]
@@ -207,7 +207,7 @@ async def test_stream_tokens_artifact_chunks(client: httpx.AsyncClient) -> None:
     assert streamed
     assert any(c.get("lastChunk") for c in streamed)
     text = "".join(p.get("text", "") for c in streamed for p in c["artifact"]["parts"])
-    assert text == "Hello from LGA!"
+    assert text == "Hello from LAB!"
 
 
 # ------------------------------------------------------------------ input-required (§7.7)
@@ -458,7 +458,7 @@ async def test_accepted_output_modes_mismatch_32005(client: httpx.AsyncClient) -
 
 
 async def test_file_part_disallowed_mime_32005(client: httpx.AsyncClient) -> None:
-    """FilePart outside LGA_A2A_ACCEPTED_MIME ⇒ -32005 (§7.8 mime allowlist)."""
+    """FilePart outside LAB_A2A_ACCEPTED_MIME ⇒ -32005 (§7.8 mime allowlist)."""
     await create_and_publish(client, hello_spec("mime-flow"))
     message = {
         "role": "user",
@@ -507,10 +507,10 @@ async def test_unexpected_exception_sanitized(
     diagnostic text — never str(exc), which routinely embeds DSNs or paths."""
     await create_and_publish(client, hello_spec("boom-flow"))
 
-    from lga.runtime.executor import Executor
+    from langgraph_agent_builder.runtime.executor import Executor
 
     async def explode(self: Executor, *args: Any, **kwargs: Any) -> Any:
-        raise RuntimeError("postgres://user:s3cret@10.0.0.7:5432/lga")
+        raise RuntimeError("postgres://user:s3cret@10.0.0.7:5432/lab")
 
     monkeypatch.setattr(Executor, "execute", explode)
     body = await send(client, "boom-flow", "message/send", {"message": user_message("hi")})
@@ -599,11 +599,11 @@ async def test_public_context_namespacing(client: httpx.AsyncClient, svc: AppSer
     body = await send(client, "ns-flow", "tasks/get", {"id": task["id"]})
     assert "result" in body
     # a different client scope behaves as if the task does not exist
-    from lga.a2a.scope import current_client_scope
+    from langgraph_agent_builder.a2a.scope import current_client_scope
 
     token = current_client_scope.set("key:someoneelse")
     try:
-        from lga.a2a.tasks import DbTaskStore
+        from langgraph_agent_builder.a2a.tasks import DbTaskStore
 
         store = DbTaskStore(svc.sessions, "ns-flow")
         assert await store.get(task["id"]) is None
@@ -619,7 +619,7 @@ async def test_state_transition_history_persisted(
     task = (await send(client, "trans-flow", "message/send", {"message": user_message("draft")}))[
         "result"
     ]
-    from lga.a2a.tasks import DbTaskStore
+    from langgraph_agent_builder.a2a.tasks import DbTaskStore
 
     store = DbTaskStore(svc.sessions, "trans-flow")
     transitions = await store.transitions(task["id"])
@@ -633,7 +633,7 @@ async def test_illegal_transition_raises(svc: AppServices) -> None:
     from a2a.types import Message as A2AMessage
     from a2a.types import Part, Role, Task, TaskState, TaskStatus, TextPart
 
-    from lga.a2a.tasks import DbTaskStore, IllegalTaskTransitionError
+    from langgraph_agent_builder.a2a.tasks import DbTaskStore, IllegalTaskTransitionError
 
     store = DbTaskStore(svc.sessions, "x-flow")
     task = Task(

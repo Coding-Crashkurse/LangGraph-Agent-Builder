@@ -1,4 +1,4 @@
-"""Unit tests for lga.services.runs (SPEC §6.2, §9.3): run rows, status
+"""Unit tests for langgraph_agent_builder.services.runs (SPEC §6.2, §9.3): run rows, status
 transitions, event persistence, thread grouping, and the retention sweepers."""
 
 from __future__ import annotations
@@ -8,14 +8,14 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from lga.db.models import RunEventRow, RunRow
-from lga.schema.events import RunEvent
-from lga.services.runs import RunService
+from langgraph_agent_builder.db.models import RunEventRow, RunRow
+from langgraph_agent_builder.schema.events import RunEvent
+from langgraph_agent_builder.services.runs import RunService
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-    from lga.services.settings import Settings
+    from langgraph_agent_builder.services.settings import Settings
 
 SqliteStack = tuple["Settings", "async_sessionmaker[AsyncSession]"]
 

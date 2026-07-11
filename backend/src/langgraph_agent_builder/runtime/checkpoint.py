@@ -6,7 +6,7 @@ import asyncio
 from contextlib import AbstractAsyncContextManager, AsyncExitStack
 from typing import TYPE_CHECKING, Any
 
-from lga.services.settings import Settings
+from langgraph_agent_builder.services.settings import Settings
 
 if TYPE_CHECKING:
     from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
@@ -18,9 +18,9 @@ def _serde() -> JsonPlusSerializer:
 
     return JsonPlusSerializer(
         allowed_msgpack_modules=(
-            ("lga.sdk.ports", "Message"),
-            ("lga.sdk.ports", "Document"),
-            ("lga.sdk.ports", "FileRef"),
+            ("langgraph_agent_builder.sdk.ports", "Message"),
+            ("langgraph_agent_builder.sdk.ports", "Document"),
+            ("langgraph_agent_builder.sdk.ports", "FileRef"),
         )
     )
 

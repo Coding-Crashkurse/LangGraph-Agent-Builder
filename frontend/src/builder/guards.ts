@@ -39,7 +39,7 @@ export function indexPorts(
       routeLabels.clear();
       for (const label of labels as string[]) {
         outputs.set(label, {
-          schema_ref: "lga:Route",
+          schema_ref: "lab:Route",
           json_schema: { type: "string" },
           family: "ROUTE",
           is_list: false,
@@ -69,37 +69,37 @@ export function indexPorts(
 }
 
 const TEXT_PORT: PortSpec = {
-  schema_ref: "lga:Text",
+  schema_ref: "lab:Text",
   json_schema: { type: "string" },
   family: "DATA",
   is_list: false,
 };
 const ROUTE_PORT: PortSpec = {
-  schema_ref: "lga:Route",
+  schema_ref: "lab:Route",
   json_schema: { type: "string" },
   family: "ROUTE",
   is_list: false,
 };
 const TOOLSET_PORT: PortSpec = {
-  schema_ref: "lga:Toolset",
+  schema_ref: "lab:Toolset",
   json_schema: {},
   family: "TOOLSET",
   is_list: true,
 };
 const MESSAGE_PORT: PortSpec = {
-  schema_ref: "lga:Message",
+  schema_ref: "lab:Message",
   json_schema: {},
   family: "MESSAGE",
   is_list: false,
 };
 const JSON_PORT: PortSpec = {
-  schema_ref: "lga:Json",
+  schema_ref: "lab:Json",
   json_schema: { type: "object" },
   family: "DATA",
   is_list: false,
 };
 const DOCUMENTS_PORT: PortSpec = {
-  schema_ref: "lga:Documents",
+  schema_ref: "lab:Documents",
   json_schema: {},
   family: "DOCUMENTS",
   is_list: true,
@@ -122,7 +122,7 @@ function applyDynamicPortMirrors(
     else outputs.delete("toolset");
   }
 
-  if (descriptor.component_id === "lga.flow.rule_router") {
+  if (descriptor.component_id === "lab.flow.rule_router") {
     outputs.clear();
     routeLabels.clear();
     const rows = Array.isArray(config.rules) ? (config.rules as { label?: string }[]) : [];
@@ -135,7 +135,7 @@ function applyDynamicPortMirrors(
     }
   }
 
-  if (descriptor.component_id === "lga.data.type_convert") {
+  if (descriptor.component_id === "lab.data.type_convert") {
     const conversions: Record<string, [PortSpec, PortSpec]> = {
       message_to_text: [MESSAGE_PORT, TEXT_PORT],
       text_to_message: [TEXT_PORT, MESSAGE_PORT],
@@ -150,7 +150,7 @@ function applyDynamicPortMirrors(
     }
   }
 
-  if (descriptor.component_id === "lga.tools.a2a_remote_agent") {
+  if (descriptor.component_id === "lab.tools.a2a_remote_agent") {
     if (String(config.mode ?? "node") === "tool") {
       outputs.clear();
       outputs.set("toolset", TOOLSET_PORT);
@@ -187,7 +187,7 @@ const ALL_FAMILIES: PortFamily[] = [
   "ANY",
 ];
 
-/** §11.4 [MUST]: screen-readable port label — `"output message, type lga:Message"`.
+/** §11.4 [MUST]: screen-readable port label — `"output message, type lab:Message"`.
  * Applied as aria-label on every canvas handle. */
 export function portAriaLabel(name: string, port: PortSpec, side: "in" | "out"): string {
   const list = port.is_list ? " list" : "";

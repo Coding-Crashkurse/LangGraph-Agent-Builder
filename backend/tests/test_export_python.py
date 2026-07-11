@@ -9,11 +9,11 @@ from types import ModuleType
 
 from langgraph.graph.state import CompiledStateGraph
 
-from lga.compiler import compile_flow
-from lga.compiler.export_python import export_python
-from lga.schema.flowspec import parse_flowspec
-from lga.schema.state import FlowState
-from lga.sdk.registry import get_registry
+from langgraph_agent_builder.compiler import compile_flow
+from langgraph_agent_builder.compiler.export_python import export_python
+from langgraph_agent_builder.schema.flowspec import parse_flowspec
+from langgraph_agent_builder.schema.state import FlowState
+from langgraph_agent_builder.sdk.registry import get_registry
 from tests.conftest import approval_spec, hello_spec
 
 
@@ -65,7 +65,7 @@ async def test_exported_graph_runs_under_vanilla_langgraph(tmp_path: Path) -> No
         "run_meta": {"input_text": "hello", "run_id": "x", "thread_id": "y"},
     }
     result = await module.graph.ainvoke(state)
-    assert any("Hello from LGA!" in str(v) for v in result.get("ports", {}).values())
+    assert any("Hello from LAB!" in str(v) for v in result.get("ports", {}).values())
 
 
 def test_secret_refs_become_environ(tmp_path: Path) -> None:
@@ -74,7 +74,7 @@ def test_secret_refs_become_environ(tmp_path: Path) -> None:
     spec_dict["nodes"].append(
         {
             "id": "t",
-            "component_id": "lga.tools.web_search",
+            "component_id": "lab.tools.web_search",
             "component_version": "1.0.0",
             "config": {"query": "x", "api_key": {"$secret": "my_api_key"}},
             "position": {"x": 0, "y": 0},
@@ -82,19 +82,19 @@ def test_secret_refs_become_environ(tmp_path: Path) -> None:
     )
     import os
 
-    os.environ["LGA_CRED_MY_API_KEY"] = "sk-test"
+    os.environ["LAB_CRED_MY_API_KEY"] = "sk-test"
     try:
         source = export_python(parse_flowspec(spec_dict), get_registry())
     finally:
-        del os.environ["LGA_CRED_MY_API_KEY"]
+        del os.environ["LAB_CRED_MY_API_KEY"]
     # same env var the headless EnvVariablesProvider reads — exported flow and
-    # `lga flow run` of the same spec must agree on the name
-    assert 'os.environ["LGA_CRED_MY_API_KEY"]' in source
+    # `lab flow run` of the same spec must agree on the name
+    assert 'os.environ["LAB_CRED_MY_API_KEY"]' in source
 
 
 def test_vectorstore_refs_become_handles() -> None:
     spec_dict = hello_spec("export-vs")
     spec_dict["nodes"][1]["config"]["vs"] = {"$vectorstore": "myconn", "collection": "docs"}
     source = export_python(parse_flowspec(spec_dict), get_registry())
-    assert "from lga.sdk.ports import VectorStoreHandle" in source
+    assert "from langgraph_agent_builder.sdk.ports import VectorStoreHandle" in source
     assert "VectorStoreHandle(connection='myconn', collection='docs')" in source

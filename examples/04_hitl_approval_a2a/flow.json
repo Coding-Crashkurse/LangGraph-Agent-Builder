@@ -7,13 +7,13 @@
     "a2a": { "enabled": true, "description": "Drafts an answer and pauses for human approval before releasing it.", "examples": ["draft a reply to the refund request"] }
   },
   "nodes": [
-    { "id": "start", "component_id": "lga.io.start", "component_version": "1.0.0", "config": {}, "position": { "x": 0, "y": 120 } },
-    { "id": "draft", "component_id": "lga.testing.fake_llm", "component_version": "1.0.0",
+    { "id": "start", "component_id": "lab.io.start", "component_version": "1.0.0", "config": {}, "position": { "x": 0, "y": 120 } },
+    { "id": "draft", "component_id": "lab.testing.fake_llm", "component_version": "1.0.0",
       "config": { "replies": ["Draft: we will refund the order.", "Draft v2: refund plus a voucher."] },
       "position": { "x": 260, "y": 120 } },
-    { "id": "review", "component_id": "lga.flow.human_approval", "component_version": "1.0.0",
+    { "id": "review", "component_id": "lab.flow.human_approval", "component_version": "1.0.0",
       "config": { "prompt": "Release this answer?" }, "position": { "x": 520, "y": 120 } },
-    { "id": "end", "component_id": "lga.io.end", "component_version": "1.0.0", "config": {}, "position": { "x": 780, "y": 120 } }
+    { "id": "end", "component_id": "lab.io.end", "component_version": "1.0.0", "config": {}, "position": { "x": 780, "y": 120 } }
   ],
   "edges": [
     { "id": "e1", "kind": "data", "source": { "node": "start", "output": "message" }, "target": { "node": "draft", "input": "input" } },

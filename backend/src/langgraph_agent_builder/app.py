@@ -16,27 +16,27 @@ from fastapi.responses import FileResponse, JSONResponse
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
-from lga.errors import LgaValueError
-from lga.runtime.checkpoint import CheckpointerFactory
-from lga.runtime.executor import Executor
-from lga.runtime.streams import EventBus
-from lga.sdk.registry import ComponentRegistry, get_registry
-from lga.services.errors import ConflictError, NotFoundError
-from lga.services.settings import Settings, get_settings
+from langgraph_agent_builder.errors import LabValueError
+from langgraph_agent_builder.runtime.checkpoint import CheckpointerFactory
+from langgraph_agent_builder.runtime.executor import Executor
+from langgraph_agent_builder.runtime.streams import EventBus
+from langgraph_agent_builder.sdk.registry import ComponentRegistry, get_registry
+from langgraph_agent_builder.services.errors import ConflictError, NotFoundError
+from langgraph_agent_builder.services.settings import Settings, get_settings
 
 if TYPE_CHECKING:
-    from lga.a2a.mount import A2AManager
-    from lga.mcp.server import McpManager
-    from lga.services.apikeys import ApiKeyService
-    from lga.services.files import FilesService
-    from lga.services.flows import FlowService
-    from lga.services.mcp_servers import McpServersService
-    from lga.services.orchestrator import Orchestrator
-    from lga.services.runs import RunService
-    from lga.services.secrets import SecretsService
-    from lga.services.vectorstores import VectorStoreService
+    from langgraph_agent_builder.a2a.mount import A2AManager
+    from langgraph_agent_builder.mcp.server import McpManager
+    from langgraph_agent_builder.services.apikeys import ApiKeyService
+    from langgraph_agent_builder.services.files import FilesService
+    from langgraph_agent_builder.services.flows import FlowService
+    from langgraph_agent_builder.services.mcp_servers import McpServersService
+    from langgraph_agent_builder.services.orchestrator import Orchestrator
+    from langgraph_agent_builder.services.runs import RunService
+    from langgraph_agent_builder.services.secrets import SecretsService
+    from langgraph_agent_builder.services.vectorstores import VectorStoreService
 
-logger = logging.getLogger("lga.app")
+logger = logging.getLogger("langgraph_agent_builder.app")
 
 
 @dataclass
@@ -69,15 +69,15 @@ class AppServices:
 
 
 async def build_services(settings: Settings) -> AppServices:
-    from lga.services.apikeys import ApiKeyService
-    from lga.services.db import create_engine, create_sessionmaker
-    from lga.services.files import FilesService
-    from lga.services.flows import FlowService
-    from lga.services.mcp_servers import McpServersService
-    from lga.services.orchestrator import Orchestrator
-    from lga.services.runs import RunService
-    from lga.services.secrets import SecretsService
-    from lga.services.vectorstores import VectorStoreService
+    from langgraph_agent_builder.services.apikeys import ApiKeyService
+    from langgraph_agent_builder.services.db import create_engine, create_sessionmaker
+    from langgraph_agent_builder.services.files import FilesService
+    from langgraph_agent_builder.services.flows import FlowService
+    from langgraph_agent_builder.services.mcp_servers import McpServersService
+    from langgraph_agent_builder.services.orchestrator import Orchestrator
+    from langgraph_agent_builder.services.runs import RunService
+    from langgraph_agent_builder.services.secrets import SecretsService
+    from langgraph_agent_builder.services.vectorstores import VectorStoreService
 
     settings.ensure_dirs()
     engine = create_engine(settings)
@@ -122,7 +122,7 @@ async def build_services(settings: Settings) -> AppServices:
         vectorstores=vectorstores,
         orchestrator=orchestrator,
     )
-    from lga.services.locator import set_services
+    from langgraph_agent_builder.services.locator import set_services
 
     set_services(services)
     return services
@@ -160,7 +160,7 @@ def _register_exception_handlers(app: FastAPI) -> None:
 
     app.add_exception_handler(NotFoundError, _detail_handler(404))
     app.add_exception_handler(ConflictError, _detail_handler(409))
-    app.add_exception_handler(LgaValueError, _detail_handler(422))
+    app.add_exception_handler(LabValueError, _detail_handler(422))
     app.add_exception_handler(IntegrityError, integrity)
 
 
@@ -181,11 +181,11 @@ def create_app(settings: Settings | None = None, *, backend_only: bool = False) 
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        from lga.a2a.mount import A2AManager
-        from lga.db.migrate import upgrade_async
-        from lga.mcp.server import McpAuthMiddleware, McpManager
-        from lga.schema.scrub import install_log_scrubbing
-        from lga.services import bootstrap
+        from langgraph_agent_builder.a2a.mount import A2AManager
+        from langgraph_agent_builder.db.migrate import upgrade_async
+        from langgraph_agent_builder.mcp.server import McpAuthMiddleware, McpManager
+        from langgraph_agent_builder.schema.scrub import install_log_scrubbing
+        from langgraph_agent_builder.services import bootstrap
 
         # runs after uvicorn has configured its handlers → scrubs console + file
         # logs. Event scrubbing (the hard guarantee) lives in the event bus (§10.5)
@@ -215,7 +215,7 @@ def create_app(settings: Settings | None = None, *, backend_only: bool = False) 
             finally:
                 await _shutdown(svc)
 
-    app = FastAPI(title="lga", version=_version(), lifespan=lifespan)
+    app = FastAPI(title="LangGraph Agent Builder", version=_version(), lifespan=lifespan)
 
     app.add_middleware(
         CORSMiddleware,
@@ -226,7 +226,15 @@ def create_app(settings: Settings | None = None, *, backend_only: bool = False) 
     )
     _register_exception_handlers(app)
 
-    from lga.api import components, flows, runs, settings_api, templates, vectorstores, webhook
+    from langgraph_agent_builder.api import (
+        components,
+        flows,
+        runs,
+        settings_api,
+        templates,
+        vectorstores,
+        webhook,
+    )
 
     app.include_router(flows.router, prefix="/api/v1")
     app.include_router(components.router, prefix="/api/v1")
@@ -291,11 +299,11 @@ def _protocol_routes(svc: AppServices, mcp_auth_cls: Any) -> list[Any]:
 
 
 def _version() -> str:
-    import lga
+    import langgraph_agent_builder
 
-    return lga.__version__
+    return langgraph_agent_builder.__version__
 
 
-# `uvicorn lga.app:app` convenience (dev; the CLI is the blessed entry)
+# `uvicorn langgraph_agent_builder.app:app` convenience (dev; the CLI is the blessed entry)
 def app_factory() -> FastAPI:
     return create_app()

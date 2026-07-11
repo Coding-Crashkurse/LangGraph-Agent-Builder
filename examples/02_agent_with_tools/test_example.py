@@ -8,7 +8,7 @@ HERE = Path(__file__).parent
 
 
 def test_validates_and_binds_tools():
-    from lga.compiler import compile_flow
+    from langgraph_agent_builder.compiler import compile_flow
 
     spec = load_flow(HERE)
     validate_ok(spec)

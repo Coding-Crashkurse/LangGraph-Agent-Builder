@@ -1,4 +1,4 @@
-"""`lga apikey` — headless key management, direct DB (SPEC §2.6, §10.4)."""
+"""`lab apikey` — headless key management, direct DB (SPEC §2.6, §10.4)."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Annotated, Any
 import typer
 from rich.table import Table
 
-from lga.cli._common import (
+from langgraph_agent_builder.cli._common import (
     EXIT_ERROR,
     EXIT_USAGE,
     build_settings,
@@ -20,18 +20,18 @@ from lga.cli._common import (
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncEngine
 
-    from lga.services.apikeys import ApiKeyService
+    from langgraph_agent_builder.services.apikeys import ApiKeyService
 
 apikey_app = typer.Typer(help="Manage API keys (direct DB; works without a running server).")
 
 
 async def _service() -> tuple[ApiKeyService, AsyncEngine]:
-    from lga.services.apikeys import ApiKeyService
-    from lga.services.db import create_engine, create_sessionmaker
-    from lga.services.settings import get_settings
+    from langgraph_agent_builder.services.apikeys import ApiKeyService
+    from langgraph_agent_builder.services.db import create_engine, create_sessionmaker
+    from langgraph_agent_builder.services.settings import get_settings
 
     settings = get_settings()
-    from lga.db.migrate import upgrade_async
+    from langgraph_agent_builder.db.migrate import upgrade_async
 
     await upgrade_async(settings)
     engine = create_engine(settings)

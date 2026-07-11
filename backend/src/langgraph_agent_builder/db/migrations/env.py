@@ -1,7 +1,7 @@
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
-from lga.db.models import Base
+from langgraph_agent_builder.db.models import Base
 
 config = context.config
 target_metadata = Base.metadata

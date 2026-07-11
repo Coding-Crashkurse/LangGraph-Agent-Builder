@@ -2,7 +2,7 @@
 
 FlowSpecs reference connections *by name* (``{"$vectorstore": "prod"}``), never
 by credentials, so flows stay portable. A default ``local`` connection is
-auto-created on first boot; ``LGA_VECTORSTORE_<NAME>`` descriptors provision
+auto-created on first boot; ``LAB_VECTORSTORE_<NAME>`` descriptors provision
 connections at boot for deploy parity.
 """
 
@@ -16,10 +16,10 @@ from typing import Any, cast
 from sqlalchemy import CursorResult, delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from lga.db.models import VectorStoreConnectionRow
-from lga.services.secrets import SecretsService
-from lga.services.settings import Settings
-from lga.vectorstores import (
+from langgraph_agent_builder.db.models import VectorStoreConnectionRow
+from langgraph_agent_builder.services.secrets import SecretsService
+from langgraph_agent_builder.services.settings import Settings
+from langgraph_agent_builder.vectorstores import (
     BACKEND_EXTRAS,
     CollectionInfo,
     CollectionMissing,

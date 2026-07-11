@@ -6,14 +6,14 @@ import json
 import re
 from typing import Any
 
-from lga.sdk import Component, Output, fields, ports
-from lga.sdk.component import BuildContext, NodeConfig, NodeFn
-from lga.sdk.ports import Document, Message
-from lga.sdk.templating import message_text, render_prompt
+from langgraph_agent_builder.sdk import Component, Output, fields, ports
+from langgraph_agent_builder.sdk.component import BuildContext, NodeConfig, NodeFn
+from langgraph_agent_builder.sdk.ports import Document, Message
+from langgraph_agent_builder.sdk.templating import message_text, render_prompt
 
 
 class PromptTemplate(Component):
-    component_id = "lga.data.prompt_template"
+    component_id = "lab.data.prompt_template"
     display_name = "Prompt Template"
     description = "Standalone PromptInput: renders {vars} into Text/Message."
     icon = "file-text"
@@ -28,7 +28,7 @@ class PromptTemplate(Component):
     ]
 
     def build(self, ctx: BuildContext) -> NodeFn:
-        from lga.components.llm.llm_call import collect_prompt_values
+        from langgraph_agent_builder.components.llm.llm_call import collect_prompt_values
 
         async def node(state: dict[str, Any], config: Any) -> dict[str, Any]:
             template = str(ctx.get_field("template") or "")
@@ -50,7 +50,7 @@ CONVERSIONS = {
 
 
 class TypeConvert(Component):
-    component_id = "lga.data.type_convert"
+    component_id = "lab.data.type_convert"
     display_name = "Type Convert"
     description = "Explicit conversions between port types, incl. Documents→Text template."
     icon = "repeat"
@@ -91,7 +91,7 @@ class TypeConvert(Component):
         return [Output(name="output", display_name="Output", port=port)]
 
     def build(self, ctx: BuildContext) -> NodeFn:
-        from lga.sdk.templating import render_jinja
+        from langgraph_agent_builder.sdk.templating import render_jinja
 
         async def node(state: dict[str, Any], config: Any) -> dict[str, Any]:
             conversion = str(ctx.get_field("conversion") or "message_to_text")
@@ -146,7 +146,7 @@ class TypeConvert(Component):
 
 
 class JsonExtract(Component):
-    component_id = "lga.data.json_extract"
+    component_id = "lab.data.json_extract"
     display_name = "JSON Extract"
     description = "Extract a value from Json via JSONPath."
     icon = "filter"
@@ -180,7 +180,7 @@ class JsonExtract(Component):
 
 
 class Parser(Component):
-    component_id = "lga.data.parser"
+    component_id = "lab.data.parser"
     display_name = "Parser"
     description = "Regex/split text parsing into Json."
     icon = "scissors"

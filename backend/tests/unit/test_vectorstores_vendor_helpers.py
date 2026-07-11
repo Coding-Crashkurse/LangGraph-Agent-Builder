@@ -9,13 +9,18 @@ from __future__ import annotations
 
 import pytest
 
-from lga.vectorstores.base import VectorStoreError
-from lga.vectorstores.chroma import _to_score as chroma_score
-from lga.vectorstores.chroma import _translate_where
-from lga.vectorstores.pgvector import _where_sql
-from lga.vectorstores.qdrant import _distance_value
-from lga.vectorstores.weaviate import _cname, _endpoints, _from_cname, _parse_desc
-from lga.vectorstores.weaviate import _to_score as weaviate_score
+from langgraph_agent_builder.vectorstores.base import VectorStoreError
+from langgraph_agent_builder.vectorstores.chroma import _to_score as chroma_score
+from langgraph_agent_builder.vectorstores.chroma import _translate_where
+from langgraph_agent_builder.vectorstores.pgvector import _where_sql
+from langgraph_agent_builder.vectorstores.qdrant import _distance_value
+from langgraph_agent_builder.vectorstores.weaviate import (
+    _cname,
+    _endpoints,
+    _from_cname,
+    _parse_desc,
+)
+from langgraph_agent_builder.vectorstores.weaviate import _to_score as weaviate_score
 
 
 # --------------------------------------------------------------------------- weaviate endpoints
@@ -57,10 +62,10 @@ def test_cname_rejects_names_weaviate_would_mangle(bad: str) -> None:
 
 
 def test_parse_desc_round_trip_and_fallbacks() -> None:
-    assert _parse_desc("lga:dim=128;metric=l2") == (128, "l2")
+    assert _parse_desc("lab:dim=128;metric=l2") == (128, "l2")
     assert _parse_desc(None) == (0, "cosine")
     assert _parse_desc("no marker here") == (0, "cosine")
-    assert _parse_desc("lga:dim=8;metric=bogus") == (8, "cosine")
+    assert _parse_desc("lab:dim=8;metric=bogus") == (8, "cosine")
 
 
 # --------------------------------------------------------------------------- score conversion

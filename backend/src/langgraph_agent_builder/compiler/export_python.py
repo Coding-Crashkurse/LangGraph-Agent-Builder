@@ -1,8 +1,8 @@
 """Export-to-Python (SPEC §5.7): FlowSpec → standalone flow.py.
 
 The exported file renders the same graph plan the compiler emits
-(``lga.compiler.plan``; golden-tested in tests/test_export_python.py) and runs
-under vanilla LangGraph — only lga component classes are imported, not the
+(``langgraph_agent_builder.compiler.plan``; golden-tested in tests/test_export_python.py) and runs
+under vanilla LangGraph — only lab component classes are imported, not the
 server.
 """
 
@@ -11,14 +11,14 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from lga.compiler import compile_flow
-from lga.compiler import plan as plan_pass
-from lga.schema.flowspec import FlowSpec
-from lga.sdk.registry import ComponentRegistry
+from langgraph_agent_builder.compiler import compile_flow
+from langgraph_agent_builder.compiler import plan as plan_pass
+from langgraph_agent_builder.schema.flowspec import FlowSpec
+from langgraph_agent_builder.sdk.registry import ComponentRegistry
 
 
 def _render_config(config: dict[str, Any]) -> str:
-    """Config literal. $secret/$var refs become the LGA_CRED_/LGA_VAR_ env
+    """Config literal. $secret/$var refs become the LAB_CRED_/LAB_VAR_ env
     lookups ``EnvVariablesProvider`` reads (headless convention, resolve.py);
     $vectorstore refs become the VectorStoreHandle P2 would produce."""
 
@@ -31,9 +31,9 @@ def _render_config(config: dict[str, Any]) -> str:
                     f"collection={value.get('collection')!r})"
                 )
             if set(value.keys()) == {"$secret"}:
-                return f'os.environ["LGA_CRED_{str(value["$secret"]).upper()}"]'
+                return f'os.environ["LAB_CRED_{str(value["$secret"]).upper()}"]'
             if set(value.keys()) == {"$var"}:
-                return f'os.environ["LGA_VAR_{str(value["$var"]).upper()}"]'
+                return f'os.environ["LAB_VAR_{str(value["$var"]).upper()}"]'
             inner = ", ".join(f"{k!r}: {render(v)}" for k, v in value.items())
             return "{" + inner + "}"
         if isinstance(value, list):
@@ -65,18 +65,18 @@ def export_python(spec: FlowSpec, registry: ComponentRegistry) -> str:
         imports.setdefault(node.component.__module__, set()).add(node.component.__name__)
 
     lines: list[str] = [
-        '"""Exported by lga — runs under vanilla LangGraph (SPEC §5.7)."""',
+        '"""Exported by lab — runs under vanilla LangGraph (SPEC §5.7)."""',
         "",
         "import os",
         "",
         "from langgraph.graph import END, START, StateGraph",
         "",
-        "from lga.compiler.emit import wrap_component",
-        "from lga.schema.state import FlowState",
-        "from lga.sdk.component import BuildContext, InputBinding",
+        "from langgraph_agent_builder.compiler.emit import wrap_component",
+        "from langgraph_agent_builder.schema.state import FlowState",
+        "from langgraph_agent_builder.sdk.component import BuildContext, InputBinding",
     ]
     if any(_has_vectorstore_ref(n.config) for n in ir.spec.nodes):
-        lines.append("from lga.sdk.ports import VectorStoreHandle")
+        lines.append("from langgraph_agent_builder.sdk.ports import VectorStoreHandle")
     lines.append("")
     for module, names in sorted(imports.items()):
         lines.append(f"from {module} import {', '.join(sorted(names))}")

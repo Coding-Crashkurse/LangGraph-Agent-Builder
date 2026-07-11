@@ -1,9 +1,9 @@
-"""Unit tests for lga.schema.diagnostics — severity mapping + runtime errors."""
+"""Unit tests for langgraph_agent_builder.schema.diagnostics — severity mapping + runtime errors."""
 
 from __future__ import annotations
 
-from lga.errors import LgaError
-from lga.schema.diagnostics import (
+from langgraph_agent_builder.errors import LabError
+from langgraph_agent_builder.schema.diagnostics import (
     Diagnostic,
     DiagnosticCode,
     RuntimeError_,
@@ -79,5 +79,5 @@ def test_runtime_error_carries_code_and_node() -> None:
 
 def test_runtime_error_is_lga_error() -> None:
     err = RuntimeError_(RuntimeErrorCode.RT104, "cancelled")
-    assert isinstance(err, LgaError)
+    assert isinstance(err, LabError)
     assert err.node_id is None

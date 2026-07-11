@@ -4,13 +4,13 @@ from __future__ import annotations
 
 from typing import Any, cast
 
-from lga.sdk import BuildContext, Component, Output, fields, ports
-from lga.sdk.component import NodeFn
-from lga.sdk.ports import LazyToolset, ToolDef
+from langgraph_agent_builder.sdk import BuildContext, Component, Output, fields, ports
+from langgraph_agent_builder.sdk.component import NodeFn
+from langgraph_agent_builder.sdk.ports import LazyToolset, ToolDef
 
 
 class FlowAsTool(Component):
-    component_id = "lga.tools.flow_as_tool"
+    component_id = "lab.tools.flow_as_tool"
     display_name = "Flow as Tool"
     description = "Expose a published flow as a tool for an agent (in-process call)."
     icon = "workflow"
@@ -36,7 +36,7 @@ class FlowAsTool(Component):
         tool_description = str(ctx.get_field("tool_description") or "")
 
         async def factory() -> list[ToolDef]:
-            from lga.services.locator import require_services
+            from langgraph_agent_builder.services.locator import require_services
 
             svc = require_services("flow_as_tool")
             flow = await svc.flows.get_by_slug(slug)

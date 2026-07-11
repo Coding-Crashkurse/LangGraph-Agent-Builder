@@ -1,4 +1,4 @@
-"""Unit tests for lga.services.locator — the process-wide service locator."""
+"""Unit tests for langgraph_agent_builder.services.locator — the process-wide service locator."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from collections.abc import Iterator
 
 import pytest
 
-from lga.services import locator
+from langgraph_agent_builder.services import locator
 
 
 @pytest.fixture(autouse=True)
@@ -27,7 +27,7 @@ def test_set_and_get_roundtrip() -> None:
 
 def test_require_services_raises_without_context() -> None:
     locator.set_services(None)
-    with pytest.raises(RuntimeError, match="file_loader requires a running lga server"):
+    with pytest.raises(RuntimeError, match="file_loader requires a running lab server"):
         locator.require_services("file_loader")
 
 

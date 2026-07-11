@@ -12,7 +12,7 @@ import httpx
 from tests.conftest import hello_spec
 
 if TYPE_CHECKING:
-    from lga.app import AppServices
+    from langgraph_agent_builder.app import AppServices
 
 
 # ------------------------------------------------------------------ variables
@@ -69,7 +69,7 @@ async def test_apikey_create_list_revoke(client: httpx.AsyncClient) -> None:
     created = await client.post("/api/v1/apikeys", json={"name": "ci", "scopes": ["studio:*"]})
     assert created.status_code == 201, created.text
     body = created.json()
-    assert body["key"].startswith("lga_sk_")  # plaintext returned exactly once
+    assert body["key"].startswith("lab_sk_")  # plaintext returned exactly once
     key_id = body["id"]
 
     listed = await client.get("/api/v1/apikeys")
@@ -178,11 +178,11 @@ async def test_mcp_server_invalid_transport_is_422(
 async def test_mcp_client_config_shape(client: httpx.AsyncClient) -> None:
     response = await client.get("/api/v1/mcp/config")
     assert response.status_code == 200
-    lga = response.json()["mcpServers"]["lga"]
-    assert lga["type"] == "http"
-    assert lga["url"].endswith("/mcp")
+    lab = response.json()["mcpServers"]["langgraph-agent-builder"]
+    assert lab["type"] == "http"
+    assert lab["url"].endswith("/mcp")
     # auth disabled in test env → no headers block
-    assert "headers" not in lga
+    assert "headers" not in lab
 
 
 # ------------------------------------------------------------------ misc
@@ -215,7 +215,7 @@ async def test_version_reports_packages(client: httpx.AsyncClient) -> None:
     response = await client.get("/api/v1/version")
     assert response.status_code == 200
     body = response.json()
-    assert body["lga"]
+    assert body["langgraph-agent-builder"]
     assert "langgraph" in body
     assert body["db_backend"] in {"sqlite", "postgres"}
 
@@ -226,7 +226,7 @@ async def test_config_masks_secret_key(client: httpx.AsyncClient) -> None:
     data = response.json()
     # the Fernet key is resolved at boot; the endpoint must never leak it.
     assert data["secret_key"] in {"***", ""}
-    assert not data["secret_key"].startswith("lga")
+    assert not data["secret_key"].startswith("lab")
     assert data["env"] == "test"
 
 

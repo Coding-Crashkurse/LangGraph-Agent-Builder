@@ -9,7 +9,7 @@ import json
 from collections.abc import Callable
 from typing import Any
 
-from lga.sdk.ports import Document, Message, PortSpec
+from langgraph_agent_builder.sdk.ports import Document, Message, PortSpec
 
 DEFAULT_DOCUMENTS_TEMPLATE = "{page_content}"
 
@@ -79,12 +79,12 @@ def wrap_list(value: Any) -> list[Any]:
 
 # (source schema_ref, target schema_ref) → coercion name
 _EDGE_COERCIONS: dict[tuple[str, str], str] = {
-    ("lga:Message", "lga:Text"): "message_to_text",
-    ("lga:Text", "lga:Message"): "text_to_message",
-    ("lga:Documents", "lga:Text"): "documents_to_text",
-    ("lga:Json", "lga:Text"): "json_to_text",
-    ("lga:Table", "lga:Json"): "table_to_json",
-    ("lga:Table", "lga:Text"): "table_to_text",
+    ("lab:Message", "lab:Text"): "message_to_text",
+    ("lab:Text", "lab:Message"): "text_to_message",
+    ("lab:Documents", "lab:Text"): "documents_to_text",
+    ("lab:Json", "lab:Text"): "json_to_text",
+    ("lab:Table", "lab:Json"): "table_to_json",
+    ("lab:Table", "lab:Text"): "table_to_text",
 }
 
 FUNCTIONS: dict[str, Callable[[Any], Any]] = {

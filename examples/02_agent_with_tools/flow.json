@@ -7,13 +7,13 @@
     "a2a": { "enabled": true, "description": "Agent that can calculate and fetch URLs.", "examples": ["what is (2+3)*4?"] }
   },
   "nodes": [
-    { "id": "start", "component_id": "lga.io.start", "component_version": "1.0.0", "config": {}, "position": { "x": 0, "y": 120 } },
-    { "id": "agent", "component_id": "lga.llm.llm_agent", "component_version": "1.0.0",
+    { "id": "start", "component_id": "lab.io.start", "component_version": "1.0.0", "config": {}, "position": { "x": 0, "y": 120 } },
+    { "id": "agent", "component_id": "lab.llm.llm_agent", "component_version": "1.0.0",
       "config": { "model": { "provider": "fake", "model": "I would use my tools for that." }, "system_prompt": "You are a helpful assistant. Use tools when math or web content is needed." },
       "position": { "x": 320, "y": 120 } },
-    { "id": "calc", "component_id": "lga.tools.calculator", "component_version": "1.0.0", "config": { "expression": "0" }, "position": { "x": 320, "y": 320 } },
-    { "id": "web", "component_id": "lga.tools.http_request", "component_version": "1.0.0", "config": { "url": "https://example.com" }, "position": { "x": 520, "y": 320 } },
-    { "id": "end", "component_id": "lga.io.end", "component_version": "1.0.0", "config": {}, "position": { "x": 640, "y": 120 } }
+    { "id": "calc", "component_id": "lab.tools.calculator", "component_version": "1.0.0", "config": { "expression": "0" }, "position": { "x": 320, "y": 320 } },
+    { "id": "web", "component_id": "lab.tools.http_request", "component_version": "1.0.0", "config": { "url": "https://example.com" }, "position": { "x": 520, "y": 320 } },
+    { "id": "end", "component_id": "lab.io.end", "component_version": "1.0.0", "config": {}, "position": { "x": 640, "y": 120 } }
   ],
   "edges": [
     { "id": "e1", "kind": "data", "source": { "node": "start", "output": "message" }, "target": { "node": "agent", "input": "input" } },

@@ -12,10 +12,10 @@ import logging
 from collections import defaultdict
 from collections.abc import AsyncIterator, Awaitable, Callable
 
-from lga.schema.events import RunEvent
-from lga.schema.scrub import scrub_data
+from langgraph_agent_builder.schema.events import RunEvent
+from langgraph_agent_builder.schema.scrub import scrub_data
 
-logger = logging.getLogger("lga.events")
+logger = logging.getLogger("lab.events")
 
 PersistFn = Callable[[RunEvent], Awaitable[None]]
 LoadFn = Callable[[str, int], Awaitable[list[RunEvent]]]

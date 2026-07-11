@@ -3,7 +3,7 @@
 
 Uses ``asyncpg`` + the ``vector`` extension directly (no LangChain wrapper) so
 the abstraction owns the schema. Can reuse the app DB when the storage tier is
-Postgres (``dsn`` omitted → falls back to ``LGA_DATABASE_URL``).
+Postgres (``dsn`` omitted → falls back to ``LAB_DATABASE_URL``).
 
 Contract notes (see ``base.py``): the provider owns a lazily-created asyncpg
 pool; ``CREATE EXTENSION``/catalog DDL runs once per provider, not per call.
@@ -22,8 +22,8 @@ import json
 import re
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from lga.sdk.ports import Document
-from lga.vectorstores.base import (
+from langgraph_agent_builder.sdk.ports import Document
+from langgraph_agent_builder.vectorstores.base import (
     BackendExtraMissing,
     CollectionInfo,
     CollectionMissing,
@@ -58,7 +58,7 @@ def _where_sql(flt: dict[str, Any] | None, start: int) -> tuple[str, list[Any]]:
     """Portable filter → parameterized JSONB WHERE conjuncts (``$start``-based).
 
     ``None`` equality matches missing keys *and* stored JSON nulls — same as
-    the Python reference semantics in :func:`lga.vectorstores.base.matches_filter`.
+    the Python reference semantics in :func:`.base.matches_filter`.
     """
     clauses: list[str] = []
     params: list[Any] = []
@@ -93,7 +93,7 @@ class PgVectorStore:
         self.params = params
         dsn = params.get("dsn") or params.get("app_database")
         if not dsn:
-            from lga.services.settings import get_settings
+            from langgraph_agent_builder.services.settings import get_settings
 
             dsn = str(get_settings().database_url)
         self._dsn = re.sub(r"\+\w+", "", str(dsn)).replace("postgresql://", "postgres://")

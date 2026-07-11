@@ -1,6 +1,12 @@
-from lga.schema.diagnostics import Diagnostic, DiagnosticCode, Severity
-from lga.schema.flowspec import EdgeSpec, FlowMeta, FlowSpec, NodeSpec, parse_flowspec
-from lga.schema.state import FlowState
+from langgraph_agent_builder.schema.diagnostics import Diagnostic, DiagnosticCode, Severity
+from langgraph_agent_builder.schema.flowspec import (
+    EdgeSpec,
+    FlowMeta,
+    FlowSpec,
+    NodeSpec,
+    parse_flowspec,
+)
+from langgraph_agent_builder.schema.state import FlowState
 
 __all__ = [
     "Diagnostic",

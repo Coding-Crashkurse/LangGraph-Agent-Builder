@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from lga.services.runs import RunService
+from langgraph_agent_builder.services.runs import RunService
 
 if TYPE_CHECKING:
     from tests.unit.conftest import SqliteStack

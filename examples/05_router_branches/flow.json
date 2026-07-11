@@ -7,21 +7,21 @@
     "a2a": { "enabled": true, "description": "Routes support messages into billing, bug or other lanes.", "examples": ["I found a bug in the export"] }
   },
   "nodes": [
-    { "id": "start", "component_id": "lga.io.start", "component_version": "1.0.0", "config": {}, "position": { "x": 0, "y": 160 } },
-    { "id": "route", "component_id": "lga.flow.llm_router", "component_version": "1.0.0",
+    { "id": "start", "component_id": "lab.io.start", "component_version": "1.0.0", "config": {}, "position": { "x": 0, "y": 160 } },
+    { "id": "route", "component_id": "lab.flow.llm_router", "component_version": "1.0.0",
       "config": { "labels": ["billing", "bug", "other"] }, "position": { "x": 240, "y": 160 } },
-    { "id": "billing", "component_id": "lga.testing.fake_llm", "component_version": "1.0.0",
+    { "id": "billing", "component_id": "lab.testing.fake_llm", "component_version": "1.0.0",
       "config": { "replies": ["Routed to BILLING: our finance team will follow up."] }, "position": { "x": 520, "y": 40 } },
-    { "id": "bug", "component_id": "lga.testing.fake_llm", "component_version": "1.0.0",
+    { "id": "bug", "component_id": "lab.testing.fake_llm", "component_version": "1.0.0",
       "config": { "replies": ["Routed to BUG: filed in the tracker."] }, "position": { "x": 520, "y": 160 } },
-    { "id": "fallback", "component_id": "lga.flow.rule_router", "component_version": "1.0.0",
+    { "id": "fallback", "component_id": "lab.flow.rule_router", "component_version": "1.0.0",
       "config": { "rules": [ { "label": "urgent", "when": "\"asap\" in message" } ], "default_label": "normal" },
       "position": { "x": 520, "y": 300 } },
-    { "id": "urgent", "component_id": "lga.testing.fake_llm", "component_version": "1.0.0",
+    { "id": "urgent", "component_id": "lab.testing.fake_llm", "component_version": "1.0.0",
       "config": { "replies": ["Routed to OTHER/URGENT: escalating now."] }, "position": { "x": 780, "y": 260 } },
-    { "id": "normal", "component_id": "lga.testing.fake_llm", "component_version": "1.0.0",
+    { "id": "normal", "component_id": "lab.testing.fake_llm", "component_version": "1.0.0",
       "config": { "replies": ["Routed to OTHER/NORMAL: queued."] }, "position": { "x": 780, "y": 380 } },
-    { "id": "end", "component_id": "lga.io.end", "component_version": "1.0.0", "config": {}, "position": { "x": 1040, "y": 160 } }
+    { "id": "end", "component_id": "lab.io.end", "component_version": "1.0.0", "config": {}, "position": { "x": 1040, "y": 160 } }
   ],
   "edges": [
     { "id": "e1", "kind": "data", "source": { "node": "start", "output": "message" }, "target": { "node": "route", "input": "input" } },

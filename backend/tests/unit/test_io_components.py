@@ -1,6 +1,6 @@
 """Unit tests for the IO components (SPEC §12.1).
 
-Covers lga.components.io.start, .end, .text_io and .set_data by driving each
+Covers langgraph_agent_builder.components.io.start, .end, .text_io and .set_data by driving each
 NodeFn directly through the ComponentTestHarness. The emphasis is on the input
 precedence branches (End), the literal/message toggle (TextInput), the jinja
 rendering + blank-key skipping (SetData) and the structured-input shaping
@@ -13,12 +13,12 @@ from typing import Any
 
 from langchain_core.messages import AIMessage, HumanMessage
 
-from lga.components.io.end import End
-from lga.components.io.set_data import SetData
-from lga.components.io.start import Start
-from lga.components.io.text_io import TextInput, TextOutput, WebhookInput
-from lga.sdk import Component, ports
-from lga.sdk.testing import BuiltNode, ComponentTestHarness
+from langgraph_agent_builder.components.io.end import End
+from langgraph_agent_builder.components.io.set_data import SetData
+from langgraph_agent_builder.components.io.start import Start
+from langgraph_agent_builder.components.io.text_io import TextInput, TextOutput, WebhookInput
+from langgraph_agent_builder.sdk import Component, ports
+from langgraph_agent_builder.sdk.testing import BuiltNode, ComponentTestHarness
 
 
 def _build(

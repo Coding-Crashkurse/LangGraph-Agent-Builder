@@ -167,7 +167,7 @@ export function ShareDialog({
   );
   const headlessSnippet = useMemo(
     () =>
-      `import json\n\nfrom lga.compiler import compile_flow   # json -> LangGraph\nfrom lga.runtime import arun_flow\n\nspec = json.load(open("${flow.slug}.flow.json"))\ngraph = compile_flow(spec).graph        # vanilla StateGraph, no server needed\nresult = await arun_flow(spec, input_text="hello")\nprint(result.result_text)`,
+      `import json\n\nfrom langgraph_agent_builder.compiler import compile_flow   # json -> LangGraph\nfrom langgraph_agent_builder.runtime import arun_flow\n\nspec = json.load(open("${flow.slug}.flow.json"))\ngraph = compile_flow(spec).graph        # vanilla StateGraph, no server needed\nresult = await arun_flow(spec, input_text="hello")\nprint(result.result_text)`,
     [flow.slug],
   );
 
@@ -290,7 +290,7 @@ export function ShareDialog({
             <Snippet
               label="Client config (Claude Code / Cursor)"
               text={JSON.stringify(
-                { mcpServers: { lga: { type: "http", url: `${origin}/mcp` } } },
+                { mcpServers: { "langgraph-agent-builder": { type: "http", url: `${origin}/mcp` } } },
                 null,
                 2,
               )}

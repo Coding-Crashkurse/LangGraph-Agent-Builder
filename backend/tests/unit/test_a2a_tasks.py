@@ -1,4 +1,4 @@
-"""Unit tests for lga.a2a.tasks — DbTaskStore persistence, the explicit
+"""Unit tests for langgraph_agent_builder.a2a.tasks — DbTaskStore persistence, the explicit
 transition state machine (SPEC §7.6), scope namespacing (§7.11), and the
 pluggable ``resolve_task_store`` factory."""
 
@@ -11,7 +11,7 @@ from a2a.server.context import ServerCallContext
 from a2a.server.tasks import InMemoryTaskStore, TaskStore
 from a2a.types import Message, Part, Role, Task, TaskState, TaskStatus, TextPart
 
-from lga.a2a.tasks import (
+from langgraph_agent_builder.a2a.tasks import (
     DbTaskStore,
     IllegalTaskTransitionError,
     resolve_task_store,
@@ -182,7 +182,7 @@ async def test_resolve_dotted_factory(sqlite_stack: SqliteStack) -> None:
 
 async def test_resolve_dotted_without_attr_is_value_error(sqlite_stack: SqliteStack) -> None:
     _settings, sessions = sqlite_stack
-    with pytest.raises(ValueError, match="invalid LGA_A2A_TASK_STORE"):
+    with pytest.raises(ValueError, match="invalid LAB_A2A_TASK_STORE"):
         resolve_task_store("just_a_module", sessions=sessions, flow_slug="f")
 
 

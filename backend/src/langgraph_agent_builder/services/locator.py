@@ -23,5 +23,5 @@ def get_services() -> Any:
 
 def require_services(feature: str) -> Any:
     if _current is None:
-        raise RuntimeError(f"{feature} requires a running lga server (no service context)")
+        raise RuntimeError(f"{feature} requires a running lab server (no service context)")
     return _current

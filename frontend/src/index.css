@@ -1,7 +1,7 @@
 @import "./theme.css";
 @import "@xyflow/react/dist/style.css";
 
-/* lga design system (SPEC §11.1–11.4, Appendix C). theme.css owns ALL colour
+/* lab design system (SPEC §11.1–11.4, Appendix C). theme.css owns ALL colour
    tokens — no other file may define colours, and components use only the
    theme.css utilities (text-1/2/3, surface-1/2/3, border, canvas, accent,
    success/warning/danger, port-*). `pnpm lint:tokens` enforces this. */

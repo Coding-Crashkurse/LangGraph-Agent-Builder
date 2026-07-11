@@ -14,4 +14,4 @@ def test_validates_clean():
 def test_runs_and_greets():
     result = run_local(load_flow(HERE), input_text="hi")
     assert result.status == "completed"
-    assert result.result_text == "Hello from LGA!"
+    assert result.result_text == "Hello from LAB!"

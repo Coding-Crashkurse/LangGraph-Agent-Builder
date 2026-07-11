@@ -1,11 +1,11 @@
-"""Unit tests for lga.schema.events — RunEvent envelope + SSE shape (SPEC §6.2)."""
+"""Unit tests for schema.events — RunEvent envelope + SSE shape (SPEC §6.2)."""
 
 from __future__ import annotations
 
 import json
 from datetime import datetime
 
-from lga.schema.events import RunEvent
+from langgraph_agent_builder.schema.events import RunEvent
 
 
 def test_run_event_defaults() -> None:

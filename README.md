@@ -1,4 +1,4 @@
-# lga — LangGraph-native visual agent builder
+# LangGraph Agent Builder
 
 > Build agent flows on a canvas, compile them to real LangGraph `StateGraph`s,
 > and serve every flow as an **A2A agent** and an **MCP tool** — no glue code.
@@ -17,7 +17,7 @@ and every published flow is served as a spec-compliant **A2A agent** and/or
 
 ```bash
 uv tool install langgraph-agent-builder   # or: pip install langgraph-agent-builder
-lga run                                    # zero config: SQLite under ~/.lga, browser opens
+lab run                                    # zero config: SQLite under ~/.langgraph-agent-builder, browser opens
 ```
 
 ## Highlights
@@ -32,19 +32,19 @@ lga run                                    # zero config: SQLite under ~/.lga, b
 - **MCP** (`/mcp`, streamable HTTP + `/mcp/sse` fallback): published flows are
   tools; client config snippet at `GET /api/v1/mcp/config`.
 - **Component SDK** — one Python class per component, discovered via the
-  `lga.components` entry point or `LGA_COMPONENTS_PATH`; no string-eval, ever.
-  Scaffold with `lga component new`.
-- **Library use** — `from lga.compiler import compile_flow`;
+  `langgraph_agent_builder.components` entry point or `LAB_COMPONENTS_PATH`; no string-eval, ever.
+  Scaffold with `lab component new`.
+- **Library use** — `from langgraph_agent_builder.compiler import compile_flow`;
   `compile_flow(spec).graph` runs under vanilla LangGraph without the server.
   Export any flow to a standalone `flow.py`.
-- **Storage tiers** — SQLite by default, Postgres (`LGA_DATABASE_URL=
+- **Storage tiers** — SQLite by default, Postgres (`LAB_DATABASE_URL=
   postgresql+asyncpg://…`) for production + pgvector RAG.
 
 ## Repository layout
 
 | Path | What |
 |---|---|
-| `backend/` | the `langgraph-agent-builder` package — imported as `lga` (SDK, compiler, runtime, A2A, MCP, Studio API, CLI) |
+| `backend/` | the `langgraph-agent-builder` package — imported as `langgraph_agent_builder`, CLI `lab` (SDK, compiler, runtime, A2A, MCP, Studio API) |
 | `frontend/` | React Studio (bundled into the wheel at build time) |
 | `examples/` | numbered, runnable examples incl. A2A HITL client, multi-agent, MCP both ways |
 
@@ -64,7 +64,7 @@ docker compose up -d postgres            # optional: Postgres tier on :55432
 
 cd backend
 uv sync
-uv run lga run --port 8010               # this dev box keeps 8000 occupied
+uv run lab run --port 8010               # this dev box keeps 8000 occupied
 uv run pytest                            # unit + compiler goldens + A2A compliance + MCP + CLI
 
 cd ../frontend
@@ -81,7 +81,7 @@ cd frontend && pnpm lint && pnpm test && pnpm build
 cd backend  && uv run pytest ../examples          # the example matrix stays green
 ```
 
-Windows note: start the backend via `lga run` (it installs a selector event
+Windows note: start the backend via `lab run` (it installs a selector event
 loop; psycopg async cannot run on the Proactor loop). Consequence: `stdio` MCP
 toolsets are unavailable on Windows — use `streamable_http`.
 

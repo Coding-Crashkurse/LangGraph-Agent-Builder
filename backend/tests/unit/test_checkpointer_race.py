@@ -5,12 +5,12 @@ from __future__ import annotations
 import asyncio
 from typing import TYPE_CHECKING, Any
 
-from lga.runtime.checkpoint import CheckpointerFactory
+from langgraph_agent_builder.runtime.checkpoint import CheckpointerFactory
 
 if TYPE_CHECKING:
     import pytest
 
-    from lga.services.settings import Settings
+    from langgraph_agent_builder.services.settings import Settings
 
 
 async def test_concurrent_first_get_builds_single_checkpointer(

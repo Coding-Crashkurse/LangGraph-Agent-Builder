@@ -330,7 +330,7 @@ function NodeMenu({ nodeId, onRename }: { nodeId: string; onRename: () => void }
 }
 
 // ------------------------------------------------------------------ node card
-export const LgaNode = memo(function LgaNode({ id, data, selected }: NodeProps<CanvasNode>) {
+export const LabNode = memo(function LabNode({ id, data, selected }: NodeProps<CanvasNode>) {
   const descriptors = useBuilder((s) => s.descriptors);
   const diagnostics = useBuilder((s) => s.diagnostics);
   const edges = useBuilder((s) => s.edges);
@@ -910,7 +910,7 @@ export const NoteNode = memo(function NoteNode({ id, data, selected }: NodeProps
 });
 
 // ------------------------------------------------------------------ edges (§11.3/§11.4)
-export function LgaEdge(props: EdgeProps<CanvasEdge>) {
+export function LabEdge(props: EdgeProps<CanvasEdge>) {
   const [path, labelX, labelY] = getBezierPath(props);
   const kind = props.data?.kind ?? "data";
   const family =
@@ -948,5 +948,5 @@ export function LgaEdge(props: EdgeProps<CanvasEdge>) {
   );
 }
 
-export const nodeTypes = { lga: LgaNode, note: NoteNode };
-export const edgeTypes = { lga: LgaEdge };
+export const nodeTypes = { lab: LabNode, note: NoteNode };
+export const edgeTypes = { lab: LabEdge };

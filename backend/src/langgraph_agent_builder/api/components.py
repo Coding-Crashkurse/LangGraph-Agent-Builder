@@ -7,8 +7,8 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
-from lga.api.deps import Services, StudioAuth
-from lga.sdk.dynamic import ComponentInitError, invoke_field_change
+from langgraph_agent_builder.api.deps import Services, StudioAuth
+from langgraph_agent_builder.sdk.dynamic import ComponentInitError, invoke_field_change
 
 router = APIRouter(prefix="/components", tags=["components"], dependencies=[StudioAuth])
 
@@ -32,7 +32,7 @@ async def list_components(svc: Services, request: Request, response: Response) -
 async def component_config_change(
     component_id: str, body: ConfigChangeBody, svc: Services
 ) -> dict[str, Any]:
-    """HTTP mapping only — the dispatch itself lives in ``lga.sdk.dynamic``."""
+    """HTTP mapping only — the dispatch itself lives in ``langgraph_agent_builder.sdk.dynamic``."""
     cls = svc.registry.get(component_id)
     if cls is None:
         raise HTTPException(404, f"unknown component {component_id!r}")

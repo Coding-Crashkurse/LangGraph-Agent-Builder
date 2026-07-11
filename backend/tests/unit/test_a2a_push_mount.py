@@ -1,5 +1,5 @@
-"""Unit tests for lga.a2a.push (SSRF webhook guard + delivery gating) and
-lga.a2a.mount (ASGI dispatcher error paths + agent registry)."""
+"""Unit tests for langgraph_agent_builder.a2a.push (SSRF webhook guard + delivery gating) and
+langgraph_agent_builder.a2a.mount (ASGI dispatcher error paths + agent registry)."""
 
 from __future__ import annotations
 
@@ -20,12 +20,17 @@ from a2a.types import (
     TextPart,
 )
 
-from lga.a2a.mount import A2AManager, effective_path
-from lga.a2a.push import DbPushConfigStore, GuardedPushSender, SsrfError, validate_webhook_url
+from langgraph_agent_builder.a2a.mount import A2AManager, effective_path
+from langgraph_agent_builder.a2a.push import (
+    DbPushConfigStore,
+    GuardedPushSender,
+    SsrfError,
+    validate_webhook_url,
+)
 
 if TYPE_CHECKING:
-    from lga.app import AppServices
-    from lga.services.settings import Settings
+    from langgraph_agent_builder.app import AppServices
+    from langgraph_agent_builder.services.settings import Settings
     from tests.unit.conftest import SqliteStack
 
 
@@ -68,7 +73,7 @@ def test_unresolvable_host_rejected(
     def _boom(*_a: Any, **_k: Any) -> Any:
         raise socket.gaierror("nope")
 
-    monkeypatch.setattr("lga.a2a.push.socket.getaddrinfo", _boom)
+    monkeypatch.setattr("langgraph_agent_builder.a2a.push.socket.getaddrinfo", _boom)
     with pytest.raises(SsrfError, match="cannot resolve"):
         validate_webhook_url("http://does-not-exist.example/hook", sqlite_settings)
 

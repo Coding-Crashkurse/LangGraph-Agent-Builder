@@ -6,8 +6,8 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Header, HTTPException, Request
 
-from lga.api.deps import Services, header_vars
-from lga.services.orchestrator import FlowNotRunnableError
+from langgraph_agent_builder.api.deps import Services, header_vars
+from langgraph_agent_builder.services.orchestrator import FlowNotRunnableError
 
 router = APIRouter(tags=["webhook"])
 

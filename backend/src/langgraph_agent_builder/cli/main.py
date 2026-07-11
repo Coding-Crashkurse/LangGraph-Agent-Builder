@@ -1,4 +1,4 @@
-"""lga CLI (SPEC §2.6). Config precedence: flag > env > --env-file > ./.env > defaults."""
+"""lab CLI (SPEC §2.6). Config precedence: flag > env > --env-file > ./.env > defaults."""
 
 from __future__ import annotations
 
@@ -9,15 +9,15 @@ from typing import Annotated
 
 import typer
 
-from lga.cli._common import build_settings, console
-from lga.cli.apikey import apikey_app
-from lga.cli.component import component_new
-from lga.cli.flow import flow_app
-from lga.cli.init import init_command
-from lga.cli.run import run_command
+from langgraph_agent_builder.cli._common import build_settings, console
+from langgraph_agent_builder.cli.apikey import apikey_app
+from langgraph_agent_builder.cli.component import component_new
+from langgraph_agent_builder.cli.flow import flow_app
+from langgraph_agent_builder.cli.init import init_command
+from langgraph_agent_builder.cli.run import run_command
 
 app = typer.Typer(
-    name="lga",
+    name="lab",
     help="LangGraph-native visual agent builder — Studio, A2A agents, MCP tools.",
     no_args_is_help=True,
     rich_markup_mode="rich",
@@ -42,7 +42,7 @@ def migrate(
 ) -> None:
     """Alembic upgrade against the resolved database."""
     settings = build_settings(env_file)
-    from lga.db.migrate import offline_sql, upgrade
+    from langgraph_agent_builder.db.migrate import offline_sql, upgrade
 
     if sql:
         offline_sql(settings, revision)
@@ -62,7 +62,7 @@ def config(
     data["secret_key"] = "***" if settings.secret_key else ""
     rows = []
     for key, value in sorted(data.items()):
-        env_key = f"LGA_{key.upper()}"
+        env_key = f"LAB_{key.upper()}"
         source = "env/.env" if env_key in os.environ else "default"
         rows.append({"key": env_key, "value": value, "source": source})
     if json_out:
@@ -81,7 +81,7 @@ def version(json_out: Annotated[bool, typer.Option("--json/--no-json")] = False)
     """Package version, A2A protocolVersion, LangGraph version, DB backend."""
     import importlib.metadata
 
-    import lga as lga_pkg
+    import langgraph_agent_builder as lab_pkg
 
     settings = build_settings(None)
     try:
@@ -94,10 +94,10 @@ def version(json_out: Annotated[bool, typer.Option("--json/--no-json")] = False)
         langgraph_version = importlib.metadata.version("langgraph")
     except importlib.metadata.PackageNotFoundError:
         langgraph_version = "unknown"
-    from lga.vectorstores import installed_backends
+    from langgraph_agent_builder.vectorstores import installed_backends
 
     info = {
-        "lga": lga_pkg.__version__,
+        "langgraph-agent-builder": lab_pkg.__version__,
         "a2a_protocol": str(protocol),
         "langgraph": langgraph_version,
         "db_backend": settings.storage_tier,

@@ -1,4 +1,4 @@
-"""`lga run` — start the full server (SPEC §2.6)."""
+"""`lab run` — start the full server (SPEC §2.6)."""
 
 from __future__ import annotations
 
@@ -11,12 +11,12 @@ from typing import TYPE_CHECKING, Annotated, Any
 import typer
 from rich.panel import Panel
 
-from lga.cli._common import build_settings, console, ensure_selector_policy
+from langgraph_agent_builder.cli._common import build_settings, console, ensure_selector_policy
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
 
-    from lga.services.settings import Settings
+    from langgraph_agent_builder.services.settings import Settings
 
 
 def _free_port(host: str, port: int, fallback: bool) -> int:
@@ -31,8 +31,8 @@ def _free_port(host: str, port: int, fallback: bool) -> int:
 
 
 async def _served_summary(settings: Settings) -> tuple[list[str], list[str]]:
-    from lga.services.db import create_engine, create_sessionmaker
-    from lga.services.flows import FlowService
+    from langgraph_agent_builder.services.db import create_engine, create_sessionmaker
+    from langgraph_agent_builder.services.flows import FlowService
 
     engine = create_engine(settings)
     try:
@@ -49,11 +49,11 @@ async def _served_summary(settings: Settings) -> tuple[list[str], list[str]]:
 
 
 def run_command(
-    host: Annotated[str | None, typer.Option(help="Bind host [env: LGA_HOST]")] = None,
-    port: Annotated[int | None, typer.Option(help="Bind port [env: LGA_PORT]")] = None,
+    host: Annotated[str | None, typer.Option(help="Bind host [env: LAB_HOST]")] = None,
+    port: Annotated[int | None, typer.Option(help="Bind port [env: LAB_PORT]")] = None,
     env_file: Annotated[Path | None, typer.Option(help="Extra .env file")] = None,
     database_url: Annotated[
-        str | None, typer.Option(help="Database URL [env: LGA_DATABASE_URL]")
+        str | None, typer.Option(help="Database URL [env: LAB_DATABASE_URL]")
     ] = None,
     backend_only: Annotated[
         bool, typer.Option("--backend-only", help="Do not serve the bundled frontend")
@@ -62,7 +62,7 @@ def run_command(
         list[str] | None,
         typer.Option("--components-path", help="Extra component dir (repeatable)"),
     ] = None,
-    log_level: Annotated[str | None, typer.Option(help="Log level [env: LGA_LOG_LEVEL]")] = None,
+    log_level: Annotated[str | None, typer.Option(help="Log level [env: LAB_LOG_LEVEL]")] = None,
     workers: Annotated[int, typer.Option(help="Workers (Postgres only)")] = 1,
     reload: Annotated[bool, typer.Option("--reload", help="Dev auto-reload")] = False,
     open_browser: Annotated[
@@ -75,7 +75,7 @@ def run_command(
         bool, typer.Option("--port-fallback/--no-port-fallback", help="Auto-increment busy port")
     ] = True,
 ) -> None:
-    """Start the full lga server (Studio + A2A + MCP + frontend)."""
+    """Start the full lab server (Studio + A2A + MCP + frontend)."""
     import os
 
     overrides: dict[str, Any] = {}
@@ -100,23 +100,23 @@ def run_command(
 
     ensure_selector_policy()
     if auto_migrate:
-        from lga.db.migrate import upgrade
+        from langgraph_agent_builder.db.migrate import upgrade
 
         upgrade(settings)
     a2a_slugs, mcp_tools = asyncio.new_event_loop().run_until_complete(_served_summary(settings))
 
-    from lga.vectorstores import installed_backends
+    from langgraph_agent_builder.vectorstores import installed_backends
 
     url = f"http://{settings.host}:{settings.port}"
     lines = [
-        f"[bold]lga[/bold] ready to serve on [link={url}]{url}[/link]",
+        f"[bold]lab[/bold] ready to serve on [link={url}]{url}[/link]",
         f"database: [cyan]{settings.storage_tier}[/cyan] ({settings.database_url})",
         f"vector stores: [cyan]{', '.join(installed_backends())}[/cyan]",
         f"auth: {'[green]on[/green]' if settings.auth_enabled else '[yellow]off (dev)[/yellow]'}",
         f"A2A agents: {', '.join(a2a_slugs) or '(none published)'}  ->  {url}/a2a/{{slug}}",
         f"MCP tools:  {', '.join(mcp_tools) or '(none published)'}  ->  {url}/mcp",
     ]
-    console.print(Panel("\n".join(lines), border_style="cyan", title="lga run"))
+    console.print(Panel("\n".join(lines), border_style="cyan", title="lab run"))
 
     if open_browser and sys.stdout.isatty() and not backend_only:
         import webbrowser
@@ -126,14 +126,14 @@ def run_command(
     import uvicorn
 
     # env for worker/reload subprocesses (they re-read Settings)
-    os.environ["LGA_HOST"] = settings.host
-    os.environ["LGA_PORT"] = str(settings.port)
-    os.environ["LGA_DATABASE_URL"] = settings.database_url
+    os.environ["LAB_HOST"] = settings.host
+    os.environ["LAB_PORT"] = str(settings.port)
+    os.environ["LAB_DATABASE_URL"] = settings.database_url
     if backend_only:
-        os.environ["LGA_BACKEND_ONLY"] = "1"
+        os.environ["LAB_BACKEND_ONLY"] = "1"
 
     if settings.log_file is not None:
-        # LGA_LOG_FILE (SPEC §18.1): tee logs into a file
+        # LAB_LOG_FILE (SPEC §18.1): tee logs into a file
         import logging
 
         handler = logging.FileHandler(settings.log_file, encoding="utf-8")
@@ -150,7 +150,7 @@ def run_command(
     if reload or workers > 1:
         # subprocess servers pick their own (selector-capable) loop
         uvicorn.run(
-            "lga.cli.run:asgi_factory",
+            "langgraph_agent_builder.cli.run:asgi_factory",
             factory=True,
             host=settings.host,
             port=settings.port,
@@ -162,7 +162,7 @@ def run_command(
         return
     # single-process: run on OUR selector loop — uvicorn's loop factory would
     # force the Proactor loop on Windows, which psycopg async cannot use
-    from lga.app import create_app
+    from langgraph_agent_builder.app import create_app
 
     app = create_app(settings, backend_only=backend_only)
     app.state.auto_migrate = False  # already migrated above
@@ -181,6 +181,6 @@ def asgi_factory() -> FastAPI:
     """Factory for reload/multi-worker subprocesses."""
     import os
 
-    from lga.app import create_app
+    from langgraph_agent_builder.app import create_app
 
-    return create_app(backend_only=os.environ.get("LGA_BACKEND_ONLY") == "1")
+    return create_app(backend_only=os.environ.get("LAB_BACKEND_ONLY") == "1")

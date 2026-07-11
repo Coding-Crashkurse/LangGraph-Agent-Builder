@@ -1,4 +1,4 @@
-"""Unit tests for the Language Model component (lga.llm.language_model).
+"""Unit tests for the Language Model component (lab.llm.language_model).
 
 The node emits the provider *config dict* on the MODEL port (never a client),
 merging the widget model value with temperature/api_key overrides. The api_key
@@ -11,10 +11,10 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from lga.components.llm._models import resolve_model
-from lga.components.llm.language_model import LanguageModel
-from lga.sdk.ports import Message
-from lga.sdk.testing import ComponentTestHarness
+from langgraph_agent_builder.components.llm._models import resolve_model
+from langgraph_agent_builder.components.llm.language_model import LanguageModel
+from langgraph_agent_builder.sdk.ports import Message
+from langgraph_agent_builder.sdk.testing import ComponentTestHarness
 
 
 async def _run(config: dict[str, Any]) -> dict[str, Any]:

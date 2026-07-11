@@ -9,12 +9,12 @@ from typing import Any, Protocol, runtime_checkable
 
 import jsonschema  # type: ignore[import-untyped]  # no stubs installed for jsonschema
 
-from lga.compiler.ir import EdgeIR, FlowIR, NodeIR
-from lga.schema.diagnostics import Diagnostic, DiagnosticCode
-from lga.schema.flowspec import FlowSpec
-from lga.sdk.component import SecretRef
-from lga.sdk.fields import Field, SecretInput
-from lga.sdk.registry import ComponentRegistry
+from langgraph_agent_builder.compiler.ir import EdgeIR, FlowIR, NodeIR
+from langgraph_agent_builder.schema.diagnostics import Diagnostic, DiagnosticCode
+from langgraph_agent_builder.schema.flowspec import FlowSpec
+from langgraph_agent_builder.sdk.component import SecretRef
+from langgraph_agent_builder.sdk.fields import Field, SecretInput
+from langgraph_agent_builder.sdk.registry import ComponentRegistry
 
 
 class VariablesProvider(Protocol):
@@ -41,7 +41,7 @@ def _env_fallback(variables: VariablesProvider, name: str) -> str | None:
 
 
 class EnvVariablesProvider:
-    """Headless default: LGA_VAR_<NAME> / LGA_CRED_<NAME>, each with a raw-env
+    """Headless default: LAB_VAR_<NAME> / LAB_CRED_<NAME>, each with a raw-env
     fallback (``name`` looked up verbatim when the prefixed form is absent)."""
 
     def __init__(self, env: dict[str, str] | None = None) -> None:
@@ -50,10 +50,10 @@ class EnvVariablesProvider:
         self._env = dict(env if env is not None else os.environ)
 
     def get_var(self, name: str) -> str | None:
-        return self._env.get(f"LGA_VAR_{name.upper()}") or self._env.get(name)
+        return self._env.get(f"LAB_VAR_{name.upper()}") or self._env.get(name)
 
     def get_secret(self, name: str) -> str | None:
-        return self._env.get(f"LGA_CRED_{name.upper()}") or self._env.get(name)
+        return self._env.get(f"LAB_CRED_{name.upper()}") or self._env.get(name)
 
     def has_var(self, name: str) -> bool:
         return self.get_var(name) is not None
@@ -81,7 +81,7 @@ def _resolve_refs(
     Generic $var refs are unrestricted."""
     if isinstance(value, dict):
         if "$vectorstore" in value:
-            from lga.sdk.ports import VectorStoreHandle
+            from langgraph_agent_builder.sdk.ports import VectorStoreHandle
 
             name = str(value["$vectorstore"])
             if vectorstore_names is not None and name not in vectorstore_names:
@@ -92,7 +92,7 @@ def _resolve_refs(
                         node_id=node_id,
                         field=field,
                         fix_hint="Create it under Settings → Vector Stores or set "
-                        f"LGA_VECTORSTORE_{name.upper().replace('-', '_')}.",
+                        f"LAB_VECTORSTORE_{name.upper().replace('-', '_')}.",
                     )
                 )
                 return None
@@ -110,7 +110,7 @@ def _resolve_refs(
                         node_id=node_id,
                         field=field,
                         fix_hint="Create it under Settings → Global Variables or set "
-                        f"LGA_VAR_{name.upper()}.",
+                        f"LAB_VAR_{name.upper()}.",
                     )
                 )
                 return None
@@ -135,13 +135,13 @@ def _resolve_refs(
                         f"secret {name!r} does not exist",
                         node_id=node_id,
                         field=field,
-                        fix_hint=f"Create a credential variable or set LGA_CRED_{name.upper()}.",
+                        fix_hint=f"Create a credential variable or set LAB_CRED_{name.upper()}.",
                     )
                 )
                 return None
             secret_value = variables.get_secret(name) or ""
             # remember the plaintext so the event/log scrubber can redact it (§10.5)
-            from lga.schema.scrub import register_secret
+            from langgraph_agent_builder.schema.scrub import register_secret
 
             register_secret(secret_value)
             return SecretRef(secret_value)
@@ -233,7 +233,7 @@ def resolve(
                     DiagnosticCode.E002,
                     f"unknown component {node.component_id!r}",
                     node_id=node.id,
-                    fix_hint="Install the providing package or check LGA_COMPONENTS_PATH.",
+                    fix_hint="Install the providing package or check LAB_COMPONENTS_PATH.",
                 )
             )
             continue
@@ -306,7 +306,7 @@ def resolve(
                 )
             if _is_empty(value):
                 continue  # required-ness checked in P3 (port may satisfy it)
-            from lga.sdk.ports import VectorStoreHandle
+            from langgraph_agent_builder.sdk.ports import VectorStoreHandle
 
             schema = f.json_schema()
             if schema and not isinstance(value, (SecretRef, VectorStoreHandle)):

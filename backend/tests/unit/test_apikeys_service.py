@@ -1,4 +1,4 @@
-"""Unit tests for lga.services.apikeys (SPEC §10.4).
+"""Unit tests for langgraph_agent_builder.services.apikeys (SPEC §10.4).
 
 Exercises scope validation, revocation, wildcard scope, and usage tracking on
 a real migrated SQLite database via the `sqlite_stack` fixture.
@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from lga.services.apikeys import ApiKeyService
+from langgraph_agent_builder.services.apikeys import ApiKeyService
 
 if TYPE_CHECKING:
     from tests.unit.conftest import SqliteStack
@@ -27,7 +27,7 @@ async def test_create_returns_prefixed_key_and_info(sqlite_stack: SqliteStack) -
     _settings, sessions = sqlite_stack
     service = ApiKeyService(sessions)
     key, info = await service.create(["a2a:invoke"], name="ci")
-    assert key.startswith("lga_sk_")
+    assert key.startswith("lab_sk_")
     assert info["prefix"] == key[:14]
     assert info["name"] == "ci"
     assert info["scopes"] == ["a2a:invoke"]
@@ -53,7 +53,7 @@ async def test_verify_empty_and_unknown_key(sqlite_stack: SqliteStack) -> None:
     _settings, sessions = sqlite_stack
     service = ApiKeyService(sessions)
     assert await service.verify("", "a2a:invoke") is False
-    assert await service.verify("lga_sk_nope", "a2a:invoke") is False
+    assert await service.verify("lab_sk_nope", "a2a:invoke") is False
 
 
 async def test_revoke_denies_future_verification(sqlite_stack: SqliteStack) -> None:

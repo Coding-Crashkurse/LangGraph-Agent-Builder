@@ -1,6 +1,6 @@
 """Unit tests for the zero-dependency testing components (SPEC §12.7).
 
-Covers lga.components.testing.echo_llm, .mock and .slow_node by exercising each
+Covers langgraph_agent_builder.components.testing.echo_llm, .mock and .slow_node by exercising each
 NodeFn in isolation through the ComponentTestHarness. Error paths (cancellation,
 configured failure) and the message-fallback branches are the focus.
 """
@@ -13,12 +13,12 @@ from typing import Any
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage
 
-from lga.components.testing.echo_llm import EchoLLM
-from lga.components.testing.mock import _LOREM, FakeEmbeddings, MockData
-from lga.components.testing.slow_node import EchoData, FailingNode, SlowNode
-from lga.sdk import Component, ports
-from lga.sdk.runtime import RUN_CTX_KEY, RunContext
-from lga.sdk.testing import BuiltNode, ComponentTestHarness
+from langgraph_agent_builder.components.testing.echo_llm import EchoLLM
+from langgraph_agent_builder.components.testing.mock import _LOREM, FakeEmbeddings, MockData
+from langgraph_agent_builder.components.testing.slow_node import EchoData, FailingNode, SlowNode
+from langgraph_agent_builder.sdk import Component, ports
+from langgraph_agent_builder.sdk.runtime import RUN_CTX_KEY, RunContext
+from langgraph_agent_builder.sdk.testing import BuiltNode, ComponentTestHarness
 
 
 def _build(

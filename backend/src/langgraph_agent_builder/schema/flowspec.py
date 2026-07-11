@@ -9,7 +9,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from lga.errors import LgaValueError
+from langgraph_agent_builder.errors import LabValueError
 
 SCHEMA_VERSION = "2"
 RESERVED_NODE_IDS = {"start", "end"}
@@ -145,7 +145,7 @@ class FlowSpec(BaseModel):
         return json.dumps(self.model_dump(mode="json"), sort_keys=True, separators=(",", ":"))
 
 
-class FlowSpecError(LgaValueError):
+class FlowSpecError(LabValueError):
     """Raised by parse_flowspec on schema violations (→ E001)."""
 
 
@@ -160,8 +160,27 @@ def _migrate_1_to_2(raw: dict[str, Any]) -> dict[str, Any]:
     return raw
 
 
+def _migrate_legacy_ids(raw: dict[str, Any]) -> dict[str, Any]:
+    """Specs written before the package rename reference components as ``lga.*``."""
+    nodes = raw.get("nodes")
+    if not isinstance(nodes, list):
+        return raw
+    migrated: list[Any] = []
+    changed = False
+    for node in nodes:
+        cid = node.get("component_id") if isinstance(node, dict) else None
+        if isinstance(cid, str) and cid.startswith("lga."):
+            node = {**node, "component_id": "lab." + cid.removeprefix("lga.")}
+            changed = True
+        migrated.append(node)
+    if not changed:
+        return raw
+    return {**raw, "nodes": migrated}
+
+
 def migrate_schema(raw: dict[str, Any]) -> dict[str, Any]:
     """Migrate older schema_versions to the current one."""
+    raw = _migrate_legacy_ids(raw)
     version = str(raw.get("schema_version", "") or "1")
     if version == SCHEMA_VERSION:
         return raw

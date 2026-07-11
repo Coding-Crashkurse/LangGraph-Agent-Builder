@@ -6,9 +6,9 @@ import asyncio
 from types import SimpleNamespace
 from typing import Any
 
-from lga.api.runs import _run_event_gen
-from lga.runtime.streams import EventBus
-from lga.schema.events import RunEvent
+from langgraph_agent_builder.api.runs import _run_event_gen
+from langgraph_agent_builder.runtime.streams import EventBus
+from langgraph_agent_builder.schema.events import RunEvent
 
 
 class _RecordingExecutor:

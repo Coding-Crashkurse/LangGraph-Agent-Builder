@@ -96,7 +96,7 @@ export function specToCanvas(
 ): { nodes: CanvasNode[]; edges: CanvasEdge[] } {
   const nodes: CanvasNode[] = spec.nodes.map((node) => ({
     id: node.id,
-    type: "lga",
+    type: "lab",
     // reserved nodes are required (E030) — Delete must not remove them
     deletable: node.id !== "start" && node.id !== "end",
     position: node.position ?? { x: 0, y: 0 },
@@ -115,7 +115,7 @@ export function specToCanvas(
     target: edge.target.node,
     targetHandle: edge.kind === "router" ? ROUTER_TARGET_HANDLE : edge.target.input,
     data: { kind: edge.kind },
-    type: "lga",
+    type: "lab",
   }));
   for (const note of spec.ui?.sticky_notes ?? []) {
     nodes.push(noteToNode(note));
@@ -173,8 +173,8 @@ export function newEdgeId(): string {
 }
 
 export function newNodeId(descriptor: ComponentDescriptor, taken: Set<string>): string {
-  if (descriptor.component_id === "lga.io.start") return "start";
-  if (descriptor.component_id === "lga.io.end") return "end";
+  if (descriptor.component_id === "lab.io.start") return "start";
+  if (descriptor.component_id === "lab.io.end") return "end";
   const base = descriptor.component_id.split(".").pop() ?? "node";
   let index = 1;
   let candidate = `${base}_${index}`;
@@ -208,14 +208,14 @@ export function emptyFlowSpec(name: string, slug: string): FlowSpec {
     nodes: [
       {
         id: "start",
-        component_id: "lga.io.start",
+        component_id: "lab.io.start",
         component_version: "1.0.0",
         config: {},
         position: { x: 80, y: 200 },
       },
       {
         id: "end",
-        component_id: "lga.io.end",
+        component_id: "lab.io.end",
         component_version: "1.0.0",
         config: {},
         position: { x: 640, y: 200 },

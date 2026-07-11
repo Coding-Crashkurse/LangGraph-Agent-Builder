@@ -20,7 +20,7 @@ def load_flow(example_dir: str | Path) -> dict[str, Any]:
 
 
 def validate_ok(spec: dict[str, Any]) -> None:
-    from lga.compiler import compile_flow
+    from langgraph_agent_builder.compiler import compile_flow
 
     compiled = compile_flow(spec, use_cache=False)
     errors = [d for d in compiled.diagnostics if d.severity == "error"]
@@ -29,7 +29,7 @@ def validate_ok(spec: dict[str, Any]) -> None:
 
 def run_local(spec: dict[str, Any], input_text: str = "hi", resume: Any = None,
               session_id: str | None = None):
-    from lga.runtime import arun_flow
+    from langgraph_agent_builder.runtime import arun_flow
 
     saver_holder: dict[str, Any] = {}
 
@@ -52,7 +52,7 @@ def free_port() -> int:
 
 
 class LiveServer:
-    """In-process lga server on a real port (for A2A/MCP network clients)."""
+    """In-process lab server on a real port (for A2A/MCP network clients)."""
 
     def __init__(self) -> None:
         self.port = free_port()
@@ -63,12 +63,12 @@ class LiveServer:
     async def __aenter__(self) -> "LiveServer":
         import uvicorn
 
-        from lga.app import create_app
-        from lga.db.migrate import upgrade_async
-        from lga.services.settings import Settings
+        from langgraph_agent_builder.app import create_app
+        from langgraph_agent_builder.db.migrate import upgrade_async
+        from langgraph_agent_builder.services.settings import Settings
 
         settings = Settings(
-            home=Path(tempfile.mkdtemp(prefix="lga-example-")),
+            home=Path(tempfile.mkdtemp(prefix="lab-example-")),
             env="test",
             port=self.port,
             host_url=self.base,

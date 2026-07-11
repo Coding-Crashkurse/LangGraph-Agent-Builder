@@ -1,4 +1,4 @@
-"""Unit tests for lga.components.tools.flow_as_tool.
+"""Unit tests for langgraph_agent_builder.components.tools.flow_as_tool.
 
 Uses an in-repo fake AppServices wired through the process service locator; the
 LazyToolset factory and the child-run callable are exercised end to end.
@@ -12,9 +12,9 @@ from typing import Any
 
 import pytest
 
-from lga.components.tools.flow_as_tool import FlowAsTool
-from lga.sdk.testing import ComponentTestHarness
-from lga.services import locator
+from langgraph_agent_builder.components.tools.flow_as_tool import FlowAsTool
+from langgraph_agent_builder.sdk.testing import ComponentTestHarness
+from langgraph_agent_builder.services import locator
 
 # --------------------------------------------------------------------------- fakes
 
@@ -165,7 +165,7 @@ async def test_flow_as_tool_child_failure_raises(restore_locator: None) -> None:
 async def test_flow_as_tool_without_server_raises(restore_locator: None) -> None:
     locator.set_services(None)
     lazy = FlowAsTool().provide_tools(_ctx({"flow_slug": "x"}))
-    with pytest.raises(RuntimeError, match="requires a running lga server"):
+    with pytest.raises(RuntimeError, match="requires a running lab server"):
         await lazy.resolve()
 
 

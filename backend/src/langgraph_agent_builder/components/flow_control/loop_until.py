@@ -4,13 +4,13 @@ from __future__ import annotations
 
 from typing import Any
 
-from lga.sdk import BuildContext, Component, NodeKind, Output, fields, ports
-from lga.sdk.component import NodeFn
-from lga.sdk.templating import eval_predicate, last_message_text
+from langgraph_agent_builder.sdk import BuildContext, Component, NodeKind, Output, fields, ports
+from langgraph_agent_builder.sdk.component import NodeFn
+from langgraph_agent_builder.sdk.templating import eval_predicate, last_message_text
 
 
 class LoopUntil(Component):
-    component_id = "lga.flow.loop_until"
+    component_id = "lab.flow.loop_until"
     display_name = "Loop Until"
     description = "Routes `continue` until the condition holds or max_iterations is hit."
     icon = "refresh-cw"

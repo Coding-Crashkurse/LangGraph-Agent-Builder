@@ -4,13 +4,13 @@ from __future__ import annotations
 
 from typing import Any
 
-from lga.sdk import BuildContext, Component, NodeKind, Output, fields, ports
-from lga.sdk.component import NodeFn
-from lga.sdk.templating import message_text
+from langgraph_agent_builder.sdk import BuildContext, Component, NodeKind, Output, fields, ports
+from langgraph_agent_builder.sdk.component import NodeFn
+from langgraph_agent_builder.sdk.templating import message_text
 
 
 class End(Component):
-    component_id = "lga.io.end"
+    component_id = "lab.io.end"
     display_name = "Chat Output"
     description = "Flow exit: formats the final artifact from message/text/json/table input."
     icon = "message-square-reply"

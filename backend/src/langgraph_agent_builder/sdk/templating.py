@@ -8,7 +8,7 @@ from typing import Any
 
 from jinja2.sandbox import SandboxedEnvironment
 
-from lga.sdk.ports import Message
+from langgraph_agent_builder.sdk.ports import Message
 
 _env = SandboxedEnvironment(autoescape=False)
 _env.globals.clear()  # no range/dict/etc — data-only templates

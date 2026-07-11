@@ -29,7 +29,7 @@ _PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"gh[pousr]_[A-Za-z0-9]{20,}"),  # GitHub tokens
     re.compile(r"xox[baprs]-[A-Za-z0-9-]{10,}"),  # Slack tokens
     re.compile(r"(?i)bearer\s+[A-Za-z0-9._\-]{20,}"),  # bearer auth headers
-    re.compile(r"lga_sk_[A-Za-z0-9]{16,}"),  # our own API keys
+    re.compile(r"lab_sk_[A-Za-z0-9]{16,}"),  # our own API keys
 )
 
 # Exact resolved secret values, registered by the compiler at resolve time.

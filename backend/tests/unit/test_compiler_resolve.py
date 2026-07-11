@@ -1,18 +1,18 @@
-"""Unit tests for lga.compiler.resolve (P2): $var/$secret/$vectorstore
+"""Unit tests for langgraph_agent_builder.compiler.resolve (P2): $var/$secret/$vectorstore
 resolution, credential-leak guard, tweaks, and field-level diagnostics."""
 
 from __future__ import annotations
 
 from typing import Any
 
-from lga.compiler import parse as parse_pass
-from lga.compiler.resolve import EnvVariablesProvider, resolve, snapshot_digest
-from lga.schema.diagnostics import Diagnostic, DiagnosticCode
-from lga.schema.flowspec import FlowSpec
-from lga.sdk import BuildContext, Component, fields
-from lga.sdk.component import NodeFn, SecretRef
-from lga.sdk.ports import VectorStoreHandle
-from lga.sdk.registry import ComponentRegistry, get_registry
+from langgraph_agent_builder.compiler import parse as parse_pass
+from langgraph_agent_builder.compiler.resolve import EnvVariablesProvider, resolve, snapshot_digest
+from langgraph_agent_builder.schema.diagnostics import Diagnostic, DiagnosticCode
+from langgraph_agent_builder.schema.flowspec import FlowSpec
+from langgraph_agent_builder.sdk import BuildContext, Component, fields
+from langgraph_agent_builder.sdk.component import NodeFn, SecretRef
+from langgraph_agent_builder.sdk.ports import VectorStoreHandle
+from langgraph_agent_builder.sdk.registry import ComponentRegistry, get_registry
 from tests.conftest import hello_spec
 
 
@@ -69,7 +69,7 @@ def _codes(diags: list[Diagnostic]) -> list[DiagnosticCode]:
 
 
 def test_var_resolves_and_unknown_key_tolerated() -> None:
-    spec = _spec("lga.testing.fake_llm", {"replies": ["ok"], "greeting": {"$var": "g"}})
+    spec = _spec("lab.testing.fake_llm", {"replies": ["ok"], "greeting": {"$var": "g"}})
     ir, diags = resolve(spec, get_registry(), _Vars(variables={"g": "hello"}))
     # unknown key still resolves & compiles, but is flagged (W303, warning only)
     assert _codes(diags) == [DiagnosticCode.W303]
@@ -80,7 +80,7 @@ def test_var_resolves_and_unknown_key_tolerated() -> None:
 
 
 def test_missing_var_is_e012() -> None:
-    spec = _spec("lga.testing.fake_llm", {"replies": ["ok"], "greeting": {"$var": "gone"}})
+    spec = _spec("lab.testing.fake_llm", {"replies": ["ok"], "greeting": {"$var": "gone"}})
     _ir, diags = resolve(spec, get_registry(), _Vars())
     diag = next(d for d in diags if d.code == DiagnosticCode.E012)
     assert "gone" in diag.message
@@ -89,7 +89,7 @@ def test_missing_var_is_e012() -> None:
 
 def test_var_env_fallback_used_when_absent() -> None:
     spec = _spec(
-        "lga.testing.fake_llm", {"replies": ["ok"], "greeting": {"$var": "needs_fallback"}}
+        "lab.testing.fake_llm", {"replies": ["ok"], "greeting": {"$var": "needs_fallback"}}
     )
     ir, diags = resolve(spec, get_registry(), _FallbackVars())
     assert DiagnosticCode.E012 not in _codes(diags)
@@ -101,7 +101,7 @@ def test_var_env_fallback_used_when_absent() -> None:
 
 def test_secret_resolves_to_secretref() -> None:
     spec = _spec(
-        "lga.llm.language_model",
+        "lab.llm.language_model",
         {"model": {"provider": "fake", "model": "x"}, "api_key": {"$secret": "K"}},
     )
     ir, diags = resolve(spec, get_registry(), _Vars(secrets={"K": "sk-abc"}))
@@ -114,7 +114,7 @@ def test_secret_resolves_to_secretref() -> None:
 
 def test_missing_secret_is_e012() -> None:
     spec = _spec(
-        "lga.llm.language_model",
+        "lab.llm.language_model",
         {"model": {"provider": "fake", "model": "x"}, "api_key": {"$secret": "GONE"}},
     )
     _ir, diags = resolve(spec, get_registry(), _Vars())
@@ -126,7 +126,7 @@ def test_missing_secret_is_e012() -> None:
 
 
 def test_vectorstore_ref_resolves_to_handle() -> None:
-    spec = _spec("lga.testing.fake_llm", {"replies": ["ok"], "vs": {"$vectorstore": "myconn"}})
+    spec = _spec("lab.testing.fake_llm", {"replies": ["ok"], "vs": {"$vectorstore": "myconn"}})
     ir, diags = resolve(spec, get_registry(), _Vars(), vectorstore_names={"myconn"})
     assert DiagnosticCode.E013 not in _codes(diags)
     handle = ir.nodes["n"].config["vs"]
@@ -135,7 +135,7 @@ def test_vectorstore_ref_resolves_to_handle() -> None:
 
 
 def test_unknown_vectorstore_is_e013() -> None:
-    spec = _spec("lga.testing.fake_llm", {"replies": ["ok"], "vs": {"$vectorstore": "nope"}})
+    spec = _spec("lab.testing.fake_llm", {"replies": ["ok"], "vs": {"$vectorstore": "nope"}})
     _ir, diags = resolve(spec, get_registry(), _Vars(), vectorstore_names=set())
     diag = next(d for d in diags if d.code == DiagnosticCode.E013)
     assert "nope" in diag.message
@@ -145,14 +145,14 @@ def test_unknown_vectorstore_is_e013() -> None:
 
 
 def test_tweak_unknown_field_is_e011() -> None:
-    spec = _spec("lga.testing.fake_llm", {"replies": ["ok"]})
+    spec = _spec("lab.testing.fake_llm", {"replies": ["ok"]})
     _ir, diags = resolve(spec, get_registry(), _Vars(), tweaks={"n": {"does_not_exist": 1}})
     diag = next(d for d in diags if d.code == DiagnosticCode.E011)
     assert "does_not_exist" in diag.message
 
 
 def test_tweak_on_secret_field_is_rejected() -> None:
-    spec = _spec("lga.llm.language_model", {"model": {"provider": "fake", "model": "x"}})
+    spec = _spec("lab.llm.language_model", {"model": {"provider": "fake", "model": "x"}})
     _ir, diags = resolve(spec, get_registry(), _Vars(), tweaks={"n": {"api_key": "leaked"}})
     diag = next(d for d in diags if d.code == DiagnosticCode.E011)
     assert "not tweakable" in diag.message
@@ -187,7 +187,7 @@ def test_deprecated_field_in_use_is_w301() -> None:
 
 
 def test_env_variables_provider_lookup_precedence() -> None:
-    provider = EnvVariablesProvider({"LGA_VAR_FOO": "bar", "LGA_CRED_KEY": "sk", "PLAIN": "p"})
+    provider = EnvVariablesProvider({"LAB_VAR_FOO": "bar", "LAB_CRED_KEY": "sk", "PLAIN": "p"})
     assert provider.get_var("foo") == "bar"  # prefixed form wins
     assert provider.get_var("PLAIN") == "p"  # raw fallback
     assert provider.has_var("foo") is True
@@ -198,28 +198,28 @@ def test_env_variables_provider_lookup_precedence() -> None:
 
 
 def test_unknown_component_is_e002() -> None:
-    spec = _spec("lga.nope.missing", {})
+    spec = _spec("lab.nope.missing", {})
     ir, diags = resolve(spec, get_registry(), _Vars())
     assert DiagnosticCode.E002 in _codes(diags)
     assert "n" not in ir.nodes  # skipped, no NodeIR built
 
 
 def test_version_mismatch_migrates_with_w302() -> None:
-    spec = _spec("lga.testing.fake_llm", {"replies": ["ok"]}, version="0.9.0")
+    spec = _spec("lab.testing.fake_llm", {"replies": ["ok"]}, version="0.9.0")
     ir, diags = resolve(spec, get_registry(), _Vars())
     assert DiagnosticCode.W302 in _codes(diags)
     assert ir.nodes["n"].migrated_from == "0.9.0"
 
 
 def test_tweak_applies_to_valid_field() -> None:
-    spec = _spec("lga.testing.fake_llm", {"replies": ["original"]})
+    spec = _spec("lab.testing.fake_llm", {"replies": ["original"]})
     ir, diags = resolve(spec, get_registry(), _Vars(), tweaks={"n": {"replies": ["tweaked"]}})
     assert DiagnosticCode.E011 not in _codes(diags)
     assert ir.nodes["n"].config["replies"] == ["tweaked"]
 
 
 def test_secret_in_non_secret_field_is_e014() -> None:
-    spec = _spec("lga.testing.fake_llm", {"replies": {"$secret": "K"}})
+    spec = _spec("lab.testing.fake_llm", {"replies": {"$secret": "K"}})
     _ir, diags = resolve(spec, get_registry(), _Vars(secrets={"K": "sk"}))
     diag = next(d for d in diags if d.code == DiagnosticCode.E014)
     assert diag.field == "replies"
@@ -228,7 +228,7 @@ def test_secret_in_non_secret_field_is_e014() -> None:
 def test_nested_secret_in_non_secret_field_is_e014_and_unresolved() -> None:
     """The credential-leak guard recurses into containers — nesting the ref
     must not bypass E014, and the plaintext must never be resolved (§10.5)."""
-    spec = _spec("lga.testing.fake_llm", {"replies": [{"auth": {"$secret": "K"}}]})
+    spec = _spec("lab.testing.fake_llm", {"replies": [{"auth": {"$secret": "K"}}]})
     ir, diags = resolve(spec, get_registry(), _Vars(secrets={"K": "sk-leak"}))
     diag = next(d for d in diags if d.code == DiagnosticCode.E014)
     assert diag.field == "replies"
@@ -237,7 +237,7 @@ def test_nested_secret_in_non_secret_field_is_e014_and_unresolved() -> None:
 
 def test_nested_secret_in_secret_field_is_allowed() -> None:
     spec = _spec(
-        "lga.llm.language_model",
+        "lab.llm.language_model",
         {"model": {"provider": "fake", "model": "x"}, "api_key": {"$secret": "K"}},
     )
     _ir, diags = resolve(spec, get_registry(), _Vars(secrets={"K": "sk"}))
@@ -245,13 +245,13 @@ def test_nested_secret_in_secret_field_is_allowed() -> None:
 
 
 def test_field_schema_violation_is_e011() -> None:
-    spec = _spec("lga.testing.fake_llm", {"replies": "not-a-list"})
+    spec = _spec("lab.testing.fake_llm", {"replies": "not-a-list"})
     _ir, diags = resolve(spec, get_registry(), _Vars())
     assert DiagnosticCode.E011 in _codes(diags)
 
 
 def test_fallback_returning_none_still_reports_e012() -> None:
-    spec = _spec("lga.testing.fake_llm", {"replies": ["ok"], "greeting": {"$var": "other"}})
+    spec = _spec("lab.testing.fake_llm", {"replies": ["ok"], "greeting": {"$var": "other"}})
     _ir, diags = resolve(spec, get_registry(), _FallbackVars())
     assert DiagnosticCode.E012 in _codes(diags)  # fallback returned None
 
@@ -260,7 +260,7 @@ def test_fallback_returning_none_still_reports_e012() -> None:
 
 
 def test_snapshot_digest_tracks_referenced_values() -> None:
-    spec = _spec("lga.testing.fake_llm", {"replies": ["ok"], "greeting": {"$var": "g"}})
+    spec = _spec("lab.testing.fake_llm", {"replies": ["ok"], "greeting": {"$var": "g"}})
     one_a = snapshot_digest(spec, _Vars(variables={"g": "one"}))
     one_b = snapshot_digest(spec, _Vars(variables={"g": "one"}))
     two = snapshot_digest(spec, _Vars(variables={"g": "two"}))
@@ -269,7 +269,7 @@ def test_snapshot_digest_tracks_referenced_values() -> None:
 
 
 def test_snapshot_digest_tracks_tweaks_and_vectorstores() -> None:
-    spec = _spec("lga.testing.fake_llm", {"replies": ["ok"], "vs": {"$vectorstore": "conn"}})
+    spec = _spec("lab.testing.fake_llm", {"replies": ["ok"], "vs": {"$vectorstore": "conn"}})
     base = snapshot_digest(spec, _Vars(), vectorstore_names={"conn"})
     assert snapshot_digest(spec, _Vars(), vectorstore_names=set()) != base  # store deleted
     assert snapshot_digest(spec, _Vars(), tweaks={"n": {"replies": ["t"]}}) != snapshot_digest(
@@ -278,7 +278,7 @@ def test_snapshot_digest_tracks_tweaks_and_vectorstores() -> None:
 
 
 def test_snapshot_digest_uses_env_fallback() -> None:
-    spec = _spec("lga.testing.fake_llm", {"greeting": {"$var": "needs_fallback"}})
+    spec = _spec("lab.testing.fake_llm", {"greeting": {"$var": "needs_fallback"}})
     assert snapshot_digest(spec, _FallbackVars()) != snapshot_digest(spec, _Vars())
 
 
@@ -298,14 +298,14 @@ def test_edges_touching_skipped_nodes_leave_ports_unset() -> None:
         "nodes": [
             {
                 "id": "a",
-                "component_id": "lga.testing.fake_llm",
+                "component_id": "lab.testing.fake_llm",
                 "component_version": "1.0.0",
                 "config": {"replies": ["ok"]},
                 "position": {"x": 0, "y": 0},
             },
             {
                 "id": "b",
-                "component_id": "lga.nope.missing",  # unknown → NodeIR skipped (E002)
+                "component_id": "lab.nope.missing",  # unknown → NodeIR skipped (E002)
                 "component_version": "1.0.0",
                 "config": {},
                 "position": {"x": 0, "y": 0},

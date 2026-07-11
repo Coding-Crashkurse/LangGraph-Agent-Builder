@@ -7,9 +7,9 @@ node contexts, so no re-resolve/re-validate is needed.
 
 from __future__ import annotations
 
-from lga.compiler import CompiledFlow, build_report
-from lga.compiler import emit as emit_pass
-from lga.compiler.ir import FlowIR
+from langgraph_agent_builder.compiler import CompiledFlow, build_report
+from langgraph_agent_builder.compiler import emit as emit_pass
+from langgraph_agent_builder.compiler.ir import FlowIR
 
 
 def ancestors_of(ir: FlowIR, node_id: str) -> set[str]:

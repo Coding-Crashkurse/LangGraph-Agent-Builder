@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from lga.compiler.ir import FlowIR
-from lga.sdk.component import BuildContext, InputBinding, SecretsResolver
-from lga.sdk.ports import ToolDef
+from langgraph_agent_builder.compiler.ir import FlowIR
+from langgraph_agent_builder.sdk.component import BuildContext, InputBinding, SecretsResolver
+from langgraph_agent_builder.sdk.ports import ToolDef
 
 
 def channel_for(edge_source_node: str, edge_source_output: str) -> str:
@@ -22,7 +22,7 @@ def _tool_defs_for_provider(ir: FlowIR, provider_id: str, ctx: BuildContext) -> 
         provided = provide(ctx)
         return provided if isinstance(provided, list) else [provided]
     if node.component.tool_mode_supported and node.component.tool_mode_enabled(node.config):
-        from lga.runtime.tools import node_as_tool
+        from langgraph_agent_builder.runtime.tools import node_as_tool
 
         return [node_as_tool(node, ctx)]
     return []

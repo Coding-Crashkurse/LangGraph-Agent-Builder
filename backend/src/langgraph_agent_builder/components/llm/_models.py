@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, Any, cast
 
-from lga.errors import LgaRuntimeError
+from langgraph_agent_builder.errors import LabRuntimeError
 
 if TYPE_CHECKING:
     from langchain_core.callbacks import CallbackManagerForLLMRun
@@ -19,12 +19,12 @@ if TYPE_CHECKING:
     from langchain_core.messages import BaseMessage
     from langchain_core.outputs import ChatResult
 
-    from lga.sdk.runtime import RunContext
+    from langgraph_agent_builder.sdk.runtime import RunContext
 
 PROVIDERS = ("openai", "anthropic", "ollama", "fake", "echo")
 
 
-class ProviderNotInstalledError(LgaRuntimeError):
+class ProviderNotInstalledError(LabRuntimeError):
     def __init__(self, provider: str, extra: str) -> None:
         super().__init__(
             f"model provider {provider!r} is not installed — "
@@ -51,7 +51,7 @@ def stash_port_secret(token: str, value: str) -> dict[str, str]:
 def _resolve_port_secret(ref: dict[str, Any]) -> str:
     token = str(ref.get(_PORT_SECRET_KEY, ""))
     if token not in _PORT_SECRETS:
-        raise LgaRuntimeError(
+        raise LabRuntimeError(
             f"model api_key reference {token!r} is not available in this process — "
             "re-run the flow so the credential is re-resolved"
         )
@@ -99,7 +99,7 @@ def _echo_chat_model(prefix: str = "") -> BaseChatModel:
 
         @property
         def _llm_type(self) -> str:
-            return "lga-echo"
+            return "lab-echo"
 
         def _generate(
             self,

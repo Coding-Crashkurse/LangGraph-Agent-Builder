@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from lga.cli.main import app
+from langgraph_agent_builder.cli.main import app
 from tests.conftest import hello_spec
 
 runner = CliRunner()
@@ -16,8 +16,8 @@ runner = CliRunner()
 
 @pytest.fixture
 def cli_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    monkeypatch.setenv("LGA_HOME", str(tmp_path / "home"))
-    monkeypatch.delenv("LGA_DATABASE_URL", raising=False)
+    monkeypatch.setenv("LAB_HOME", str(tmp_path / "home"))
+    monkeypatch.delenv("LAB_DATABASE_URL", raising=False)
     monkeypatch.chdir(tmp_path)
     return tmp_path
 
@@ -26,7 +26,7 @@ def test_version_json(cli_env: Path) -> None:
     result = runner.invoke(app, ["version", "--json"])
     assert result.exit_code == 0, result.output
     info = json.loads(result.output)
-    assert info["lga"]
+    assert info["langgraph-agent-builder"]
     assert info["langgraph"]
     assert info["db_backend"] == "sqlite"
 
@@ -53,7 +53,7 @@ def test_flow_validate_exit_codes(cli_env: Path) -> None:
     assert result.exit_code == 0, result.output
 
     bad_spec = hello_spec("cli-bad")
-    bad_spec["nodes"][1]["component_id"] = "lga.missing.nope"
+    bad_spec["nodes"][1]["component_id"] = "lab.missing.nope"
     bad = cli_env / "bad.json"
     bad.write_text(json.dumps(bad_spec), encoding="utf-8")
     result = runner.invoke(app, ["flow", "validate", str(bad)])
@@ -71,7 +71,7 @@ def test_flow_run_local(cli_env: Path) -> None:
     flow.write_text(json.dumps(hello_spec("cli-run")), encoding="utf-8")
     result = runner.invoke(app, ["flow", "run", str(flow), "--local", "--input", "hi"])
     assert result.exit_code == 0, result.output
-    assert "Hello from LGA!" in result.output
+    assert "Hello from LAB!" in result.output
 
 
 def test_component_new_scaffold(cli_env: Path) -> None:
@@ -79,7 +79,7 @@ def test_component_new_scaffold(cli_env: Path) -> None:
     assert result.exit_code == 0, result.output
     pkg = cli_env / "components" / "lga_my_widget"
     pyproject = (pkg / "pyproject.toml").read_text(encoding="utf-8")
-    assert '[project.entry-points."lga.components"]' in pyproject
+    assert '[project.entry-points."langgraph_agent_builder.components"]' in pyproject
     # the generated async test must be runnable out of the box
     assert "pytest-asyncio" in pyproject
     assert 'asyncio_mode = "auto"' in pyproject
@@ -94,7 +94,7 @@ def test_apikey_lifecycle_headless(cli_env: Path) -> None:
     )
     assert result.exit_code == 0, result.output
     created = json.loads(result.output)
-    assert created["key"].startswith("lga_sk_")
+    assert created["key"].startswith("lab_sk_")
     result = runner.invoke(app, ["apikey", "list", "--json"])
     keys = json.loads(result.output)
     assert any(k["id"] == created["id"] for k in keys)
@@ -103,11 +103,11 @@ def test_apikey_lifecycle_headless(cli_env: Path) -> None:
 
 
 def test_config_masks_secret(cli_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("LGA_SECRET_KEY", "super-secret-value")
+    monkeypatch.setenv("LAB_SECRET_KEY", "super-secret-value")
     result = runner.invoke(app, ["config", "--json"])
     assert result.exit_code == 0
     rows = json.loads(result.output)
-    secret_row = next(r for r in rows if r["key"] == "LGA_SECRET_KEY")
+    secret_row = next(r for r in rows if r["key"] == "LAB_SECRET_KEY")
     assert secret_row["value"] == "***"
     assert secret_row["source"] == "env/.env"
 
@@ -115,4 +115,4 @@ def test_config_masks_secret(cli_env: Path, monkeypatch: pytest.MonkeyPatch) -> 
 def test_migrate_creates_schema(cli_env: Path) -> None:
     result = runner.invoke(app, ["migrate"])
     assert result.exit_code == 0, result.output
-    assert (Path(cli_env) / "home" / "lga.db").exists()
+    assert (Path(cli_env) / "home" / "langgraph_agent_builder.db").exists()

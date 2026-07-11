@@ -14,13 +14,13 @@ from typing import Any
 import pytest
 from langchain_core.messages import HumanMessage
 
-from lga.compiler import compile_flow
-from lga.components.flow_control.loop_until import LoopUntil
-from lga.components.flow_control.routers import LLMRouter, RuleRouter
-from lga.runtime.executor import Executor
-from lga.runtime.streams import EventBus
-from lga.sdk import Component
-from lga.sdk.testing import BuiltNode, ComponentTestHarness
+from langgraph_agent_builder.compiler import compile_flow
+from langgraph_agent_builder.components.flow_control.loop_until import LoopUntil
+from langgraph_agent_builder.components.flow_control.routers import LLMRouter, RuleRouter
+from langgraph_agent_builder.runtime.executor import Executor
+from langgraph_agent_builder.runtime.streams import EventBus
+from langgraph_agent_builder.sdk import Component
+from langgraph_agent_builder.sdk.testing import BuiltNode, ComponentTestHarness
 
 
 def _build(
@@ -219,11 +219,11 @@ def _approval_spec(review_config: dict[str, Any]) -> dict[str, Any]:
         "schema_version": "1",
         "flow": {"name": "hitl-a", "slug": "hitl-a", "description": "x"},
         "nodes": [
-            _node("start", "lga.io.start", {}),
-            _node("review", "lga.flow.human_approval", review_config),
-            _node("echo", "lga.testing.echo_llm", {}),
-            _node("out", "lga.io.text_output", {}),
-            _node("rej", "lga.io.text_output", {}),
+            _node("start", "lab.io.start", {}),
+            _node("review", "lab.flow.human_approval", review_config),
+            _node("echo", "lab.testing.echo_llm", {}),
+            _node("out", "lab.io.text_output", {}),
+            _node("rej", "lab.io.text_output", {}),
         ],
         "edges": [
             _edge("e1", "data", "start", "message", "review", "input"),
@@ -239,9 +239,9 @@ def _input_spec(node_config: dict[str, Any]) -> dict[str, Any]:
         "schema_version": "1",
         "flow": {"name": "hitl-i", "slug": "hitl-i", "description": "x"},
         "nodes": [
-            _node("start", "lga.io.start", {}),
-            _node("ask", "lga.flow.human_input", node_config),
-            _node("end", "lga.io.end", {}),
+            _node("start", "lab.io.start", {}),
+            _node("ask", "lab.flow.human_input", node_config),
+            _node("end", "lab.io.end", {}),
         ],
         "edges": [
             _edge("e1", "data", "start", "message", "ask", "input"),

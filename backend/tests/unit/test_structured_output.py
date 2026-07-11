@@ -1,4 +1,4 @@
-"""Unit tests for the Structured Output component (lga.llm.structured_output).
+"""Unit tests for the Structured Output component (lab.llm.structured_output).
 
 Drives a deterministic "fake" model whose scripted reply is parsed into the
 `json` / `table` outputs, exercising fence-stripping, list vs object shaping,
@@ -9,9 +9,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from lga.components.llm.structured_output import StructuredOutput
-from lga.sdk.ports import Message
-from lga.sdk.testing import ComponentTestHarness
+from langgraph_agent_builder.components.llm.structured_output import StructuredOutput
+from langgraph_agent_builder.sdk.ports import Message
+from langgraph_agent_builder.sdk.testing import ComponentTestHarness
 
 
 async def _run(
@@ -93,7 +93,7 @@ async def test_row_based_schema_editor_runs() -> None:
 
 
 def test_rows_to_schema_shapes_json_schema() -> None:
-    from lga.components.llm.structured_output import _rows_to_schema
+    from langgraph_agent_builder.components.llm.structured_output import _rows_to_schema
 
     schema = _rows_to_schema(
         [

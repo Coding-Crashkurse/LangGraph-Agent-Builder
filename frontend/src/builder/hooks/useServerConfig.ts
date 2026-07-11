@@ -1,4 +1,4 @@
-/** Server config (SPEC §18.1: LGA_AUTO_SAVING / LGA_AUTO_SAVING_INTERVAL_MS)
+/** Server config (SPEC §18.1: LAB_AUTO_SAVING / LAB_AUTO_SAVING_INTERVAL_MS)
  * via the typed openapi-fetch client — no hand-rolled fetch (SPEC §11.2). */
 
 import { useQuery } from "@tanstack/react-query";

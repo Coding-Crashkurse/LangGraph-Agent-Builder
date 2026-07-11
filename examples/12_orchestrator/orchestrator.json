@@ -11,20 +11,20 @@
     }
   },
   "nodes": [
-    { "id": "start", "component_id": "lga.io.start", "component_version": "1.0.0",
+    { "id": "start", "component_id": "lab.io.start", "component_version": "1.0.0",
       "config": {}, "position": { "x": 0, "y": 180 } },
-    { "id": "triage", "component_id": "lga.flow.llm_router", "component_version": "1.0.0",
+    { "id": "triage", "component_id": "lab.flow.llm_router", "component_version": "1.0.0",
       "config": { "labels": ["greet", "shout"] },
       "position": { "x": 280, "y": 180 } },
-    { "id": "greeter", "component_id": "lga.tools.a2a_remote_agent",
+    { "id": "greeter", "component_id": "lab.tools.a2a_remote_agent",
       "component_version": "1.0.0",
       "config": { "agent_url": "http://127.0.0.1:8000/a2a/greeter-agent", "mode": "node" },
       "position": { "x": 580, "y": 60 } },
-    { "id": "shouter", "component_id": "lga.tools.a2a_remote_agent",
+    { "id": "shouter", "component_id": "lab.tools.a2a_remote_agent",
       "component_version": "1.0.0",
       "config": { "agent_url": "http://127.0.0.1:8000/a2a/shouter-agent", "mode": "node" },
       "position": { "x": 580, "y": 300 } },
-    { "id": "end", "component_id": "lga.io.end", "component_version": "1.0.0",
+    { "id": "end", "component_id": "lab.io.end", "component_version": "1.0.0",
       "config": {}, "position": { "x": 880, "y": 180 } }
   ],
   "edges": [

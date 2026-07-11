@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 import httpx
 
 if TYPE_CHECKING:
-    from lga.app import AppServices
+    from langgraph_agent_builder.app import AppServices
 
 # /api/v1/components carries StudioAuth via its router dependency.
 PROTECTED = "/api/v1/components"

@@ -1,8 +1,8 @@
-"""Unit tests for lga.sdk.interrupts (normative resume-payload parsing, SPEC §5.5/§7.7)."""
+"""Unit tests for sdk.interrupts (normative resume-payload parsing, SPEC §5.5/§7.7)."""
 
 from __future__ import annotations
 
-from lga.sdk.interrupts import (
+from langgraph_agent_builder.sdk.interrupts import (
     ApprovalRequest,
     InputRequest,
     parse_approval_resume,

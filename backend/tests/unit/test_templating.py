@@ -1,4 +1,4 @@
-"""Unit tests for lga.sdk.templating (sandboxed jinja + message/prompt helpers)."""
+"""Unit tests for sdk.templating (sandboxed jinja + message/prompt helpers)."""
 
 from __future__ import annotations
 
@@ -7,8 +7,8 @@ from typing import Any
 import pytest
 from jinja2.exceptions import SecurityError, UndefinedError
 
-from lga.sdk.ports import Message
-from lga.sdk.templating import (
+from langgraph_agent_builder.sdk.ports import Message
+from langgraph_agent_builder.sdk.templating import (
     eval_predicate,
     last_message_text,
     message_text,

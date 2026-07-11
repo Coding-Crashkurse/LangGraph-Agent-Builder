@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from lga.components.data.batch import ForEach
-from lga.sdk.ports import Document
-from lga.sdk.testing import ComponentTestHarness
+from langgraph_agent_builder.components.data.batch import ForEach
+from langgraph_agent_builder.sdk.ports import Document
+from langgraph_agent_builder.sdk.testing import ComponentTestHarness
 
 
 async def test_for_each_maps_rows_to_table_and_text() -> None:
@@ -50,6 +50,6 @@ async def test_for_each_empty_input_is_safe() -> None:
 
 
 def test_for_each_is_registered() -> None:
-    from lga.sdk.registry import get_registry
+    from langgraph_agent_builder.sdk.registry import get_registry
 
-    assert get_registry().get("lga.data.for_each") is ForEach
+    assert get_registry().get("lab.data.for_each") is ForEach

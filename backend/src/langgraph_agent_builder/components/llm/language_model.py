@@ -22,14 +22,14 @@ from typing import Any
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
-from lga.sdk import Component, Output, fields, ports
-from lga.sdk.component import BuildContext, NodeFn
-from lga.sdk.runtime import get_run_context
-from lga.sdk.templating import message_text
+from langgraph_agent_builder.sdk import Component, Output, fields, ports
+from langgraph_agent_builder.sdk.component import BuildContext, NodeFn
+from langgraph_agent_builder.sdk.runtime import get_run_context
+from langgraph_agent_builder.sdk.templating import message_text
 
 
 class LanguageModel(Component):
-    component_id = "lga.llm.language_model"
+    component_id = "lab.llm.language_model"
     display_name = "Language Model"
     description = (
         "Runs a language model for a given provider. Wire Input → Model Response, "
@@ -73,7 +73,7 @@ class LanguageModel(Component):
     ]
 
     def build(self, ctx: BuildContext) -> NodeFn:
-        from lga.components.llm._models import (
+        from langgraph_agent_builder.components.llm._models import (
             parse_model_value,
             resolve_model,
             stash_port_secret,
@@ -85,7 +85,7 @@ class LanguageModel(Component):
         api_key_ref: dict[str, str] | None = None
         api_key = ctx.get_field("api_key")
         if api_key:
-            from lga.schema.scrub import register_secret
+            from langgraph_agent_builder.schema.scrub import register_secret
 
             register_secret(str(api_key))
             api_key_ref = stash_port_secret(f"{ctx.flow_id}:{ctx.node_id}:api_key", str(api_key))

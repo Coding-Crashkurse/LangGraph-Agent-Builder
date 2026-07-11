@@ -8,7 +8,7 @@ from pathlib import Path
 from alembic import command
 from alembic.config import Config
 
-from lga.services.settings import Settings
+from langgraph_agent_builder.services.settings import Settings
 
 MIGRATIONS_DIR = Path(__file__).parent / "migrations"
 

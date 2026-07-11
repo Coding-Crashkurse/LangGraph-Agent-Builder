@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import logging
 
-from lga.runtime.streams import EventBus
-from lga.schema.events import RunEvent
-from lga.schema.scrub import (
+from langgraph_agent_builder.runtime.streams import EventBus
+from langgraph_agent_builder.schema.events import RunEvent
+from langgraph_agent_builder.schema.scrub import (
     SecretScrubFilter,
     register_secret,
     scrub_data,
@@ -55,7 +55,7 @@ def test_event_bus_scrubs_known_secret() -> None:
 def test_log_filter_scrubs_message() -> None:
     register_secret("logged-secret-abcdef123456")
     record = logging.LogRecord(
-        name="lga.test",
+        name="lab.test",
         level=logging.INFO,
         pathname=__file__,
         lineno=1,

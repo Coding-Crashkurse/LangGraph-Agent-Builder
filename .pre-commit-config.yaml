@@ -6,9 +6,9 @@ repos:
     rev: v5.0.0
     hooks:
       - id: trailing-whitespace
-        exclude: ^backend/src/lga/_static/
+        exclude: ^backend/src/langgraph_agent_builder/_static/
       - id: end-of-file-fixer
-        exclude: ^backend/src/lga/_static/
+        exclude: ^backend/src/langgraph_agent_builder/_static/
       - id: check-yaml
       - id: check-toml
       - id: check-merge-conflict

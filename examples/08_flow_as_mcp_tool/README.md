@@ -11,10 +11,10 @@ with the same `mcp` block.
 ```json
 {
   "mcpServers": {
-    "lga": {
+    "langgraph-agent-builder": {
       "type": "http",
       "url": "http://127.0.0.1:8000/mcp",
-      "headers": { "X-API-Key": "<lga_sk_… with mcp:invoke scope, if auth is on>" }
+      "headers": { "X-API-Key": "<lab_sk_… with mcp:invoke scope, if auth is on>" }
     }
   }
 }

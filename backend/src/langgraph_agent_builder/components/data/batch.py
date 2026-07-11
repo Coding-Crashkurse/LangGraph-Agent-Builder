@@ -1,6 +1,6 @@
 """Batch / map component (SPEC §12.3): map a template over a list of items.
 
-`data.for_each` is lga's v1 map primitive. It renders a sandboxed jinja template
+`data.for_each` is lab's v1 map primitive. It renders a sandboxed jinja template
 once per item of a list input and emits both a Table of per-item results and a
 joined Text — the common "iterate rows / documents, transform each" DX that
 Langflow's Loop component serves.
@@ -15,10 +15,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from lga.sdk import Component, Output, fields, ports
-from lga.sdk.component import BuildContext, NodeFn
-from lga.sdk.ports import Document, Message
-from lga.sdk.templating import render_jinja
+from langgraph_agent_builder.sdk import Component, Output, fields, ports
+from langgraph_agent_builder.sdk.component import BuildContext, NodeFn
+from langgraph_agent_builder.sdk.ports import Document, Message
+from langgraph_agent_builder.sdk.templating import render_jinja
 
 
 def _as_items(raw: Any) -> list[Any]:
@@ -48,7 +48,7 @@ def _item_context(item: Any, index: int) -> dict[str, Any]:
 
 
 class ForEach(Component):
-    component_id = "lga.data.for_each"
+    component_id = "lab.data.for_each"
     display_name = "For Each"
     description = "Map a sandboxed template over each list item → per-item Table + joined Text."
     icon = "list"

@@ -6,9 +6,9 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException
 
-from lga.api.deps import Services, StudioAuth
-from lga.api.flows import flow_info
-from lga.services import templates
+from langgraph_agent_builder.api.deps import Services, StudioAuth
+from langgraph_agent_builder.api.flows import flow_info
+from langgraph_agent_builder.services import templates
 
 router = APIRouter(tags=["templates"], dependencies=[StudioAuth])
 

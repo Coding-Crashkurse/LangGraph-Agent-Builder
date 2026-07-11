@@ -173,7 +173,7 @@ export function Palette({ components }: { components: ComponentDescriptor[] }) {
                       onDragStart={(event) => {
                         setHover(null);
                         event.dataTransfer.setData(
-                          "application/lga-component",
+                          "application/lab-component",
                           component.component_id,
                         );
                         event.dataTransfer.effectAllowed = "move";

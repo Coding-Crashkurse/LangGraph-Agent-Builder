@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 import pytest
 
-from lga.sdk.ports import (
+from langgraph_agent_builder.sdk.ports import (
     JSON,
     TABLE,
     TEXT,
@@ -23,8 +23,8 @@ if TYPE_CHECKING:
 
     import httpx
 
-    from lga.app import AppServices
-    from lga.compiler.ir import FlowIR
+    from langgraph_agent_builder.app import AppServices
+    from langgraph_agent_builder.compiler.ir import FlowIR
 
 
 # --------------------------------------------------------------------------- Table type
@@ -41,20 +41,20 @@ def test_table_family_and_coercions() -> None:
 
 
 def test_vectorstore_port_family() -> None:
-    from lga.sdk.ports import VECTOR_STORE
+    from langgraph_agent_builder.sdk.ports import VECTOR_STORE
 
     assert VECTOR_STORE.family.value == "VECTORSTORE"
 
 
 # --------------------------------------------------------------------------- migration
 def test_flowspec_v1_to_v2_migration() -> None:
-    from lga.schema.flowspec import parse_flowspec
+    from langgraph_agent_builder.schema.flowspec import parse_flowspec
 
     spec = parse_flowspec(
         {
             "schema_version": "1",
             "flow": {"name": "x", "slug": "x"},
-            "nodes": [{"id": "start", "component_id": "lga.io.start"}],
+            "nodes": [{"id": "start", "component_id": "lab.io.start"}],
         }
     )
     assert spec.schema_version == "2"
@@ -64,7 +64,7 @@ def test_flowspec_v1_to_v2_migration() -> None:
 
 # --------------------------------------------------------------------------- local backend
 async def test_local_vector_store_roundtrip(tmp_path: Path) -> None:
-    from lga.vectorstores import build_provider
+    from langgraph_agent_builder.vectorstores import build_provider
 
     provider = build_provider("local", "unit", {}, home=tmp_path)
     await provider.health()
@@ -90,7 +90,7 @@ async def test_local_vector_store_roundtrip(tmp_path: Path) -> None:
 
 
 async def test_local_dimension_mismatch(tmp_path: Path) -> None:
-    from lga.vectorstores import DimensionMismatch, build_provider
+    from langgraph_agent_builder.vectorstores import DimensionMismatch, build_provider
 
     provider = build_provider("local", "dim", {}, home=tmp_path)
     await provider.ensure_collection("c", dim=3)
@@ -99,7 +99,7 @@ async def test_local_dimension_mismatch(tmp_path: Path) -> None:
 
 
 async def test_backend_extra_missing(tmp_path: Path) -> None:
-    from lga.vectorstores import BackendExtraMissing, build_provider
+    from langgraph_agent_builder.vectorstores import BackendExtraMissing, build_provider
 
     provider = build_provider("qdrant", "q", {"url": "http://localhost:1"})
     # qdrant-client is not installed in the base test env → E901 path
@@ -114,36 +114,36 @@ async def test_backend_extra_missing(tmp_path: Path) -> None:
 
 
 def test_import_lga_does_not_import_vendor_clients() -> None:
-    # importing lga must never pull in a vendor vector client (SPEC §8b.2)
+    # importing lab must never pull in a vendor vector client (SPEC §8b.2)
     import importlib
 
-    importlib.import_module("lga")
-    importlib.import_module("lga.vectorstores")
+    importlib.import_module("langgraph_agent_builder")
+    importlib.import_module("langgraph_agent_builder.vectorstores")
     for vendor in ("qdrant_client", "weaviate", "chromadb"):
-        assert vendor not in sys.modules, f"{vendor} imported at lga import time"
+        assert vendor not in sys.modules, f"{vendor} imported at lab import time"
 
 
 # --------------------------------------------------------------------------- compiler
 def test_vectorstore_ref_resolves_to_handle_and_e013() -> None:
-    from lga.compiler import compile_flow
+    from langgraph_agent_builder.compiler import compile_flow
 
     def spec(conn: str) -> dict[str, Any]:
         return {
             "schema_version": "2",
             "flow": {"name": "r", "slug": "r"},
             "nodes": [
-                {"id": "start", "component_id": "lga.io.start"},
+                {"id": "start", "component_id": "lab.io.start"},
                 {
                     "id": "emb",
-                    "component_id": "lga.testing.fake_embeddings",
+                    "component_id": "lab.testing.fake_embeddings",
                     "config": {"dim": 8},
                 },
                 {
                     "id": "ret",
-                    "component_id": "lga.rag.retriever",
+                    "component_id": "lab.rag.retriever",
                     "config": {"vector_store": {"$vectorstore": conn, "collection": "c"}},
                 },
-                {"id": "end", "component_id": "lga.io.end"},
+                {"id": "end", "component_id": "lab.io.end"},
             ],
             "edges": [
                 {
@@ -178,8 +178,8 @@ def test_vectorstore_ref_resolves_to_handle_and_e013() -> None:
 
 
 def test_partial_run_subgraph_induction() -> None:
-    from lga.compiler import compile_flow
-    from lga.compiler.subgraph import ancestors_of, induce_subgraph
+    from langgraph_agent_builder.compiler import compile_flow
+    from langgraph_agent_builder.compiler.subgraph import ancestors_of, induce_subgraph
     from tests.conftest import hello_spec
 
     compiled = compile_flow(hello_spec())
@@ -196,8 +196,8 @@ async def test_slug_first_and_lock(client: httpx.AsyncClient) -> None:
         "schema_version": "2",
         "flow": {"name": "Locky", "slug": "locky"},
         "nodes": [
-            {"id": "start", "component_id": "lga.io.start"},
-            {"id": "end", "component_id": "lga.io.end"},
+            {"id": "start", "component_id": "lab.io.start"},
+            {"id": "end", "component_id": "lab.io.end"},
         ],
         "edges": [
             {
@@ -255,14 +255,14 @@ async def test_node_upgrade_endpoint(client: httpx.AsyncClient) -> None:
         "schema_version": "2",
         "flow": {"name": "up", "slug": "upflow"},
         "nodes": [
-            {"id": "start", "component_id": "lga.io.start"},
+            {"id": "start", "component_id": "lab.io.start"},
             {
                 "id": "pg",
-                "component_id": "lga.rag.pgvector_retriever",
+                "component_id": "lab.rag.pgvector_retriever",
                 "component_version": "0.9.0",
                 "config": {"collection": "old"},
             },
-            {"id": "end", "component_id": "lga.io.end"},
+            {"id": "end", "component_id": "lab.io.end"},
         ],
         "edges": [],
     }
@@ -278,7 +278,7 @@ async def test_rag_end_to_end_local(client: httpx.AsyncClient, svc: AppServices)
     # seed the local store, then retrieve via a partial run (§6.4 + §8b)
     provider = await svc.vectorstores.provider("local")
     await provider.ensure_collection("kb", dim=32)
-    from lga.components.llm._models import resolve_embeddings
+    from langgraph_agent_builder.components.llm._models import resolve_embeddings
 
     emb = resolve_embeddings({"provider": "fake", "dim": 32})
     texts = ["the sky is blue", "grass is green", "snow is white"]
@@ -290,14 +290,14 @@ async def test_rag_end_to_end_local(client: httpx.AsyncClient, svc: AppServices)
         "schema_version": "2",
         "flow": {"name": "rag", "slug": "raglocal"},
         "nodes": [
-            {"id": "start", "component_id": "lga.io.start"},
-            {"id": "emb", "component_id": "lga.testing.fake_embeddings", "config": {"dim": 32}},
+            {"id": "start", "component_id": "lab.io.start"},
+            {"id": "emb", "component_id": "lab.testing.fake_embeddings", "config": {"dim": 32}},
             {
                 "id": "ret",
-                "component_id": "lga.rag.retriever",
+                "component_id": "lab.rag.retriever",
                 "config": {"vector_store": {"$vectorstore": "local", "collection": "kb"}, "k": 2},
             },
-            {"id": "end", "component_id": "lga.io.end"},
+            {"id": "end", "component_id": "lab.io.end"},
         ],
         "edges": [
             {

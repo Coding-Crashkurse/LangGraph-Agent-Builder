@@ -6,7 +6,7 @@ demo tools (`lookup_order`, `shipping_estimate`).
 
 ```bash
 python examples/07_mcp_toolset_client/demo_server.py &   # port 9007
-lga flow run examples/07_mcp_toolset_client/flow.json --local --input "where is order 1001?"
+lab flow run examples/07_mcp_toolset_client/flow.json --local --input "where is order 1001?"
 ```
 
 Windows note: `stdio` MCP servers are unavailable on the Windows dev setup

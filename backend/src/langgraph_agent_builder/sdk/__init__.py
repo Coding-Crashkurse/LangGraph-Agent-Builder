@@ -1,9 +1,9 @@
 """Component SDK — importable standalone, never imports FastAPI/DB (SPEC §2.7)."""
 
-from lga.sdk import fields, ports
-from lga.sdk.component import BuildContext, Component, NodeConfig, NodeKind
-from lga.sdk.outputs import Output
-from lga.sdk.runtime import NodeContext, RunContext, get_run_context
+from langgraph_agent_builder.sdk import fields, ports
+from langgraph_agent_builder.sdk.component import BuildContext, Component, NodeConfig, NodeKind
+from langgraph_agent_builder.sdk.outputs import Output
+from langgraph_agent_builder.sdk.runtime import NodeContext, RunContext, get_run_context
 
 __all__ = [
     "BuildContext",

@@ -6,7 +6,7 @@ two at once. A2A takes precedence if a spec somehow enables both.
 
 from __future__ import annotations
 
-from lga.schema.flowspec import A2ASettings, FlowMeta, McpSettings
+from langgraph_agent_builder.schema.flowspec import A2ASettings, FlowMeta, McpSettings
 
 
 def test_both_enabled_a2a_wins_mcp_forced_off() -> None:

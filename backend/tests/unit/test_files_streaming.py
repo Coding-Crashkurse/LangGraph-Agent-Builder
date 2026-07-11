@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from lga.services.files import FilesService, FileTooLargeError
+from langgraph_agent_builder.services.files import FilesService, FileTooLargeError
 
 if TYPE_CHECKING:
     from tests.unit.conftest import SqliteStack

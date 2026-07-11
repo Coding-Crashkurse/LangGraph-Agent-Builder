@@ -6,7 +6,7 @@ from typing import Any
 
 from pydantic import BaseModel, model_validator
 
-from lga.sdk.ports import PortSpec
+from langgraph_agent_builder.sdk.ports import PortSpec
 
 
 class Output(BaseModel):

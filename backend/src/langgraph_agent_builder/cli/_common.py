@@ -12,7 +12,7 @@ from rich.console import Console
 if TYPE_CHECKING:
     from collections.abc import Coroutine
 
-    from lga.services.settings import Settings
+    from langgraph_agent_builder.services.settings import Settings
 
 console = Console()
 err_console = Console(stderr=True)
@@ -44,7 +44,7 @@ def load_env_files(env_file: Path | None) -> None:
 
 def build_settings(env_file: Path | None = None, **flag_overrides: Any) -> Settings:
     """CLI flag > env > --env-file > ./.env > defaults."""
-    from lga.services.settings import Settings
+    from langgraph_agent_builder.services.settings import Settings
 
     load_env_files(env_file)
     overrides = {k: v for k, v in flag_overrides.items() if v is not None}

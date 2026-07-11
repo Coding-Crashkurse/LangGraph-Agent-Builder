@@ -1,4 +1,4 @@
-"""Unit tests for lga.sdk.runtime (RunContext emitters, cancel, config lookup, SPEC §4.1).
+"""Unit tests for sdk.runtime (RunContext emitters, cancel, config lookup, SPEC §4.1).
 
 Emit paths are exercised through a *real* LangGraph custom stream rather than
 mocks: langgraph provides the stream writer, so RunContext._emit round-trips
@@ -13,7 +13,7 @@ import pytest
 from langgraph.graph import END, START, StateGraph
 from typing_extensions import TypedDict
 
-from lga.sdk.runtime import (
+from langgraph_agent_builder.sdk.runtime import (
     RUN_CTX_KEY,
     RunContext,
     current_node_id,

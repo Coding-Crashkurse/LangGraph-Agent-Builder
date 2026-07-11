@@ -2,7 +2,7 @@
 
 These tests defend two differentiator walls that are easy to erode silently:
 
-1. **Slim core** — `import lga` must not pull a vendor SDK into ``sys.modules``.
+1. **Slim core** — `import langgraph_agent_builder` must not pull a vendor SDK into ``sys.modules``.
    Providers/backends are optional extras, lazily imported *inside methods*
    (SPEC §2.3/§8b.2). A regression that module-loads e.g. ``qdrant-client`` at
    import time would break the "one slim package" promise without any other test
@@ -21,10 +21,10 @@ import subprocess
 import sys
 from pathlib import Path
 
-import lga
-from lga.schema.flowspec import FlowSpec, NodeSpec
+import langgraph_agent_builder
+from langgraph_agent_builder.schema.flowspec import FlowSpec, NodeSpec
 
-_LGA_ROOT = Path(lga.__file__).resolve().parent
+_LAB_ROOT = Path(langgraph_agent_builder.__file__).resolve().parent
 
 # Vendor SDKs that must stay out of the base install's import graph. Vector
 # clients are also pinned by the import-linter "core stays vector-vendor-free"
@@ -43,16 +43,16 @@ _FORBIDDEN_AT_IMPORT = (
 
 
 def _iter_source_files() -> list[Path]:
-    return [p for p in _LGA_ROOT.rglob("*.py") if "_static" not in p.parts]
+    return [p for p in _LAB_ROOT.rglob("*.py") if "_static" not in p.parts]
 
 
 def test_import_lga_pulls_no_vendor_sdk() -> None:
-    """`import lga` in a clean interpreter loads zero vendor SDKs (§1.5-5)."""
+    """`import langgraph_agent_builder` in a clean interpreter loads zero vendor SDKs (§1.5-5)."""
     script = (
         "import sys, importlib\n"
-        "importlib.import_module('lga')\n"
-        "import lga\n"
-        "lga.create_app\n"  # touch the public embedding API too
+        "importlib.import_module('langgraph_agent_builder')\n"
+        "import langgraph_agent_builder\n"
+        "langgraph_agent_builder.create_app\n"  # touch the public embedding API too
         f"forbidden = {list(_FORBIDDEN_AT_IMPORT)!r}\n"
         "present = sorted(m for m in forbidden if m in sys.modules)\n"
         "print(','.join(present))\n"
@@ -65,13 +65,13 @@ def test_import_lga_pulls_no_vendor_sdk() -> None:
     )
     leaked = [m for m in result.stdout.strip().split(",") if m]
     assert not leaked, (
-        f"`import lga` leaked vendor SDK(s) into sys.modules: {leaked}. "
+        f"`import langgraph_agent_builder` leaked vendor SDK(s) into sys.modules: {leaked}. "
         "Vendor imports must stay lazy (inside methods) — see SPEC §2.3/§8b.2."
     )
 
 
 def test_no_eval_or_exec_in_source() -> None:
-    """No lga module calls the ``eval``/``exec`` builtins (§4.8/§10.5).
+    """No lab module calls the ``eval``/``exec`` builtins (§4.8/§10.5).
 
     Method calls like ``builder.compile()`` / ``re.compile()`` are ``ast.Attribute``
     and are intentionally not matched — only bare-name ``eval(...)``/``exec(...)``.
@@ -85,10 +85,10 @@ def test_no_eval_or_exec_in_source() -> None:
                 and isinstance(node.func, ast.Name)
                 and node.func.id in {"eval", "exec"}
             ):
-                rel = path.relative_to(_LGA_ROOT.parent)
+                rel = path.relative_to(_LAB_ROOT.parent)
                 offenders.append(f"{rel}:{node.lineno} calls {node.func.id}()")
     assert not offenders, (
-        "lga must never eval/exec user input (SPEC §4.8/§18.3). Found:\n  " + "\n  ".join(offenders)
+        "lab must never eval/exec user input (SPEC §4.8/§18.3). Found:\n  " + "\n  ".join(offenders)
     )
 
 

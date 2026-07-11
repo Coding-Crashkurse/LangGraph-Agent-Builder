@@ -6,9 +6,9 @@ import os
 from datetime import timedelta
 from typing import Any, cast
 
-from lga.sdk import BuildContext, Component, Output, fields, ports
-from lga.sdk.component import NodeFn
-from lga.sdk.ports import LazyToolset, ToolDef
+from langgraph_agent_builder.sdk import BuildContext, Component, Output, fields, ports
+from langgraph_agent_builder.sdk.component import NodeFn
+from langgraph_agent_builder.sdk.ports import LazyToolset, ToolDef
 
 
 def _connection_from_config(config: dict[str, Any]) -> dict[str, Any]:
@@ -19,7 +19,7 @@ def _connection_from_config(config: dict[str, Any]) -> dict[str, Any]:
         headers = dict(config.get("headers") or {})
         if config.get("header_forwarding"):
             # forward inbound credentials when running server-side (Langflow parity)
-            for env_key, header in (("LGA_FWD_API_KEY", "X-API-Key"),):
+            for env_key, header in (("LAB_FWD_API_KEY", "X-API-Key"),):
                 if os.environ.get(env_key):
                     headers.setdefault(header, os.environ[env_key])
         if headers:
@@ -64,7 +64,7 @@ async def load_mcp_tools(config: dict[str, Any]) -> list[ToolDef]:
 
 
 class MCPToolset(Component):
-    component_id = "lga.tools.mcp_toolset"
+    component_id = "lab.tools.mcp_toolset"
     display_name = "MCP Toolset"
     description = "Attach the tools of an external MCP server to an agent (dashed tool edge)."
     icon = "plug"

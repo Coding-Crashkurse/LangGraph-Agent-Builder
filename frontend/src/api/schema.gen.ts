@@ -58,6 +58,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/flows/{id_or_slug}/serve-version": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Set Serve Version
+         * @description Pin the published version an agent serves (SPEC §7.1: latest_published | vX.Y.Z).
+         */
+        post: operations["set_serve_version_api_v1_flows__id_or_slug__serve_version_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/flows/{id_or_slug}/nodes/{node_id}/upgrade": {
         parameters: {
             query?: never;
@@ -186,7 +206,15 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Import Flow */
+        /**
+         * Import Flow
+         * @description Import one or many flows (SPEC §9.1).
+         *
+         *     ``{"spec": …}`` imports a single flow (returns the flow object, back-compat).
+         *     ``{"specs": [ … ]}`` imports many (returns ``{"imported": [...], "count": n}``).
+         *     With ``upsert`` (default), a spec whose slug already exists updates that flow
+         *     in place instead of a 409; a locked target is refused with 409.
+         */
         post: operations["import_flow_api_v1_flows_import_post"];
         delete?: never;
         options?: never;
@@ -220,7 +248,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Component Config Change */
+        /**
+         * Component Config Change
+         * @description HTTP mapping only — the dispatch itself lives in ``langgraph_agent_builder.sdk.dynamic``.
+         */
         post: operations["component_config_change_api_v1_components__component_id__config_post"];
         delete?: never;
         options?: never;
@@ -657,23 +688,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/health": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Health */
-        get: operations["health_api_v1_health_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/version": {
         parameters: {
             query?: never;
@@ -698,8 +712,32 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Config */
+        /**
+         * Config
+         * @description Studio-relevant settings only — an explicit allowlist, so new sensitive
+         *     settings (DSNs, key material) stay private by default (SPEC §10.5).
+         */
         get: operations["config_api_v1_config_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/health": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Health
+         * @description db + checkpointer + vector store connections (SPEC §9.8).
+         */
+        get: operations["health_api_v1_health_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -742,57 +780,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/health": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Health */
-        get: operations["health_health_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/version": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Version */
-        get: operations["version_version_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/config": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Config */
-        get: operations["config_config_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -824,8 +811,9 @@ export interface components {
             /**
              * Metric
              * @default cosine
+             * @enum {string}
              */
-            metric: string;
+            metric: "cosine" | "l2" | "ip";
         };
         /** ConfigChangeBody */
         ConfigChangeBody: {
@@ -870,6 +858,22 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /** ImportBody */
+        ImportBody: {
+            /** Spec */
+            spec?: {
+                [key: string]: unknown;
+            } | null;
+            /** Specs */
+            specs?: {
+                [key: string]: unknown;
+            }[] | null;
+            /**
+             * Upsert
+             * @default true
+             */
+            upsert: boolean;
         };
         /** LockBody */
         LockBody: {
@@ -953,6 +957,15 @@ export interface components {
              */
             mode: string;
         };
+        /** ServeVersionBody */
+        ServeVersionBody: {
+            /**
+             * Serve
+             * @description "latest_published" or a published semver
+             * @default latest_published
+             */
+            serve: string;
+        };
         /** ValidationError */
         ValidationError: {
             /** Location */
@@ -992,6 +1005,8 @@ export interface operations {
             query?: {
                 tag?: string | null;
                 q?: string | null;
+                limit?: number | null;
+                offset?: number;
             };
             header?: {
                 "X-API-Key"?: string | null;
@@ -1179,6 +1194,45 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["LockBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_serve_version_api_v1_flows__id_or_slug__serve_version_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                id_or_slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ServeVersionBody"];
             };
         };
         responses: {
@@ -1469,7 +1523,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["FlowCreate"];
+                "application/json": components["schemas"]["ImportBody"];
             };
         };
         responses: {
@@ -1479,9 +1533,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -1607,6 +1659,7 @@ export interface operations {
             query?: {
                 flow_id?: string | null;
                 limit?: number;
+                offset?: number;
             };
             header?: {
                 "X-API-Key"?: string | null;
@@ -1851,6 +1904,8 @@ export interface operations {
         parameters: {
             query?: {
                 flow_slug?: string | null;
+                limit?: number;
+                offset?: number;
             };
             header?: {
                 "X-API-Key"?: string | null;
@@ -2304,7 +2359,10 @@ export interface operations {
     };
     list_variables_api_v1_variables_get: {
         parameters: {
-            query?: never;
+            query?: {
+                limit?: number | null;
+                offset?: number;
+            };
             header?: {
                 "X-API-Key"?: string | null;
             };
@@ -2405,7 +2463,10 @@ export interface operations {
     };
     list_apikeys_api_v1_apikeys_get: {
         parameters: {
-            query?: never;
+            query?: {
+                limit?: number | null;
+                offset?: number;
+            };
             header?: {
                 "X-API-Key"?: string | null;
             };
@@ -2506,7 +2567,10 @@ export interface operations {
     };
     list_files_api_v1_files_get: {
         parameters: {
-            query?: never;
+            query?: {
+                limit?: number | null;
+                offset?: number;
+            };
             header?: {
                 "X-API-Key"?: string | null;
             };
@@ -2708,28 +2772,6 @@ export interface operations {
             };
         };
     };
-    health_api_v1_health_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-        };
-    };
     version_api_v1_version_get: {
         parameters: {
             query?: never;
@@ -2785,6 +2827,28 @@ export interface operations {
             };
         };
     };
+    health_api_v1_health_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
     download_file_api_v1_files__file_id__get: {
         parameters: {
             query?: {
@@ -2833,83 +2897,6 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             202: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    health_health_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-        };
-    };
-    version_version_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-        };
-    };
-    config_config_get: {
-        parameters: {
-            query?: never;
-            header?: {
-                "X-API-Key"?: string | null;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
                 headers: {
                     [name: string]: unknown;
                 };

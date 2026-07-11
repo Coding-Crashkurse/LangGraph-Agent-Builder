@@ -9,15 +9,15 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from lga.services.secrets import SecretsService
-from lga.services.vectorstores import VectorStoreService
-from lga.vectorstores.base import CollectionMissing, DimensionMismatch
-from lga.vectorstores.local import LocalVectorStore
+from langgraph_agent_builder.services.secrets import SecretsService
+from langgraph_agent_builder.services.vectorstores import VectorStoreService
+from langgraph_agent_builder.vectorstores.base import CollectionMissing, DimensionMismatch
+from langgraph_agent_builder.vectorstores.local import LocalVectorStore
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-    from lga.services.settings import Settings
+    from langgraph_agent_builder.services.settings import Settings
 
 SqliteStack = tuple["Settings", "async_sessionmaker[AsyncSession]"]
 

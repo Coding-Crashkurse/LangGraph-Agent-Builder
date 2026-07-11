@@ -17,7 +17,7 @@ from _shared import LiveServer, load_flow, validate_ok  # noqa: E402
 HERE = Path(__file__).parent
 
 DOCUMENT = (
-    "The lga compiler turns a FlowSpec into a real LangGraph StateGraph. "
+    "The lab compiler turns a FlowSpec into a real LangGraph StateGraph. "
     "The local vector store uses exact cosine search and needs no server. "
     "Every published flow is a spec-compliant A2A agent."
 )

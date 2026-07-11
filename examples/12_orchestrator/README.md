@@ -15,15 +15,15 @@ Spezialisten, echte JSON-RPC-Calls zwischen Flows. Der Router läuft ohne Modell
 im Keyword-Modus — mit konfiguriertem Modell entscheidet ein LLM.
 
 ```bash
-lga run --port 8010 &
+lab run --port 8010 &
 cd examples/12_orchestrator
-lga flow import greeter_agent.json shouter_agent.json orchestrator.json
+lab flow import greeter_agent.json shouter_agent.json orchestrator.json
 # agent_url in orchestrator.json an deinen Port anpassen (Studio: Node-Config)
-lga flow publish greeter-agent && lga flow publish shouter-agent && lga flow publish orchestrator
+lab flow publish greeter-agent && lab flow publish shouter-agent && lab flow publish orchestrator
 
-lga flow run orchestrator --input "shout: ship it"
+lab flow run orchestrator --input "shout: ship it"
 # → SHOUT: SHIP IT
-lga flow run orchestrator --input "please greet our guest"
+lab flow run orchestrator --input "please greet our guest"
 # → Hello there! The greeter agent salutes you.
 ```
 
@@ -35,4 +35,4 @@ lga flow run orchestrator --input "please greet our guest"
   `input-required` durch den Orchestrator bis zum ursprünglichen Client
   (Beispiel 06 zeigt das end-to-end).
 - **Fremde Agenten:** jede `agent_url` mit A2A-Card funktioniert — auch Agenten,
-  die nicht mit lga gebaut wurden.
+  die nicht mit lab gebaut wurden.

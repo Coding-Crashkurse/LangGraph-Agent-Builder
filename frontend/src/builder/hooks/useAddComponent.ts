@@ -32,7 +32,7 @@ export function useAddComponent() {
       };
       store.addNode({
         id,
-        type: "lga",
+        type: "lab",
         deletable: id !== "start" && id !== "end",
         position: screenToFlowPosition(at),
         data: {

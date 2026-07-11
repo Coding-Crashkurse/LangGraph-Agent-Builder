@@ -1,13 +1,13 @@
-"""Hatch build hook: bundle the built frontend into lga/_static (SPEC §2.5).
+"""Hatch build hook: bundle the built frontend into langgraph_agent_builder/_static (SPEC §2.5).
 
 Resolution order for the frontend build:
-1. ``LGA_FRONTEND_BUILD`` env — explicit path to a ready dist/ directory.
+1. ``LAB_FRONTEND_BUILD`` env — explicit path to a ready dist/ directory.
 2. ``../frontend/dist`` — a pre-built dist next to the backend.
 3. Build it: ``pnpm install && pnpm build`` (falls back to npm) in ``../frontend``.
 
 Editable installs (``uv sync`` dev loop) skip the bundle entirely — the dev
 server proxies to Vite instead. Wheel builds fail hard without a frontend
-unless ``LGA_SKIP_FRONTEND=1`` (used only for backend-only test wheels).
+unless ``LAB_SKIP_FRONTEND=1`` (used only for backend-only test wheels).
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ from pathlib import Path
 from hatchling.builders.hooks.plugin.interface import BuildHookInterface
 
 HERE = Path(__file__).parent
-STATIC = HERE / "src" / "lga" / "_static"
+STATIC = HERE / "src" / "langgraph_agent_builder" / "_static"
 FRONTEND = HERE.parent / "frontend"
 
 
@@ -48,7 +48,7 @@ class CustomBuildHook(BuildHookInterface):
         if version == "editable":
             return
         dist: Path | None = None
-        explicit = os.environ.get("LGA_FRONTEND_BUILD")
+        explicit = os.environ.get("LAB_FRONTEND_BUILD")
         if explicit and (Path(explicit) / "index.html").exists():
             dist = Path(explicit)
         elif (FRONTEND / "dist" / "index.html").exists():
@@ -56,17 +56,19 @@ class CustomBuildHook(BuildHookInterface):
         else:
             dist = _try_build_frontend()
         if dist is None:
-            if os.environ.get("LGA_SKIP_FRONTEND") == "1":
-                self.app.display_warning("lga: building wheel WITHOUT bundled frontend")
+            if os.environ.get("LAB_SKIP_FRONTEND") == "1":
+                self.app.display_warning(
+                    "langgraph-agent-builder: building wheel WITHOUT bundled frontend"
+                )
                 return
             raise RuntimeError(
                 "No frontend build found. Build frontend/dist first, set "
-                "LGA_FRONTEND_BUILD, or set LGA_SKIP_FRONTEND=1."
+                "LAB_FRONTEND_BUILD, or set LAB_SKIP_FRONTEND=1."
             )
         if STATIC.exists():
             shutil.rmtree(STATIC)
         shutil.copytree(dist, STATIC)
-        build_data.setdefault("artifacts", []).append("src/lga/_static/**")
+        build_data.setdefault("artifacts", []).append("src/langgraph_agent_builder/_static/**")
 
     def finalize(self, version: str, build_data: dict, artifact_path: str) -> None:
         return

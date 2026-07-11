@@ -53,10 +53,10 @@ const flow: FlowInfo = {
 function fakeNode(id: string): CanvasNode {
   return {
     id,
-    type: "lga",
+    type: "lab",
     position: { x: 0, y: 0 },
     data: {
-      componentId: "lga.testing.echo",
+      componentId: "lab.testing.echo",
       componentVersion: "1.0.0",
       label: id,
       config: {},

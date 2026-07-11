@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from lga.sdk.ports import (
+from langgraph_agent_builder.sdk.ports import (
     ANY,
     DOCUMENTS,
     JSON,

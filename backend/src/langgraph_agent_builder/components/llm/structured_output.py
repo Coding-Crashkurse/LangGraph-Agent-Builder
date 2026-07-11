@@ -12,9 +12,9 @@ from typing import Any, ClassVar
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from lga.sdk import Component, Output, fields, ports
-from lga.sdk.component import BuildContext, NodeConfig, NodeFn
-from lga.sdk.runtime import get_run_context
+from langgraph_agent_builder.sdk import Component, Output, fields, ports
+from langgraph_agent_builder.sdk.component import BuildContext, NodeConfig, NodeFn
+from langgraph_agent_builder.sdk.runtime import get_run_context
 
 _JSON_TYPES = {"str": "string", "int": "integer", "float": "number", "bool": "boolean"}
 _ROW_TYPES = {v: k for k, v in _JSON_TYPES.items()}
@@ -52,7 +52,7 @@ def _schema_to_rows(schema: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 class StructuredOutput(Component):
-    component_id = "lga.llm.structured_output"
+    component_id = "lab.llm.structured_output"
     display_name = "Structured Output"
     description = "Force a model to emit JSON matching a schema."
     icon = "braces"
@@ -91,8 +91,12 @@ class StructuredOutput(Component):
         return cfg
 
     def build(self, ctx: BuildContext) -> NodeFn:
-        from lga.components.llm._models import parse_json_reply, resolve_model, stream_completion
-        from lga.sdk.templating import message_text
+        from langgraph_agent_builder.components.llm._models import (
+            parse_json_reply,
+            resolve_model,
+            stream_completion,
+        )
+        from langgraph_agent_builder.sdk.templating import message_text
 
         async def node(state: dict[str, Any], config: Any) -> dict[str, Any]:
             raw_schema = ctx.get_field("output_schema")

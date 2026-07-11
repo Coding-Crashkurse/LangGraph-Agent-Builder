@@ -7,15 +7,15 @@
     "a2a": { "enabled": true, "description": "Answers from the seeded local knowledge base." }
   },
   "nodes": [
-    { "id": "start", "component_id": "lga.io.start", "component_version": "1.0.0", "config": {}, "position": { "x": 0, "y": 160 } },
+    { "id": "start", "component_id": "lab.io.start", "component_version": "1.0.0", "config": {}, "position": { "x": 0, "y": 160 } },
     {
       "id": "retriever",
-      "component_id": "lga.rag.retriever",
+      "component_id": "lab.rag.retriever",
       "component_version": "1.0.0",
       "config": { "vector_store": { "$vectorstore": "local", "collection": "kb" }, "k": 2 },
       "position": { "x": 320, "y": 160 }
     },
-    { "id": "end", "component_id": "lga.io.end", "component_version": "1.0.0", "config": {}, "position": { "x": 680, "y": 160 } }
+    { "id": "end", "component_id": "lab.io.end", "component_version": "1.0.0", "config": {}, "position": { "x": 680, "y": 160 } }
   ],
   "edges": [
     { "id": "e0", "kind": "data", "source": { "node": "start", "output": "message" }, "target": { "node": "retriever", "input": "query_port" } },

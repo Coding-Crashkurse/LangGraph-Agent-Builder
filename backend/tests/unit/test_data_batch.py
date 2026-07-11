@@ -1,10 +1,10 @@
-"""Unit tests for lga.components.data.batch (_as_items / _item_context branches)."""
+"""Unit tests for components.data.batch (_as_items / _item_context branches)."""
 
 from __future__ import annotations
 
-from lga.components.data.batch import ForEach, _as_items, _item_context
-from lga.sdk.ports import Document, Message
-from lga.sdk.testing import ComponentTestHarness
+from langgraph_agent_builder.components.data.batch import ForEach, _as_items, _item_context
+from langgraph_agent_builder.sdk.ports import Document, Message
+from langgraph_agent_builder.sdk.testing import ComponentTestHarness
 
 # --------------------------------------------------------------------------- _as_items
 

@@ -11,12 +11,12 @@ from a2a.types import Task, TaskState
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from lga.a2a.scope import resolve_client_scope
-from lga.db.models import A2ATaskRow, TaskTransitionRow
-from lga.errors import LgaRuntimeError
-from lga.services.settings import Settings
+from langgraph_agent_builder.a2a.scope import resolve_client_scope
+from langgraph_agent_builder.db.models import A2ATaskRow, TaskTransitionRow
+from langgraph_agent_builder.errors import LabRuntimeError
+from langgraph_agent_builder.services.settings import Settings
 
-logger = logging.getLogger("lga.a2a.tasks")
+logger = logging.getLogger("langgraph_agent_builder.a2a.tasks")
 
 # explicit transition table — illegal transitions indicate executor bugs
 ALLOWED_TRANSITIONS: dict[str, set[str]] = {
@@ -42,7 +42,7 @@ FINAL_STATES: set[TaskState] = TERMINAL_STATES | {
 }
 
 
-class IllegalTaskTransitionError(LgaRuntimeError):
+class IllegalTaskTransitionError(LabRuntimeError):
     pass
 
 
@@ -53,7 +53,7 @@ def resolve_task_store(
     flow_slug: str,
     settings: Settings | None = None,
 ) -> TaskStore:
-    """Pluggable task manager (env `LGA_A2A_TASK_STORE`):
+    """Pluggable task manager (env `LAB_A2A_TASK_STORE`):
 
     - ``db`` (default): Postgres/SQLite-backed DbTaskStore with transition
       history and public-session scoping
@@ -72,7 +72,7 @@ def resolve_task_store(
     module_name, _, attr = setting.partition(":")
     if not attr:
         raise ValueError(
-            f"invalid LGA_A2A_TASK_STORE {setting!r} — expected db | memory | module:factory"
+            f"invalid LAB_A2A_TASK_STORE {setting!r} — expected db | memory | module:factory"
         )
     factory = getattr(importlib.import_module(module_name), attr)
     store = factory(sessions=sessions, flow_slug=flow_slug, settings=settings)

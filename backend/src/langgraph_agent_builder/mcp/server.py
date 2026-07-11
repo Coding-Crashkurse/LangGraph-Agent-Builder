@@ -13,10 +13,10 @@ from starlette.responses import JSONResponse
 if TYPE_CHECKING:
     from collections.abc import Callable, Coroutine
 
-    from lga.app import AppServices
-    from lga.runtime.executor import RunResult
+    from langgraph_agent_builder.app import AppServices
+    from langgraph_agent_builder.runtime.executor import RunResult
 
-logger = logging.getLogger("lga.mcp.server")
+logger = logging.getLogger("langgraph_agent_builder.mcp.server")
 
 
 def _start_input_schema(spec: dict[str, Any]) -> dict[str, Any] | None:
@@ -26,7 +26,7 @@ def _start_input_schema(spec: dict[str, Any]) -> dict[str, Any] | None:
     so clients see a typed tool instead of an opaque dict.
     """
     for node in spec.get("nodes", []):
-        if node.get("component_id") == "lga.io.start":
+        if node.get("component_id") == "lab.io.start":
             schema = (node.get("config") or {}).get("input_schema")
             if isinstance(schema, dict) and schema.get("properties"):
                 return schema
@@ -63,8 +63,8 @@ class McpManager:
     def __init__(self, svc: AppServices) -> None:
         self._svc = svc
         self.mcp = FastMCP(
-            "lga",
-            instructions="Published lga flows exposed as tools.",
+            "langgraph-agent-builder",
+            instructions="Published LangGraph Agent Builder flows exposed as tools.",
             streamable_http_path="/",
             sse_path="/sse",
             message_path="/messages/",

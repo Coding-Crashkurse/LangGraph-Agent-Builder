@@ -22,7 +22,7 @@ DEFAULT_ACCEPTED_MIME = "text/plain,application/json,application/pdf,image/*"
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_prefix="LGA_",
+        env_prefix="LAB_",
         env_file=".env",
         env_file_encoding="utf-8",
         extra="ignore",
@@ -31,7 +31,7 @@ class Settings(BaseSettings):
     env: Literal["dev", "prod", "test"] = "dev"
     host: str = "127.0.0.1"
     port: int = 8000
-    home: Path = Field(default_factory=lambda: Path.home() / ".lga")
+    home: Path = Field(default_factory=lambda: Path.home() / ".langgraph-agent-builder")
     database_url: str = ""  # resolved against `home` when empty (SQLite tier)
     secret_key: str = ""  # Fernet key; auto-generated+persisted in dev, required in prod
     host_url: str = ""  # public base URL; defaults to http://{host}:{port}
@@ -45,8 +45,8 @@ class Settings(BaseSettings):
     a2a_blocking_timeout_s: float = 30.0
     a2a_accepted_mime: str = DEFAULT_ACCEPTED_MIME
     a2a_allow_http: bool = False
-    a2a_provider_org: str = "lga"
-    a2a_provider_url: str = "https://github.com/lga"
+    a2a_provider_org: str = "langgraph-agent-builder"
+    a2a_provider_url: str = "https://github.com/Coding-Crashkurse/LangGraph-Agent-Builder"
     push_allow_private: bool = False
 
     # MCP
@@ -54,7 +54,7 @@ class Settings(BaseSettings):
 
     # misc
     webhook_auth: bool = True
-    # LGA_CANCEL_ON_DISCONNECT — cancel a run when its SSE client disconnects (§6.1)
+    # LAB_CANCEL_ON_DISCONNECT — cancel a run when its SSE client disconnects (§6.1)
     cancel_on_disconnect: bool = False
     checkpoint_ttl_days: int = 30
     files_dir: Path | None = None
@@ -87,7 +87,9 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def _fill_defaults(self) -> Settings:
         if not self.database_url:
-            self.database_url = f"sqlite+aiosqlite:///{(self.home / 'lga.db').as_posix()}"
+            self.database_url = (
+                f"sqlite+aiosqlite:///{(self.home / 'langgraph_agent_builder.db').as_posix()}"
+            )
         if not self.host_url:
             self.host_url = f"http://{self.host}:{self.port}"
         if self.auth_enabled is None:
@@ -140,7 +142,7 @@ class Settings(BaseSettings):
             return self.secret_key
         if self.env == "prod":
             raise RuntimeError(
-                "LGA_SECRET_KEY is required in prod (credentials are encrypted at rest)."
+                "LAB_SECRET_KEY is required in prod (credentials are encrypted at rest)."
             )
         key_file = self.home / "secret_key"
         if key_file.exists():
@@ -168,11 +170,11 @@ class Settings(BaseSettings):
         return self.home / "vectors"
 
     def vectorstore_env_connections(self) -> dict[str, dict[str, Any]]:
-        """Parse ``LGA_VECTORSTORE_<NAME>`` JSON descriptors (SPEC §8b.3)."""
+        """Parse ``LAB_VECTORSTORE_<NAME>`` JSON descriptors (SPEC §8b.3)."""
         import json
         import os
 
-        prefix = "LGA_VECTORSTORE_"
+        prefix = "LAB_VECTORSTORE_"
         out: dict[str, dict[str, Any]] = {}
         for key, value in os.environ.items():
             if not key.startswith(prefix):
@@ -197,4 +199,4 @@ def get_settings() -> Settings:
 
 
 def new_api_key() -> str:
-    return "lga_sk_" + _secrets.token_urlsafe(32)
+    return "lab_sk_" + _secrets.token_urlsafe(32)

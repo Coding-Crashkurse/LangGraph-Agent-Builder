@@ -1,10 +1,10 @@
-"""Unit tests for lga.schema.scrub — error/branch paths (SPEC §10.5)."""
+"""Unit tests for langgraph_agent_builder.schema.scrub — error/branch paths (SPEC §10.5)."""
 
 from __future__ import annotations
 
 import logging
 
-from lga.schema.scrub import (
+from langgraph_agent_builder.schema.scrub import (
     REDACTED,
     SecretScrubFilter,
     install_log_scrubbing,
@@ -48,7 +48,7 @@ def test_scrub_data_preserves_tuple_type() -> None:
 
 def test_log_filter_returns_true_when_message_unchanged() -> None:
     record = logging.LogRecord(
-        name="lga.test",
+        name="lab.test",
         level=logging.INFO,
         pathname=__file__,
         lineno=1,
@@ -66,7 +66,7 @@ def test_log_filter_returns_true_when_message_unchanged() -> None:
 def test_log_filter_survives_bad_format_args() -> None:
     # getMessage() raises TypeError ("%d" % ("x",)); filter must swallow it.
     record = logging.LogRecord(
-        name="lga.test",
+        name="lab.test",
         level=logging.INFO,
         pathname=__file__,
         lineno=1,
@@ -78,7 +78,7 @@ def test_log_filter_survives_bad_format_args() -> None:
 
 
 def test_install_log_scrubbing_is_idempotent() -> None:
-    logger = logging.getLogger("lga.test.install")
+    logger = logging.getLogger("lab.test.install")
     logger.handlers = [logging.StreamHandler()]
     install_log_scrubbing(logger)
     install_log_scrubbing(logger)  # second call must not add a duplicate filter
@@ -89,12 +89,12 @@ def test_install_log_scrubbing_is_idempotent() -> None:
 
 def test_install_log_scrubbing_scrubs_records_through_handler() -> None:
     register_secret("installed-secret-abcdef")
-    logger = logging.getLogger("lga.test.install2")
+    logger = logging.getLogger("lab.test.install2")
     handler = logging.StreamHandler()
     logger.handlers = [handler]
     install_log_scrubbing(logger)
     record = logging.LogRecord(
-        name="lga.test.install2",
+        name="lab.test.install2",
         level=logging.INFO,
         pathname=__file__,
         lineno=1,

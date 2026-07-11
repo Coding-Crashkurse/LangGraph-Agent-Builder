@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
-from lga.components.rag.components import (
+from langgraph_agent_builder.components.rag.components import (
     Embeddings,
     FileLoader,
     PgvectorRetriever,
@@ -29,16 +29,16 @@ from lga.components.rag.components import (
     _provider,
     _split,
 )
-from lga.schema.diagnostics import RuntimeError_, RuntimeErrorCode
-from lga.sdk.component import BuildContext, InputBinding, SecretsResolver
-from lga.sdk.ports import Document, VectorStoreHandle
-from lga.sdk.testing import BuiltNode
-from lga.vectorstores import build_provider
+from langgraph_agent_builder.schema.diagnostics import RuntimeError_, RuntimeErrorCode
+from langgraph_agent_builder.sdk.component import BuildContext, InputBinding, SecretsResolver
+from langgraph_agent_builder.sdk.ports import Document, VectorStoreHandle
+from langgraph_agent_builder.sdk.testing import BuiltNode
+from langgraph_agent_builder.vectorstores import build_provider
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-    from lga.services.settings import Settings
+    from langgraph_agent_builder.services.settings import Settings
 
 
 # ------------------------------------------------------------------- infra
@@ -46,7 +46,7 @@ if TYPE_CHECKING:
 def _headless() -> Iterator[None]:
     """Force the module onto the headless (direct local provider) path by
     clearing the process-wide service locator, restoring it afterwards."""
-    from lga.services import locator
+    from langgraph_agent_builder.services import locator
 
     saved = locator.get_services()
     locator.set_services(None)
@@ -130,7 +130,7 @@ class _RcSpy:
 
 
 def test_unwired_embedding_port_warns_and_falls_back() -> None:
-    from lga.components.rag.components import _embedding_config
+    from langgraph_agent_builder.components.rag.components import _embedding_config
 
     ctx = BuildContext(node_id="t")
     rc = _RcSpy()
@@ -142,7 +142,7 @@ def test_unwired_embedding_port_warns_and_falls_back() -> None:
 
 def test_wired_embedding_port_stays_silent() -> None:
     # the explicit testing.fake_embeddings wiring must NOT trigger the warning
-    from lga.components.rag.components import _embedding_config
+    from langgraph_agent_builder.components.rag.components import _embedding_config
 
     ctx = BuildContext(
         node_id="t",
@@ -403,12 +403,12 @@ class _FakeServices:
 
 async def test_file_loader_requires_services() -> None:
     node = _build(FileLoader, config={"files": ["f1"]})
-    with pytest.raises(RuntimeError, match="file_loader requires a running lga server"):
+    with pytest.raises(RuntimeError, match="file_loader requires a running lab server"):
         await node()
 
 
 async def test_file_loader_loads_txt_and_skips_missing() -> None:
-    from lga.services import locator
+    from langgraph_agent_builder.services import locator
 
     store = {"good": (_Row("note.txt", "text/plain"), b"hello world")}
     locator.set_services(_FakeServices(_FakeFiles(store)))
@@ -419,7 +419,7 @@ async def test_file_loader_loads_txt_and_skips_missing() -> None:
 
 
 async def test_file_loader_reads_file_refs_port() -> None:
-    from lga.services import locator
+    from langgraph_agent_builder.services import locator
 
     store = {"r1": (_Row("data.txt", "text/plain"), b"from ref")}
     locator.set_services(_FakeServices(_FakeFiles(store)))
@@ -484,7 +484,7 @@ class _VsServices:
 
 
 async def test_provider_uses_service_locator_when_available() -> None:
-    from lga.services import locator
+    from langgraph_agent_builder.services import locator
 
     sentinel = _SentinelProvider()
     locator.set_services(_VsServices(_FakeVectorstores(sentinel)))
@@ -499,7 +499,7 @@ async def test_provider_falls_back_to_local_when_locator_raises(
     def _boom() -> Any:
         raise RuntimeError("locator unavailable")
 
-    monkeypatch.setattr("lga.services.locator.get_services", _boom)
+    monkeypatch.setattr("langgraph_agent_builder.services.locator.get_services", _boom)
     handle = VectorStoreHandle(connection="local")
     resolved = await _provider(handle, sqlite_settings)
     assert resolved.backend == "local"

@@ -11,8 +11,8 @@ from __future__ import annotations
 
 import asyncio
 
-from lga.runtime.streams import EventBus
-from lga.schema.events import RunEvent
+from langgraph_agent_builder.runtime.streams import EventBus
+from langgraph_agent_builder.schema.events import RunEvent
 
 
 def _event(run_id: str, event: str = "node_log", **data: str) -> RunEvent:

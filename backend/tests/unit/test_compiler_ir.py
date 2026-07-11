@@ -1,11 +1,11 @@
-"""Unit tests for lga.compiler.ir (FlowIR edge filters + NodeIR/EdgeIR props)."""
+"""Unit tests for compiler.ir (FlowIR edge filters + NodeIR/EdgeIR props)."""
 
 from __future__ import annotations
 
 from typing import Any
 
-from lga.compiler.ir import EdgeIR, FlowIR, NodeIR
-from lga.schema.flowspec import (
+from langgraph_agent_builder.compiler.ir import EdgeIR, FlowIR, NodeIR
+from langgraph_agent_builder.schema.flowspec import (
     EdgeEndpointSource,
     EdgeEndpointTarget,
     EdgeSpec,
@@ -13,9 +13,9 @@ from lga.schema.flowspec import (
     FlowSpec,
     NodeSpec,
 )
-from lga.sdk.component import BuildContext, Component, NodeKind
-from lga.sdk.outputs import Output
-from lga.sdk.ports import ROUTE
+from langgraph_agent_builder.sdk.component import BuildContext, Component, NodeKind
+from langgraph_agent_builder.sdk.outputs import Output
+from langgraph_agent_builder.sdk.ports import ROUTE
 
 
 class _Task(Component):

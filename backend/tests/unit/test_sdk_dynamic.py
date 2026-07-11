@@ -1,6 +1,6 @@
-"""Unit tests for lga.sdk.dynamic (SPEC §9.2): sync/async on_field_change
+"""Unit tests for langgraph_agent_builder.sdk.dynamic (SPEC §9.2): sync/async on_field_change
 dispatch, the timeout bound, init-failure translation, and hook exceptions
-propagating unchanged — all HTTP-free (lga.sdk never imports FastAPI)."""
+propagating unchanged — all HTTP-free (langgraph_agent_builder.sdk never imports FastAPI)."""
 
 from __future__ import annotations
 
@@ -9,8 +9,8 @@ from typing import Any
 
 import pytest
 
-from lga.sdk.component import BuildContext, Component, NodeConfig, NodeFn
-from lga.sdk.dynamic import ComponentInitError, invoke_field_change
+from langgraph_agent_builder.sdk.component import BuildContext, Component, NodeConfig, NodeFn
+from langgraph_agent_builder.sdk.dynamic import ComponentInitError, invoke_field_change
 
 
 class _SyncComp(Component):

@@ -1,6 +1,6 @@
 """Contract suite: every built-in backend must honour the one shared
 ``VectorStoreProvider`` contract (SPEC §8b.1) documented in
-``lga/vectorstores/base.py`` — deterministic ids, native filter translation
+``lab/vectorstores/base.py`` — deterministic ids, native filter translation
 applied *before* top-k, normalized scores per metric, and uniform delete
 semantics.
 
@@ -11,7 +11,7 @@ ones, when the server is reachable):
 * ``qdrant`` — in-process local mode (``path=``), when ``qdrant-client`` is installed.
 * ``chroma`` — embedded ``PersistentClient``, when ``chromadb`` is installed.
 * ``pgvector`` — docker-compose Postgres on :55432 (throwaway database per test).
-* ``weaviate`` — needs a live server: opt-in via ``LGA_TEST_WEAVIATE_URL`` +
+* ``weaviate`` — needs a live server: opt-in via ``LAB_TEST_WEAVIATE_URL`` +
   the ``integration`` marker. Further live-server smoke tests live in
   ``tests/integration/test_vectorstore_live.py``.
 """
@@ -27,9 +27,9 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from lga.sdk.ports import Document
-from lga.vectorstores import build_provider
-from lga.vectorstores.base import (
+from langgraph_agent_builder.sdk.ports import Document
+from langgraph_agent_builder.vectorstores import build_provider
+from langgraph_agent_builder.vectorstores.base import (
     CollectionInfo,
     CollectionMissing,
     DimensionMismatch,
@@ -42,8 +42,8 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 DIM = 8
-PG_ADMIN_DSN = "postgres://graphforge:graphforge@localhost:55432/graphforge"
-WEAVIATE_URL = os.environ.get("LGA_TEST_WEAVIATE_URL")
+PG_ADMIN_DSN = "postgres://lab:lab@localhost:55432/lab"
+WEAVIATE_URL = os.environ.get("LAB_TEST_WEAVIATE_URL")
 
 
 def _installed(module: str) -> bool:
@@ -83,7 +83,7 @@ BACKENDS = [
             pytest.mark.integration,
             pytest.mark.skipif(
                 not (WEAVIATE_URL and _installed("weaviate")),
-                reason="set LGA_TEST_WEAVIATE_URL (and install the weaviate extra)",
+                reason="set LAB_TEST_WEAVIATE_URL (and install the weaviate extra)",
             ),
         ],
         id="weaviate",
@@ -100,7 +100,7 @@ async def _fresh_pg_dsn() -> str:
         await conn.execute(f'CREATE DATABASE "{name}"')
     finally:
         await conn.close()
-    return f"postgres://graphforge:graphforge@localhost:55432/{name}"
+    return f"postgres://lab:lab@localhost:55432/{name}"
 
 
 @pytest.fixture(params=BACKENDS)

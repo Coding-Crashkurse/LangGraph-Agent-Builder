@@ -9,7 +9,7 @@ from fastapi import APIRouter, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
-from lga.api.deps import Services, StudioAuth
+from langgraph_agent_builder.api.deps import Services, StudioAuth
 
 router = APIRouter(tags=["settings"], dependencies=[StudioAuth])
 
@@ -27,7 +27,7 @@ async def list_variables(
     limit: int | None = Query(default=None, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
 ) -> list[dict[str, Any]]:
-    from lga.services.secrets import variable_usage
+    from langgraph_agent_builder.services.secrets import variable_usage
 
     variables: list[dict[str, Any]] = await svc.secrets.list(limit=limit, offset=offset)
     usage = variable_usage(await svc.flows.list())
@@ -82,7 +82,7 @@ async def revoke_apikey(key_id: str, svc: Services) -> None:
 # ---------------------------------------------------------------- files (§9.6)
 @router.post("/files", status_code=201)
 async def upload_file(file: UploadFile, svc: Services) -> dict[str, Any]:
-    from lga.services.files import CHUNK_SIZE, FileTooLargeError
+    from langgraph_agent_builder.services.files import CHUNK_SIZE, FileTooLargeError
 
     async def chunks() -> AsyncIterator[bytes]:
         while True:
@@ -143,11 +143,11 @@ async def mcp_client_config(svc: Services) -> dict[str, Any]:
     """Ready-to-paste client JSON (SPEC §8.1)."""
     return {
         "mcpServers": {
-            "lga": {
+            "langgraph-agent-builder": {
                 "type": "http",
                 "url": f"{svc.settings.host_url}/mcp",
                 **(
-                    {"headers": {"X-API-Key": "<your lga_sk_… key with mcp:invoke scope>"}}
+                    {"headers": {"X-API-Key": "<your lab_sk_… key with mcp:invoke scope>"}}
                     if svc.settings.auth_enabled
                     else {}
                 ),
@@ -182,7 +182,7 @@ async def health(svc: Services) -> dict[str, Any]:
         conn["name"]: bool(conn["ok"]) for conn in await svc.vectorstores.list_with_health()
     }
     status = "ok" if db_ok and checkpointer_ok and all(vectorstores.values()) else "degraded"
-    from lga.vectorstores import installed_backends
+    from langgraph_agent_builder.vectorstores import installed_backends
 
     return {
         "status": status,
@@ -202,7 +202,7 @@ misc_router = APIRouter(tags=["misc"])
 async def version(svc: Services) -> dict[str, Any]:
     import langgraph
 
-    import lga as lga_pkg
+    import langgraph_agent_builder as lab_pkg
 
     try:
         from a2a.utils.constants import DEFAULT_PROTOCOL_VERSION  # type: ignore
@@ -210,10 +210,10 @@ async def version(svc: Services) -> dict[str, Any]:
         protocol = DEFAULT_PROTOCOL_VERSION
     except Exception:
         protocol = "0.3.x"
-    from lga.vectorstores import installed_backends
+    from langgraph_agent_builder.vectorstores import installed_backends
 
     return {
-        "lga": lga_pkg.__version__,
+        "langgraph-agent-builder": lab_pkg.__version__,
         "a2a_protocol": protocol,
         "langgraph": getattr(langgraph, "__version__", "unknown"),
         "db_backend": svc.settings.storage_tier,

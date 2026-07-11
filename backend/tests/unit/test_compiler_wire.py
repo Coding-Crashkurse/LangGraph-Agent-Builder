@@ -1,12 +1,12 @@
-"""Unit tests for lga.compiler.wire (P4: ports→channels, constants, tool binding)."""
+"""Unit tests for compiler.wire (P4: ports→channels, constants, tool binding)."""
 
 from __future__ import annotations
 
 from typing import Any
 
-from lga.compiler.ir import EdgeIR, FlowIR, NodeIR
-from lga.compiler.wire import channel_for, wire
-from lga.schema.flowspec import (
+from langgraph_agent_builder.compiler.ir import EdgeIR, FlowIR, NodeIR
+from langgraph_agent_builder.compiler.wire import channel_for, wire
+from langgraph_agent_builder.schema.flowspec import (
     EdgeEndpointSource,
     EdgeEndpointTarget,
     EdgeSpec,
@@ -14,8 +14,8 @@ from lga.schema.flowspec import (
     FlowSpec,
     NodeSpec,
 )
-from lga.sdk.component import BuildContext, Component
-from lga.sdk.ports import ToolDef
+from langgraph_agent_builder.sdk.component import BuildContext, Component
+from langgraph_agent_builder.sdk.ports import ToolDef
 
 # --------------------------------------------------------------------------- test components
 
@@ -176,7 +176,7 @@ def test_tool_edge_from_non_provider_yields_no_tools() -> None:
 
 def test_tool_edge_from_tool_mode_node_uses_node_as_tool() -> None:
     """A calculator (tool_mode) wired via a tool edge becomes a callable ToolDef."""
-    from lga.components.tools.basic_tools import Calculator
+    from langgraph_agent_builder.components.tools.basic_tools import Calculator
 
     ir = _ir({"calc": Calculator, "agent": _Plain}, [_tool_edge("calc", "agent")])
     contexts = wire(ir)

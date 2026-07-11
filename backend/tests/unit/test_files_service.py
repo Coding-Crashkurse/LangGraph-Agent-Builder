@@ -1,4 +1,4 @@
-"""Unit tests for lga.services.files (SPEC §9.6).
+"""Unit tests for langgraph_agent_builder.services.files (SPEC §9.6).
 
 Covers the size-limit error path, default naming, token gating, and the
 missing-file-on-disk branch.
@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from lga.services.files import FilesService, FileTooLargeError
+from langgraph_agent_builder.services.files import FilesService, FileTooLargeError
 
 if TYPE_CHECKING:
     from tests.unit.conftest import SqliteStack

@@ -13,20 +13,20 @@ describe("PromptInput {vars} → live input ports (SPEC §4.2)", () => {
 
   it("portAriaLabel matches the §11.4 screen-reader contract", () => {
     const message: PortSpec = {
-      schema_ref: "lga:Message",
+      schema_ref: "lab:Message",
       json_schema: {},
       family: "MESSAGE",
       is_list: false,
     };
-    expect(portAriaLabel("message", message, "out")).toBe("output message, type lga:Message");
-    expect(portAriaLabel("input", message, "in")).toBe("input input, type lga:Message");
-    const documents: PortSpec = { ...message, schema_ref: "lga:Documents", is_list: true };
-    expect(portAriaLabel("docs", documents, "in")).toBe("input docs, type lga:Documents list");
+    expect(portAriaLabel("message", message, "out")).toBe("output message, type lab:Message");
+    expect(portAriaLabel("input", message, "in")).toBe("input input, type lab:Message");
+    const documents: PortSpec = { ...message, schema_ref: "lab:Documents", is_list: true };
+    expect(portAriaLabel("docs", documents, "in")).toBe("input docs, type lab:Documents list");
   });
 
   it("indexPorts adds a TEXT port per template var from the live config", () => {
     const descriptor = {
-      component_id: "lga.data.prompt_template",
+      component_id: "lab.data.prompt_template",
       dynamic_outputs_from: null,
       fields: [{ name: "template", type: "PromptInput", default: "" }],
       outputs: [],

@@ -40,8 +40,8 @@ def test_toolset_resolves_live_tools():
             await asyncio.sleep(0.05)
 
         try:
-            from lga.components.tools.mcp_toolset import load_mcp_tools
-            from lga.runtime.tools import as_langchain_tools
+            from langgraph_agent_builder.components.tools.mcp_toolset import load_mcp_tools
+            from langgraph_agent_builder.runtime.tools import as_langchain_tools
 
             defs = await load_mcp_tools(
                 {"transport": "streamable_http", "url": f"http://127.0.0.1:{port}/mcp"}
