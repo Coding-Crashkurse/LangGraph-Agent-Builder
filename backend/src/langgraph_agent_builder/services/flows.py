@@ -7,6 +7,7 @@ import re
 from collections.abc import Sequence
 from typing import Any
 
+import jsonschema  # type: ignore[import-untyped]  # no stubs installed for jsonschema
 from sqlalchemy import delete, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -32,9 +33,75 @@ def bump_semver(current: str, bump: str) -> str:
     return f"{major}.{minor}.{patch + 1}"
 
 
+def _declared_schema_or_e065(
+    node: Any, field: str, diags: list[Diagnostic]
+) -> dict[str, Any] | None:
+    """The node's declared interface schema, or None (+E065 when declared but invalid)."""
+    raw = node.config.get(field) if node is not None else None
+    if not raw:
+        return None
+    if not isinstance(raw, dict):
+        diags.append(
+            Diagnostic.make(
+                DiagnosticCode.E065,
+                f"{node.id}.{field} must be a JSON Schema object, got {type(raw).__name__}",
+                node_id=node.id,
+                field=field,
+                fix_hint="Declare the schema as a JSON object.",
+            )
+        )
+        return None
+    try:
+        jsonschema.validators.validator_for(raw).check_schema(raw)
+    except jsonschema.SchemaError as exc:
+        diags.append(
+            Diagnostic.make(
+                DiagnosticCode.E065,
+                f"{node.id}.{field} is not a valid JSON Schema: {exc.message}",
+                node_id=node.id,
+                field=field,
+                fix_hint="Fix the schema so it is a valid JSON Schema.",
+            )
+        )
+        return None
+    return raw
+
+
 def publish_guards(spec: FlowSpec, registry: Any) -> list[Diagnostic]:
-    """E060–E063 (SPEC §7.4, §8.1)."""
+    """E060–E065 (SPEC §7.4, §8.1)."""
     diags: list[Diagnostic] = []
+    start_node = next((n for n in spec.nodes if n.component_id == "lab.io.start"), None)
+    end_node = next((n for n in spec.nodes if n.component_id == "lab.io.end"), None)
+    _declared_schema_or_e065(start_node, "input_schema", diags)
+    output_schema = _declared_schema_or_e065(end_node, "output_schema", diags)
+    output_schema_raw = end_node.config.get("output_schema") if end_node is not None else None
+    if end_node is not None and spec.flow.serve_mode in ("mcp", "a2a"):
+        # E064 is symmetric: schema and wiring must agree at the structured doors.
+        structured_wired = any(
+            e.target.node == end_node.id and e.target.input in ("json", "table") for e in spec.edges
+        )
+        if structured_wired and not output_schema_raw:
+            diags.append(
+                Diagnostic.make(
+                    DiagnosticCode.E064,
+                    "structured results are served over the MCP/A2A door without a declared "
+                    "output_schema — clients get untyped payloads",
+                    node_id=end_node.id,
+                    field="output_schema",
+                    fix_hint="Declare Output → Structured Output Schema.",
+                )
+            )
+        elif output_schema is not None and not structured_wired:
+            diags.append(
+                Diagnostic.make(
+                    DiagnosticCode.E064,
+                    "output_schema is declared but the end node's json/table inputs are "
+                    "unwired — every MCP/A2A call would fail the output contract at runtime",
+                    node_id=end_node.id,
+                    field="output_schema",
+                    fix_hint="Wire a Json or Table value into Output, or remove the output_schema.",
+                )
+            )
     if spec.flow.a2a.enabled:
         if not (spec.flow.a2a.description or spec.flow.description):
             diags.append(

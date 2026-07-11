@@ -16,6 +16,39 @@ RESERVED_NODE_IDS = {"start", "end"}
 SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
 
+def _node_config_schema(
+    spec: dict[str, Any], component_id: str, field: str
+) -> dict[str, Any] | None:
+    # any non-empty object counts as declared — schemas without a top-level
+    # "properties" key (additionalProperties/oneOf/$ref/required-only) are
+    # legitimate JSON Schemas and must reach the doors, not be dropped silently
+    for node in spec.get("nodes", []):
+        if node.get("component_id") == component_id:
+            schema = (node.get("config") or {}).get(field)
+            if isinstance(schema, dict) and schema:
+                return schema
+    return None
+
+
+def start_input_schema(spec: dict[str, Any]) -> dict[str, Any] | None:
+    """The flow's declared structured-input JSON Schema (SPEC §5.1).
+
+    Single source for the MCP tool `data` argument, A2A skill input modes, and
+    the API-door request contract. `None` when the start node declares nothing.
+    """
+    return _node_config_schema(spec, "lab.io.start", "input_schema")
+
+
+def end_output_schema(spec: dict[str, Any]) -> dict[str, Any] | None:
+    """The flow's declared structured-output JSON Schema (SPEC §5.1).
+
+    Single source for the MCP `outputSchema`/`structuredContent` contract, A2A
+    DataPart validation, and the API-door response contract. `None` when the
+    end node declares nothing.
+    """
+    return _node_config_schema(spec, "lab.io.end", "output_schema")
+
+
 class A2ASettings(BaseModel):
     enabled: bool = False
     agent_name: str = ""  # falls back to flow.name
@@ -37,6 +70,15 @@ class McpSettings(BaseModel):
     timeout_s: float | None = None
 
 
+class Serving(BaseModel):
+    """The single active serving surface (SPEC §5.2) — first-class, replaces the
+    legacy `a2a.enabled`/`mcp.enabled` boolean pair. Exactly one value, so the two
+    surfaces can never both be on: the old silent "A2A wins" fixup is structurally
+    impossible now."""
+
+    mode: Literal["api", "mcp", "a2a"] = "api"
+
+
 class FlowRunSettings(BaseModel):
     recursion_limit: int = 50
 
@@ -50,6 +92,7 @@ class FlowMeta(BaseModel):
     locked: bool = False  # SPEC §9.1 — PATCH rejected while locked
     a2a: A2ASettings = Field(default_factory=A2ASettings)
     mcp: McpSettings = Field(default_factory=McpSettings)
+    serving: Serving = Field(default_factory=Serving)
     settings: FlowRunSettings = Field(default_factory=FlowRunSettings)
 
     @field_validator("slug")
@@ -59,23 +102,44 @@ class FlowMeta(BaseModel):
             raise ValueError("slug must be url-safe kebab-case ([a-z0-9-])")
         return v
 
+    @model_validator(mode="before")
+    @classmethod
+    def _migrate_serving(cls, data: Any) -> Any:
+        """Lift legacy specs (two booleans) into the first-class `serving.mode`
+        (SPEC §5.2). Only when `serving` is absent: an explicit `serving` wins.
+        Deterministic precedence a2a > mcp > api replaces the old *runtime* silent
+        correction — the migration happens once, at load."""
+        if isinstance(data, dict) and "serving" not in data:
+
+            def _enabled(v: Any) -> bool:
+                # sub-value may be a raw dict (JSON load) or an already-built
+                # A2ASettings/McpSettings instance (Python construction)
+                if isinstance(v, dict):
+                    return bool(v.get("enabled"))
+                return bool(getattr(v, "enabled", False))
+
+            if _enabled(data.get("a2a")):
+                mode = "a2a"
+            elif _enabled(data.get("mcp")):
+                mode = "mcp"
+            else:
+                mode = "api"
+            data = {**data, "serving": {"mode": mode}}
+        return data
+
     @model_validator(mode="after")
-    def _exclusive_serving(self) -> FlowMeta:
-        """Serving surfaces are mutually exclusive (SPEC §7.1/§8.1): a published
-        flow is an A2A agent XOR an MCP tool XOR a plain REST API — never two at
-        once. A2A takes precedence if a spec somehow enables both."""
-        if self.a2a.enabled and self.mcp.enabled:
-            self.mcp.enabled = False
+    def _sync_serving(self) -> FlowMeta:
+        """Keep the legacy `enabled` booleans derived from the single source of
+        truth so no consumer can ever observe a conflicting pair. The booleans are
+        retained for wire/frontend compatibility until the publish wizard (P5)."""
+        self.a2a.enabled = self.serving.mode == "a2a"
+        self.mcp.enabled = self.serving.mode == "mcp"
         return self
 
     @property
     def serve_mode(self) -> Literal["a2a", "mcp", "api"]:
-        """The single active serving surface (A2A default for new flows)."""
-        if self.a2a.enabled:
-            return "a2a"
-        if self.mcp.enabled:
-            return "mcp"
-        return "api"
+        """The single active serving surface (SPEC §5.2)."""
+        return self.serving.mode
 
 
 class Position(BaseModel):

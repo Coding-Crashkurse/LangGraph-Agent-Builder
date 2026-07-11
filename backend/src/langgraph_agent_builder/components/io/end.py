@@ -23,6 +23,16 @@ class End(Component):
         fields.HandleField(name="text", display_name="Text", as_port=ports.TEXT),
         fields.HandleField(name="json", display_name="Json", as_port=ports.JSON),
         fields.HandleField(name="table", display_name="Table", as_port=ports.TABLE),
+        fields.NestedDictInput(
+            name="output_schema",
+            display_name="Structured Output Schema",
+            info=(
+                "Optional JSON Schema for the flow's structured result. Single source for "
+                "the MCP outputSchema/structuredContent, A2A DataPart validation, and the "
+                "API response contract (SPEC §5.1)."
+            ),
+            advanced=True,
+        ),
     ]
     outputs = [Output(name="result", display_name="Result", port=ports.ANY)]
 

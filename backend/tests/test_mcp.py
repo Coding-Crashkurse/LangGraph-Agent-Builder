@@ -104,8 +104,9 @@ async def test_mcp_tool_name_never_uuid(server: str) -> None:
             assert any(t.name == "mcp_slug" for t in tools.tools)
 
 
-def _json_flow(slug: str) -> dict[str, Any]:
+def _json_flow(slug: str, output_schema: dict[str, Any] | None = None) -> dict[str, Any]:
     """start → set_data(json) → end.json — a flow with a structured terminal."""
+    end_config: dict[str, Any] = {"output_schema": output_schema} if output_schema else {}
     return {
         "schema_version": "1",
         "flow": {
@@ -133,7 +134,7 @@ def _json_flow(slug: str) -> dict[str, Any]:
                 "id": "end",
                 "component_id": "lab.io.end",
                 "component_version": "1.0.0",
-                "config": {},
+                "config": end_config,
                 "position": {"x": 0, "y": 0},
             },
         ],
@@ -166,6 +167,56 @@ async def test_mcp_structured_output(server: str) -> None:
             result = await session.call_tool("make_json", {"input_text": "world"})
             assert result.structuredContent == {"greeting": "hi world"}
             assert any(getattr(c, "type", "") == "text" for c in result.content)
+
+
+_GREETING_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {"greeting": {"type": "string"}},
+    "required": ["greeting"],
+}
+
+
+async def test_mcp_tool_output_schema_from_end(server: str) -> None:
+    """end.output_schema is served as the tool's outputSchema, and a conforming
+    structured result flows through validation (SPEC §8.1)."""
+    await _publish(server, _json_flow("mcp-json-typed", output_schema=_GREETING_SCHEMA))
+    from mcp import ClientSession
+    from mcp.client.streamable_http import streamablehttp_client
+
+    async with streamablehttp_client(f"{server}/mcp") as (read, write, _):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+            tools = await session.list_tools()
+            tool = next(t for t in tools.tools if t.name == "make_json")
+            assert tool.outputSchema == _GREETING_SCHEMA
+            result = await session.call_tool("make_json", {"input_text": "world"})
+            assert not result.isError
+            assert result.structuredContent == {"greeting": "hi world"}
+
+
+async def test_mcp_output_schema_mismatch_is_tool_error(server: str) -> None:
+    """A structured result violating the declared output_schema surfaces as a
+    tool error (isError), not a server crash."""
+    bad_schema: dict[str, Any] = {
+        "type": "object",
+        "properties": {"greeting": {"type": "number"}},
+        "required": ["greeting"],
+    }
+    await _publish(server, _json_flow("mcp-json-bad", output_schema=bad_schema))
+    from mcp import ClientSession
+    from mcp.client.streamable_http import streamablehttp_client
+
+    async with streamablehttp_client(f"{server}/mcp") as (read, write, _):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+            result = await session.call_tool("make_json", {"input_text": "world"})
+            assert result.isError
+            text = "".join(
+                cast("TextContent", c).text
+                for c in result.content
+                if getattr(c, "type", "") == "text"
+            )
+            assert "violates its declared output_schema" in text
 
 
 async def test_mcp_tool_input_schema_from_start(server: str) -> None:
@@ -201,7 +252,9 @@ def test_tool_registry_canary_pins_fastmcp_privates() -> None:
 
     mcp = FastMCP("canary")
 
-    async def probe(input_text: str, data: dict[str, Any] | None = None) -> str:
+    # `-> Any` mirrors run_flow_tool: the SDK derives no output schema from it
+    # (a `-> str` probe would get a wrapped {"result": ...} schema).
+    async def probe(input_text: str, data: dict[str, Any] | None = None) -> Any:
         return input_text
 
     mcp.add_tool(probe, name="t1", description="canary tool")
@@ -217,9 +270,17 @@ def test_tool_registry_canary_pins_fastmcp_privates() -> None:
     patched = manager._tools["t1"].parameters["properties"]["data"]
     assert patched["properties"] == {"x": {"type": "string"}}
     assert patched["description"] == "Structured flow input."
+    # output_schema: the Tool-level cached property must accept assignment
+    # (list_tools reads it) while fn_metadata.output_schema stays None —
+    # convert_result asserts on a missing output_model otherwise.
+    assert manager._tools["t1"].output_schema is None
+    registry.patch_output_schema("t1", schema)
+    assert manager._tools["t1"].output_schema == schema
+    assert manager._tools["t1"].fn_metadata.output_schema is None
     registry.remove("t1")
     assert "t1" not in manager._tools
     registry.remove("t1")  # idempotent
+    registry.patch_output_schema("t1", schema)  # missing tool: no-op
 
 
 async def test_mcp_runs_labeled_mode_mcp(server: str) -> None:

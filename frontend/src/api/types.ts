@@ -63,6 +63,9 @@ export interface FlowMeta {
   tags?: string[];
   a2a?: A2ASettings;
   mcp?: McpSettings;
+  /** Single active serving surface (SPEC §5.2) — authoritative over the
+   * legacy enabled booleans; must be written together with them. */
+  serving?: { mode: "api" | "mcp" | "a2a" };
   settings?: { recursion_limit?: number };
 }
 

@@ -5,9 +5,11 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import logging
 from collections.abc import AsyncGenerator
 from typing import TYPE_CHECKING, Any, cast
 
+import jsonschema  # type: ignore[import-untyped]  # no stubs installed for jsonschema
 from fastapi import APIRouter, Header, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
@@ -15,11 +17,14 @@ from sse_starlette.sse import EventSourceResponse
 from langgraph_agent_builder.api.deps import Services, StudioAuth, header_vars
 from langgraph_agent_builder.db.models import RunRow
 from langgraph_agent_builder.schema.events import HEARTBEAT_INTERVAL_S
+from langgraph_agent_builder.schema.flowspec import end_output_schema, start_input_schema
 from langgraph_agent_builder.services.orchestrator import FlowNotRunnableError
 
 if TYPE_CHECKING:
     from langgraph_agent_builder.app import AppServices
     from langgraph_agent_builder.runtime.executor import RunResult
+
+logger = logging.getLogger("langgraph_agent_builder.api.runs")
 
 router = APIRouter(tags=["runs"], dependencies=[StudioAuth])
 
@@ -45,6 +50,7 @@ def run_info(row: RunRow) -> dict[str, Any]:
     return {
         "run_id": row.id,
         "flow_id": row.flow_id,
+        "flow_version_id": row.flow_version_id,
         "flow_slug": row.flow_slug,
         "thread_id": row.thread_id,
         "mode": row.mode,
@@ -104,6 +110,44 @@ def _event_source(svc: AppServices, run_id: str, after_seq: int) -> EventSourceR
     )
 
 
+def _validate_api_input(run_spec: dict[str, Any], data: dict[str, Any] | None) -> None:
+    """§9.3 request contract: structured input must match start.input_schema.
+    Text-only calls (data=None) are always valid. An author-side schema defect
+    (invalid draft, unresolvable $ref) must never 500 the public endpoint —
+    E065 gates it at publish; here we skip validation and log."""
+    schema = start_input_schema(run_spec)
+    if schema is None or data is None:
+        return
+    try:
+        jsonschema.validate(data, schema)
+    except jsonschema.ValidationError as exc:
+        raise HTTPException(
+            422,
+            detail={"error": "input does not match the flow's input_schema", "detail": str(exc)},
+        ) from exc
+    except Exception as exc:
+        logger.warning("start.input_schema could not be applied, skipping validation: %s", exc)
+
+
+def _check_output_contract(run_spec: dict[str, Any], result: RunResult) -> None:
+    """§9.3 response contract: a structured result drifting from end.output_schema
+    must NOT fail the request — the enforcing guard is publish-time E064/E065;
+    the runtime stays permissive and only logs (schema-side failures included)."""
+    schema = end_output_schema(run_spec)
+    if schema is None or result.result_json is None:
+        return
+    try:
+        jsonschema.validate(result.result_json, schema)
+    except jsonschema.ValidationError as exc:
+        logger.warning(
+            "run %s: structured result does not match the flow's output_schema: %s",
+            result.run_id,
+            exc.message,
+        )
+    except Exception as exc:
+        logger.warning("run %s: end.output_schema could not be applied: %s", result.run_id, exc)
+
+
 @router.post("/flows/{id_or_slug}/run")
 async def run_flow_endpoint(id_or_slug: str, body: RunBody, request: Request, svc: Services) -> Any:
     # id_or_slug — the slug form is the stable per-flow API base URL (§9)
@@ -112,12 +156,26 @@ async def run_flow_endpoint(id_or_slug: str, body: RunBody, request: Request, sv
         raise HTTPException(404, "flow not found")
     files = await _resolve_files(svc, body.files)
     background = body.stream or body.background
-    mode = "partial" if body.until_node else body.mode
+    run_mode = "partial" if body.until_node else body.mode
+    run_mode = run_mode if run_mode in ("playground", "api", "debug", "partial") else "api"
+    # SPEC §9.3/§7.1: the public API door serves the pinned published version
+    # (serve_version); the editable draft only runs the playground/debug/partial
+    # paths. Unpublished flows fall back to the draft so first-run-before-publish
+    # keeps working. flow_version_id pins resume/thread-state to the same version.
+    run_spec: dict[str, Any] = flow.spec
+    run_version_id: str | None = None
+    if run_mode == "api":
+        version = await svc.flows.serve_version(flow)
+        if version is not None:
+            run_spec = version.flowspec
+            run_version_id = version.id
+        _validate_api_input(run_spec, body.data)
     try:
         run_id, thread_id, handle_or_result = await svc.orchestrator.start_run(
-            spec=flow.spec,
+            spec=run_spec,
             flow_row=flow,
-            mode=mode if mode in ("playground", "api", "debug", "partial") else "api",
+            flow_version_id=run_version_id,
+            mode=run_mode,
             input_text=body.input_text,
             data=body.data,
             files=files,
@@ -144,6 +202,7 @@ async def run_flow_endpoint(id_or_slug: str, body: RunBody, request: Request, sv
         return JSONResponse({"run_id": run_id, "thread_id": thread_id}, status_code=202)
     # background=False → the orchestrator returns the blocking RunResult
     result = cast("RunResult", handle_or_result)
+    _check_output_contract(run_spec, result)
     return {"run_id": run_id, "thread_id": thread_id, **result.model_dump(mode="json")}
 
 

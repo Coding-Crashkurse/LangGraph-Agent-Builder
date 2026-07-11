@@ -43,6 +43,8 @@ class DiagnosticCode(StrEnum):
     E061 = "E061"  # SkillExamplesRecommended (warning severity)
     E062 = "E062"  # MissingMCPDescription
     E063 = "E063"  # Interrupt nodes exposed over MCP without auto_resolve policy
+    E064 = "E064"  # Structured result served over MCP/A2A without declared output_schema (warning)
+    E065 = "E065"  # end.output_schema is not a valid JSON Schema
     # deep validate / runtime preflight
     E901 = "E901"  # BackendExtraMissing (vendor client extra not installed)
     E902 = "E902"  # VectorStoreUnreachable (health_check failed)
@@ -66,6 +68,7 @@ class DiagnosticCode(StrEnum):
 
 SEVERITY_OVERRIDES: dict[DiagnosticCode, Severity] = {
     DiagnosticCode.E061: Severity.WARNING,
+    DiagnosticCode.E064: Severity.WARNING,
 }
 
 

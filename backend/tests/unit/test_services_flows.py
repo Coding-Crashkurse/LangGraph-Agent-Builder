@@ -1,5 +1,5 @@
 """Unit tests for langgraph_agent_builder.services.flows (SPEC §9.1): semver bumping, publish guards
-(E060-E063), draft CRUD, versioning, publish/rollback, and serving helpers."""
+(E060-E065), draft CRUD, versioning, publish/rollback, and serving helpers."""
 
 from __future__ import annotations
 
@@ -160,6 +160,144 @@ def test_publish_guards_e063_mcp_with_unresolved_interrupt() -> None:
     )
     codes = {d.code for d in publish_guards(spec, get_registry())}
     assert DiagnosticCode.E063 in codes
+
+
+def _structured_nodes(end_config: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+    return [
+        {
+            "id": "start",
+            "component_id": "lab.io.start",
+            "component_version": "1.0.0",
+            "config": {},
+            "position": {"x": 0, "y": 0},
+        },
+        {
+            "id": "end",
+            "component_id": "lab.io.end",
+            "component_version": "1.0.0",
+            "config": end_config or {},
+            "position": {"x": 300, "y": 0},
+        },
+    ]
+
+
+def _json_edges() -> list[dict[str, Any]]:
+    return [
+        {
+            "id": "e1",
+            "kind": "data",
+            "source": {"node": "start", "output": "message"},
+            "target": {"node": "end", "input": "json"},
+        }
+    ]
+
+
+def test_publish_guards_e065_malformed_output_schema_blocks() -> None:
+    # fires regardless of the serving door — default api mode here
+    malformed = {"type": "object", "properties": {"x": {"type": "not-a-type"}}}
+    nodes = _structured_nodes({"output_schema": malformed})
+    spec = parse_flowspec(_spec(nodes=nodes, edges=_json_edges()))
+    diags = publish_guards(spec, get_registry())
+    e065 = [d for d in diags if d.code == DiagnosticCode.E065]
+    assert len(e065) == 1
+    assert has_errors(e065)  # blocks publish
+    assert e065[0].node_id == "end"
+    assert e065[0].field == "output_schema"
+
+
+def test_publish_guards_e064_mcp_door_wired_json_without_schema() -> None:
+    spec = parse_flowspec(
+        _spec(
+            mcp={"enabled": True, "description": "tool"},
+            nodes=_structured_nodes(),
+            edges=_json_edges(),
+        )
+    )
+    diags = publish_guards(spec, get_registry())
+    e064 = [d for d in diags if d.code == DiagnosticCode.E064]
+    assert len(e064) == 1
+    assert not has_errors(e064)  # warning only, does not block
+    assert e064[0].node_id == "end"
+
+
+def test_publish_guards_e064_silent_for_api_door() -> None:
+    spec = parse_flowspec(_spec(nodes=_structured_nodes(), edges=_json_edges()))
+    codes = {d.code for d in publish_guards(spec, get_registry())}
+    assert DiagnosticCode.E064 not in codes
+
+
+def test_publish_guards_e064_silent_when_schema_declared() -> None:
+    nodes = _structured_nodes(
+        {"output_schema": {"type": "object", "properties": {"answer": {"type": "string"}}}}
+    )
+    spec = parse_flowspec(
+        _spec(mcp={"enabled": True, "description": "tool"}, nodes=nodes, edges=_json_edges())
+    )
+    codes = {d.code for d in publish_guards(spec, get_registry())}
+    assert DiagnosticCode.E064 not in codes
+    assert DiagnosticCode.E065 not in codes
+
+
+def test_publish_guards_e064_silent_when_structured_inputs_unwired() -> None:
+    edges = [
+        {
+            "id": "e1",
+            "kind": "data",
+            "source": {"node": "start", "output": "message"},
+            "target": {"node": "end", "input": "message"},
+        }
+    ]
+    spec = parse_flowspec(
+        _spec(mcp={"enabled": True, "description": "tool"}, nodes=_structured_nodes(), edges=edges)
+    )
+    codes = {d.code for d in publish_guards(spec, get_registry())}
+    assert DiagnosticCode.E064 not in codes
+
+
+def test_publish_guards_e064_schema_declared_but_unwired_warns() -> None:
+    # the inverse direction: a declared contract that can never be fulfilled
+    # (json/table unwired) would hard-fail every MCP/A2A call at runtime
+    nodes = _structured_nodes(
+        {"output_schema": {"type": "object", "properties": {"answer": {"type": "string"}}}}
+    )
+    edges = [
+        {
+            "id": "e1",
+            "kind": "data",
+            "source": {"node": "start", "output": "message"},
+            "target": {"node": "end", "input": "message"},
+        }
+    ]
+    spec = parse_flowspec(
+        _spec(mcp={"enabled": True, "description": "tool"}, nodes=nodes, edges=edges)
+    )
+    e064 = [d for d in publish_guards(spec, get_registry()) if d.code == DiagnosticCode.E064]
+    assert len(e064) == 1
+    assert not has_errors(e064)
+    assert "unwired" in e064[0].message
+
+
+def test_publish_guards_e065_non_dict_output_schema_blocks_without_crash() -> None:
+    # a numeric config value must yield E065, not a TypeError → HTTP 500
+    nodes = _structured_nodes({"output_schema": 5})
+    spec = parse_flowspec(_spec(nodes=nodes, edges=_json_edges()))
+    e065 = [d for d in publish_guards(spec, get_registry()) if d.code == DiagnosticCode.E065]
+    assert len(e065) == 1
+    assert has_errors(e065)
+    assert "JSON Schema object" in e065[0].message
+
+
+def test_publish_guards_e065_covers_start_input_schema() -> None:
+    nodes = _structured_nodes()
+    nodes[0]["config"]["input_schema"] = {
+        "properties": {"x": {"type": "string"}},
+        "required": "x",  # must be an array — invalid schema
+    }
+    spec = parse_flowspec(_spec(nodes=nodes, edges=_json_edges()))
+    e065 = [d for d in publish_guards(spec, get_registry()) if d.code == DiagnosticCode.E065]
+    assert len(e065) == 1
+    assert e065[0].node_id == "start"
+    assert e065[0].field == "input_schema"
 
 
 # --------------------------------------------------------------------- draft CRUD

@@ -6,9 +6,12 @@ import asyncio
 import logging
 from typing import TYPE_CHECKING, Any, cast
 
+import jsonschema  # type: ignore[import-untyped]  # no stubs installed for jsonschema
 from mcp.server.fastmcp import FastMCP
 from mcp.types import CallToolResult, TextContent
 from starlette.responses import JSONResponse
+
+from langgraph_agent_builder.schema.flowspec import end_output_schema, start_input_schema
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Coroutine
@@ -19,18 +22,25 @@ if TYPE_CHECKING:
 logger = logging.getLogger("langgraph_agent_builder.mcp.server")
 
 
-def _start_input_schema(spec: dict[str, Any]) -> dict[str, Any] | None:
-    """The declared structured-input JSON Schema of the flow's `start` node.
-
-    SPEC §8.1: the MCP tool's `data` argument is typed from io.start.input_schema
-    so clients see a typed tool instead of an opaque dict.
-    """
-    for node in spec.get("nodes", []):
-        if node.get("component_id") == "lab.io.start":
-            schema = (node.get("config") or {}).get("input_schema")
-            if isinstance(schema, dict) and schema.get("properties"):
-                return schema
-    return None
+def _validate_structured_result(
+    slug: str, structured: dict[str, Any] | None, schema: dict[str, Any]
+) -> None:
+    """Enforce the flow's declared output contract (SPEC §8.1) as a tool error."""
+    if structured is None:
+        raise RuntimeError(
+            f"flow '{slug}' declares an output_schema but produced no structured result"
+        )
+    try:
+        jsonschema.validate(structured, schema)
+    except jsonschema.ValidationError as exc:
+        raise RuntimeError(
+            f"flow '{slug}' structured result violates its declared output_schema: {exc.message}"
+        ) from exc
+    except Exception as exc:
+        raise RuntimeError(
+            f"flow '{slug}' declares an output_schema that cannot be applied "
+            f"(fix or remove it): {exc}"
+        ) from exc
 
 
 class _ToolRegistry:
@@ -57,6 +67,18 @@ class _ToolRegistry:
         if tool is not None and isinstance(tool.parameters, dict):
             props = tool.parameters.setdefault("properties", {})
             props["data"] = {**schema, "description": "Structured flow input."}
+
+    def patch_output_schema(self, name: str, schema: dict[str, Any]) -> None:
+        """Declare the tool's `outputSchema` from the flow's end.output_schema (§8.1).
+
+        Assigns only the Tool-level `output_schema` cached property (what
+        list_tools serves). Setting `fn_metadata.output_schema` instead would
+        make the SDK's convert_result assert on the missing output_model and
+        break every call — we validate structured results ourselves.
+        """
+        tool = self._tools.get(name)
+        if tool is not None:
+            tool.output_schema = schema
 
 
 class McpManager:
@@ -90,8 +112,14 @@ class McpManager:
             policy = spec.flow.mcp.auto_resolve_interrupts
             timeout = spec.flow.mcp.timeout_s or svc.settings.mcp_timeout_s
 
+            output_schema = end_output_schema(spec_dict)
+
             def make_tool(
-                _spec: dict[str, Any], _slug: str, _policy: str | None, _timeout: float
+                _spec: dict[str, Any],
+                _slug: str,
+                _policy: str | None,
+                _timeout: float,
+                _output_schema: dict[str, Any] | None,
             ) -> Callable[[str, dict[str, Any] | None, str | None], Coroutine[Any, Any, Any]]:
                 async def run_flow_tool(
                     input_text: str,
@@ -106,6 +134,8 @@ class McpManager:
                     text, structured = await self._run(
                         _spec, _slug, input_text, data, session_id, _policy, _timeout
                     )
+                    if _output_schema is not None:
+                        _validate_structured_result(_slug, structured, _output_schema)
                     return CallToolResult(
                         content=[TextContent(type="text", text=text)],
                         structuredContent=structured,
@@ -114,14 +144,16 @@ class McpManager:
                 return run_flow_tool
 
             self.mcp.add_tool(
-                make_tool(spec_dict, slug, policy, timeout),
+                make_tool(spec_dict, slug, policy, timeout, output_schema),
                 name=tool_name,
                 description=description,
             )
             self._tool_names.add(tool_name)
-            start_schema = _start_input_schema(spec_dict)
+            start_schema = start_input_schema(spec_dict)
             if start_schema is not None:
                 self._registry.patch_data_schema(tool_name, start_schema)
+            if output_schema is not None:
+                self._registry.patch_output_schema(tool_name, output_schema)
         logger.info("MCP tools mounted: %s", ", ".join(sorted(self._tool_names)) or "(none)")
 
     async def _run(

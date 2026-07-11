@@ -135,10 +135,13 @@ export function ShareDialog({
   const mcp = baseSpec?.flow.mcp ?? { enabled: false };
   // The tabs ARE the serving surface, and surfaces are mutually exclusive
   // (SPEC §7.1): choosing a tab serves the flow that way and turns the others
-  // off. A2A is the default for a new flow.
-  const mode: ShareTab = a2a.enabled ? "a2a" : mcp.enabled ? "mcp" : "api";
+  // off. serving.mode is authoritative (SPEC §5.2) — persisted specs carry it,
+  // so it MUST be written here too or the backend reverts the boolean toggle.
+  const mode: ShareTab =
+    baseSpec?.flow.serving?.mode ?? (a2a.enabled ? "a2a" : mcp.enabled ? "mcp" : "api");
   const setMode = (next: ShareTab) =>
     updateFlowMeta({
+      serving: { mode: next },
       a2a: { ...a2a, enabled: next === "a2a" },
       mcp: { ...mcp, enabled: next === "mcp" },
     });
