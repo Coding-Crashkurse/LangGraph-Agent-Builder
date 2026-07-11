@@ -14,6 +14,7 @@ from langgraph_agent_builder.sdk.templating import message_text, render_prompt
 
 class PromptTemplate(Component):
     component_id = "lab.data.prompt_template"
+    legacy = True
     display_name = "Prompt Template"
     description = "Standalone PromptInput: renders {vars} into Text/Message."
     icon = "file-text"
@@ -51,6 +52,7 @@ CONVERSIONS = {
 
 class TypeConvert(Component):
     component_id = "lab.data.type_convert"
+    legacy = True
     display_name = "Type Convert"
     description = "Explicit conversions between port types, incl. Documents→Text template."
     icon = "repeat"
@@ -147,6 +149,7 @@ class TypeConvert(Component):
 
 class JsonExtract(Component):
     component_id = "lab.data.json_extract"
+    legacy = True
     display_name = "JSON Extract"
     description = "Extract a value from Json via JSONPath."
     icon = "filter"
@@ -181,6 +184,7 @@ class JsonExtract(Component):
 
 class Parser(Component):
     component_id = "lab.data.parser"
+    legacy = True
     display_name = "Parser"
     description = "Regex/split text parsing into Json."
     icon = "scissors"

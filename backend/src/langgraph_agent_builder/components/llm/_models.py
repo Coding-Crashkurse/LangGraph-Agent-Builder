@@ -176,6 +176,73 @@ def resolve_model(value: Any) -> BaseChatModel:
     raise ValueError(f"unknown model provider {provider!r} (supported: {PROVIDERS})")
 
 
+# ------------------------------------------------------------------ resource-backed models
+# The Resources layer (§Resources) centralizes provider config: a node references
+# a `model_provider` resource by name (ResourceRefInput → ResourceHandle), never
+# by inline credentials. At build/run time the running server resolves the
+# resource's config (provider/base_url/api_key with $secret/$var applied) and the
+# chosen model name (carried on the handle payload) into a concrete chat model.
+def _resource_handle_parts(value: Any) -> tuple[str, dict[str, Any]]:
+    """Recover ``(resource_name, payload)`` from a ResourceHandle or its dict/ref
+    form (the ``{"$resource": name, ...}`` widget value seen headless, or a
+    serialized handle ``{"name", "resource_type", "payload"}``)."""
+    from langgraph_agent_builder.sdk.ports import ResourceHandle
+
+    if isinstance(value, ResourceHandle):
+        return value.name, dict(value.payload)
+    if isinstance(value, dict) and ("$resource" in value or "name" in value):
+        name = str(value.get("$resource") or value.get("name") or "")
+        payload = {
+            k: v
+            for k, v in value.items()
+            if k not in ("$resource", "name", "resource_type", "payload")
+        }
+        nested = value.get("payload")
+        if isinstance(nested, dict):
+            payload.update(nested)
+        return name, payload
+    raise LabRuntimeError(f"expected a model_provider resource reference, got {value!r}")
+
+
+async def _resolved_provider_config(name: str) -> dict[str, Any] | None:
+    """The named ``model_provider`` resource's config with secrets/vars resolved,
+    via the running server's ResourcesService — ``None`` headless or absent."""
+    from langgraph_agent_builder.services.locator import get_services
+
+    svc = get_services()
+    if svc is None or getattr(svc, "resources", None) is None:
+        return None
+    result = await svc.resources.resolved_config("model_provider", name)
+    return cast("dict[str, Any] | None", result)
+
+
+async def resolve_model_resource(value: Any) -> BaseChatModel:
+    """Build a chat model from a ``model_provider`` ResourceHandle.
+
+    Reads the resource's config (provider/base_url/api_key/… with $secret/$var
+    resolved) from the running server, folds in the model name carried on the
+    handle payload, and constructs the model via :func:`resolve_model`. When
+    there is no service context (headless / python export / unit tests), an
+    inline ``provider`` on the handle payload is honored — so ``fake``/``echo``
+    providers stay runnable without a server or network; otherwise a clear
+    error names the unresolved resource."""
+    name, payload = _resource_handle_parts(value)
+    cfg = await _resolved_provider_config(name)
+    if cfg is None:
+        if payload.get("provider"):
+            cfg = {k: v for k, v in payload.items() if k != "model"}
+        else:
+            raise LabRuntimeError(
+                f"model provider resource {name!r} could not be resolved — "
+                "run inside a lab server, or reference a fake/echo provider for tests"
+            )
+    model_cfg = dict(cfg)
+    model_name = payload.get("model") or cfg.get("model")
+    if model_name:  # never inject a str(None) model — echo would prefix "None: "
+        model_cfg["model"] = model_name
+    return resolve_model(model_cfg)
+
+
 def resolve_embeddings(value: Any) -> Embeddings:
     cfg = parse_model_value(value)
     provider = str(cfg.get("provider", "")).lower()

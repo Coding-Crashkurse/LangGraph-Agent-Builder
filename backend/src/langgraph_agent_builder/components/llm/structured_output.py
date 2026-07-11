@@ -53,6 +53,7 @@ def _schema_to_rows(schema: dict[str, Any]) -> list[dict[str, Any]]:
 
 class StructuredOutput(Component):
     component_id = "lab.llm.structured_output"
+    legacy = True
     display_name = "Structured Output"
     description = "Force a model to emit JSON matching a schema."
     icon = "braces"

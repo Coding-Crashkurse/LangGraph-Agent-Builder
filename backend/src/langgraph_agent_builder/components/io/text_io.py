@@ -11,6 +11,7 @@ from langgraph_agent_builder.sdk.templating import last_message_text
 
 class TextInput(Component):
     component_id = "lab.io.text_input"
+    legacy = True
     display_name = "Text Input"
     description = "A literal or run-supplied text value."
     icon = "type"
@@ -40,6 +41,7 @@ class TextInput(Component):
 
 class TextOutput(Component):
     component_id = "lab.io.text_output"
+    legacy = True
     display_name = "Text Output"
     description = "Terminal node emitting plain text."
     icon = "align-left"
@@ -58,6 +60,7 @@ class TextOutput(Component):
 
 class WebhookInput(Component):
     component_id = "lab.io.webhook_input"
+    legacy = True
     display_name = "Webhook Input"
     description = "Exposes data.webhook_payload, optionally typed via a JSON schema."
     icon = "webhook"

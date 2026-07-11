@@ -143,8 +143,8 @@ async def test_priority_in_descriptor(client: httpx.AsyncClient) -> None:
     components = (await client.get("/api/v1/components")).json()
     start = next(c for c in components if c["component_id"] == "lab.io.start")
     assert start["priority"] == 0
-    call = next(c for c in components if c["component_id"] == "lab.llm.llm_call")
-    agent = next(c for c in components if c["component_id"] == "lab.llm.llm_agent")
+    call = next(c for c in components if c["component_id"] == "lab.llm.call")
+    agent = next(c for c in components if c["component_id"] == "lab.llm.agent")
     assert call["priority"] < agent["priority"]
 
 

@@ -27,7 +27,7 @@ class NodeIR:
 
     @property
     def kind(self) -> NodeKind:
-        return self.component.node_kind
+        return self.component.node_kind_for_config(self.config)
 
 
 @dataclass

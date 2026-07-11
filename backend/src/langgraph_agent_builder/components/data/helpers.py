@@ -15,6 +15,7 @@ from langgraph_agent_builder.sdk.ports import Message
 
 class MessageHistory(Component):
     component_id = "lab.data.message_history"
+    legacy = True
     display_name = "Message History"
     description = "Read the checkpointed thread's messages (Langflow parity)."
     icon = "history"
@@ -57,6 +58,7 @@ _TIMEZONES = ["UTC", "US/Eastern", "US/Pacific", "Europe/Berlin", "Europe/London
 
 class CurrentDate(Component):
     component_id = "lab.data.current_date"
+    legacy = True
     display_name = "Current Date"
     description = "Current date/time in a chosen timezone → Text (tool-ready)."
     icon = "calendar-clock"

@@ -11,6 +11,8 @@ from langgraph_agent_builder.sdk.templating import eval_predicate, last_message_
 
 class LoopUntil(Component):
     component_id = "lab.flow.loop_until"
+    legacy = True
+    successor = "lab.flow.loop"
     display_name = "Loop Until"
     description = "Routes `continue` until the condition holds or max_iterations is hit."
     icon = "refresh-cw"

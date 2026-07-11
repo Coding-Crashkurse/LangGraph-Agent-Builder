@@ -65,6 +65,7 @@ async def load_mcp_tools(config: dict[str, Any]) -> list[ToolDef]:
 
 class MCPToolset(Component):
     component_id = "lab.tools.mcp_toolset"
+    legacy = True
     display_name = "MCP Toolset"
     description = "Attach the tools of an external MCP server to an agent (dashed tool edge)."
     icon = "plug"

@@ -78,6 +78,7 @@ def _interrupt_payload(task: dict[str, Any], agent_url: str) -> dict[str, Any]:
 
 class A2ARemoteAgent(Component):
     component_id = "lab.tools.a2a_remote_agent"
+    legacy = True
     display_name = "A2A Remote Agent"
     description = "Call another A2A agent as a node or as a tool; nested HITL propagates."
     icon = "satellite"

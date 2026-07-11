@@ -135,6 +135,22 @@ class ResourcesService:
             await session.commit()
         return bool(cast("CursorResult[Any]", result).rowcount)
 
+    # ------------------------------------------------------------------ runtime resolution
+    async def resolved_config(self, rtype: str, name: str) -> dict[str, Any] | None:
+        """Resource config with ``$secret``/``$var`` refs resolved to concrete
+        values — for in-process node construction at build/run time (model
+        providers, knowledge bases).
+
+        Returns ``None`` when the resource does not exist. Unlike :meth:`get`
+        (whose :meth:`_info` deliberately keeps credentials as ``{"$secret":
+        name}`` refs so the API never leaks them), this resolves them via
+        :meth:`_resolve_params`; the result therefore must stay in-process and is
+        never returned over the wire (SPEC §10.5)."""
+        info = await self.get(rtype, name)
+        if info is None:
+            return None
+        return await self._resolve_params(info["config"])
+
     # ------------------------------------------------------------------ resolver lookup
     async def names_with_types(self) -> dict[str, str]:
         """``{name: "<type>#<version>"}`` across all four types — the resolver

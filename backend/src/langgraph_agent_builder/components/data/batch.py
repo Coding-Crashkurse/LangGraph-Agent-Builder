@@ -49,6 +49,8 @@ def _item_context(item: Any, index: int) -> dict[str, Any]:
 
 class ForEach(Component):
     component_id = "lab.data.for_each"
+    legacy = True
+    successor = "lab.flow.loop"
     display_name = "For Each"
     description = "Map a sandboxed template over each list item → per-item Table + joined Text."
     icon = "list"

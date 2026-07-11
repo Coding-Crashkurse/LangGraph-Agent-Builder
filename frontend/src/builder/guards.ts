@@ -122,7 +122,13 @@ function applyDynamicPortMirrors(
     else outputs.delete("toolset");
   }
 
-  if (descriptor.component_id === "lab.flow.rule_router") {
+  // Legacy Rule Router (on-canvas legacy nodes) + the new merged Router in
+  // rules mode both derive ROUTE outputs from the rules table. The new Router's
+  // llm mode uses dynamic_outputs_from="labels" (handled generically upstream).
+  const isRulesRouter =
+    descriptor.component_id === "lab.flow.rule_router" ||
+    (descriptor.component_id === "lab.flow.router" && String(config.mode ?? "rules") === "rules");
+  if (isRulesRouter) {
     outputs.clear();
     routeLabels.clear();
     const rows = Array.isArray(config.rules) ? (config.rules as { label?: string }[]) : [];

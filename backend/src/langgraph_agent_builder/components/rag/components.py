@@ -116,6 +116,8 @@ def _as_document(d: Any) -> Document:
 # --------------------------------------------------------------------------- retriever
 class VectorRetriever(Component):
     component_id = "lab.rag.retriever"
+    legacy = True
+    successor = "lab.rag.kb_retriever"
     display_name = "Vector Retriever"
     description = "Similarity search over a Vector Store Connection → Documents."
     icon = "search"
@@ -227,6 +229,7 @@ class VectorRetriever(Component):
 # --------------------------------------------------------------------------- writer
 class VectorWriter(Component):
     component_id = "lab.rag.writer"
+    legacy = True
     display_name = "Vector Writer"
     description = "Embed Documents and upsert into a Vector Store collection."
     icon = "database"
@@ -281,6 +284,7 @@ class VectorWriter(Component):
 # --------------------------------------------------------------------------- embeddings
 class Embeddings(Component):
     component_id = "lab.rag.embeddings"
+    legacy = True
     display_name = "Embeddings"
     description = "Embedding model handle for retrievers/writers."
     icon = "binary"
@@ -305,6 +309,7 @@ class Embeddings(Component):
 # --------------------------------------------------------------------------- text splitter
 class TextSplitter(Component):
     component_id = "lab.rag.text_splitter"
+    legacy = True
     display_name = "Text Splitter"
     description = "Recursive character splitting: Text/Documents → Documents."
     icon = "scissors-line-dashed"
@@ -376,6 +381,7 @@ def _split(text: str, size: int, overlap: int) -> list[str]:
 # --------------------------------------------------------------------------- file loader
 class FileLoader(Component):
     component_id = "lab.rag.file_loader"
+    legacy = True
     display_name = "File Loader"
     description = "Load uploaded files (txt/md/pdf/csv/json) into Documents."
     icon = "file-input"
@@ -459,7 +465,7 @@ class PgvectorRetriever(VectorRetriever):
     display_name = "pgvector Retriever"
     description = "Legacy pgvector retriever — replaced by Vector Retriever (§8b.4)."
     legacy = True
-    successor = "lab.rag.retriever"
+    successor = "lab.rag.kb_retriever"
     priority: ClassVar[int | None] = None
 
     inputs = [

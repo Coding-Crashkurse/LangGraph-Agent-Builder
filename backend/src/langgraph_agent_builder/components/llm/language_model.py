@@ -30,6 +30,7 @@ from langgraph_agent_builder.sdk.templating import message_text
 
 class LanguageModel(Component):
     component_id = "lab.llm.language_model"
+    legacy = True
     display_name = "Language Model"
     description = (
         "Runs a language model for a given provider. Wire Input → Model Response, "

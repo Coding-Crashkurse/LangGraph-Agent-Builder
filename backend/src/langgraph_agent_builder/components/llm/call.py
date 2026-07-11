@@ -1,38 +1,32 @@
-"""LLM Call — one-shot completion with dynamic {var} prompt ports (SPEC §12.2)."""
+"""LLM Call — one-shot completion over a model-provider resource (palette v2).
+
+The successor of :class:`~langgraph_agent_builder.components.llm.llm_call.LLMCall`:
+identical completion behavior, but the model is a **Resource** reference
+(``model_provider``) instead of an inline ModelInput, and it absorbs the old
+Structured Output node via the ``structured_output``/``output_schema`` fields.
+{vars} in the prompt still spawn dynamic input ports.
+"""
 
 from __future__ import annotations
 
 import json
 from typing import Any
 
-from langchain_core.messages import AIMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from langgraph_agent_builder.sdk import Component, Output, fields, ports
 from langgraph_agent_builder.sdk.component import BuildContext, NodeFn
 from langgraph_agent_builder.sdk.runtime import get_run_context
-from langgraph_agent_builder.sdk.templating import PROMPT_VAR_RE, render_prompt
+from langgraph_agent_builder.sdk.templating import render_prompt
 
 
-def collect_prompt_values(
-    ctx: BuildContext, state: dict[str, Any], template: str
-) -> dict[str, Any]:
-    """Resolve {var} values: connected port > shared data key > config field."""
-    values: dict[str, Any] = {}
-    data = state.get("data") or {}
-    for var in PROMPT_VAR_RE.findall(template):
-        value = ctx.get_input(state, var)
-        if value is None:
-            value = data.get(var)
-        values[var] = value
-    return values
-
-
-class LLMCall(Component):
-    component_id = "lab.llm.llm_call"
-    legacy = True
-    successor = "lab.llm.call"
+class Call(Component):
+    component_id = "lab.llm.call"
     display_name = "LLM Call"
-    description = "Single completion, no tools. {vars} in the prompt become input ports."
+    description = (
+        "Single completion over a model provider resource, no tools. "
+        "{vars} in the prompt become input ports; can force structured JSON output."
+    )
     icon = "sparkles"
     category = "llm"
     tool_mode_supported = True
@@ -46,8 +40,12 @@ class LLMCall(Component):
             tool_mode=True,
             info="{variables} spawn input ports and resolve from ports or data.",
         ),
-        fields.ModelInput(
-            name="model", display_name="Model", required=True, as_port=ports.LANGUAGE_MODEL
+        fields.ResourceRefInput(
+            name="model",
+            display_name="Model",
+            resource_type="model_provider",
+            required=True,
+            info="A model provider resource; pick the model on the reference.",
         ),
         fields.MultilineInput(name="system", display_name="System Prompt", advanced=True),
         fields.BoolInput(
@@ -71,15 +69,16 @@ class LLMCall(Component):
     def build(self, ctx: BuildContext) -> NodeFn:
         from langgraph_agent_builder.components.llm._models import (
             parse_json_reply,
-            resolve_model,
+            resolve_model_resource,
             stream_completion,
         )
+        from langgraph_agent_builder.components.llm.llm_call import collect_prompt_values
 
         async def node(state: dict[str, Any], config: Any) -> dict[str, Any]:
             rc = get_run_context(config)
             template = str(ctx.get_field("prompt") or "")
             prompt = render_prompt(template, collect_prompt_values(ctx, state, template))
-            model = resolve_model(ctx.get_input(state, "model"))
+            model = await resolve_model_resource(ctx.get_field("model"))
             structured = bool(ctx.get_field("structured_output"))
             schema = ctx.get_field("output_schema") or None
             messages: list[Any] = []
@@ -93,8 +92,6 @@ class LLMCall(Component):
                         + json.dumps(schema)
                     )
                 )
-            from langchain_core.messages import HumanMessage
-
             messages.append(HumanMessage(content=prompt))
 
             text = await stream_completion(

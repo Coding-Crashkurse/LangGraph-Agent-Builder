@@ -12,6 +12,8 @@ from langgraph_agent_builder.sdk.templating import eval_predicate, last_message_
 
 class LLMRouter(Component):
     component_id = "lab.flow.llm_router"
+    legacy = True
+    successor = "lab.flow.router"
     display_name = "LLM Router"
     description = (
         "Routes the conversation into one of the configured labels. Uses the "
@@ -92,6 +94,8 @@ class LLMRouter(Component):
 
 class RuleRouter(Component):
     component_id = "lab.flow.rule_router"
+    legacy = True
+    successor = "lab.flow.router"
     display_name = "Rule Router"
     description = "Routes on data/message predicates (sandboxed jinja expressions)."
     icon = "list-tree"

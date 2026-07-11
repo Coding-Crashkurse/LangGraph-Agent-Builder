@@ -171,6 +171,15 @@ class Component(ABC):
         return bool(config.get("tool_mode", cls.tool_mode_default))
 
     @classmethod
+    def node_kind_for_config(cls, config: NodeConfig) -> NodeKind:
+        """Effective node kind for a given config. Default: the static ClassVar.
+
+        A component whose kind depends on a mode field (e.g. Loop: collection →
+        TASK, until → ROUTER) overrides this so the compiler wires it correctly;
+        every kind consumer reads it through ``NodeIR.kind`` / the descriptor."""
+        return cls.node_kind
+
+    @classmethod
     def outputs_for_config(cls, config: NodeConfig) -> list[Output]:
         """Effective outputs; routers with dynamic labels regenerate here.
 
@@ -261,7 +270,7 @@ class Component(ABC):
             "beta": cls.beta,
             "legacy": cls.legacy,
             "successor": cls.successor,
-            "node_kind": cls.node_kind.value,
+            "node_kind": cls.node_kind_for_config(config).value,
             "tool_mode_supported": cls.tool_mode_supported,
             "tool_mode_default": cls.tool_mode_default,
             "dynamic_outputs_from": cls.dynamic_outputs_from,

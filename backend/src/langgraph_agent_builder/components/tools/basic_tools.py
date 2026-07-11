@@ -44,6 +44,7 @@ def safe_eval(expression: str) -> float:
 
 class Calculator(Component):
     component_id = "lab.tools.calculator"
+    legacy = True
     display_name = "Calculator"
     description = "Evaluate an arithmetic expression (safe AST — demo tool)."
     icon = "calculator"
@@ -158,6 +159,7 @@ class HttpRequest(Component):
 
 class WebSearch(Component):
     component_id = "lab.tools.web_search"
+    legacy = True
     display_name = "Web Search"
     description = "Provider-agnostic web search → Table (SSRF-guarded searxng)."
     icon = "search"
