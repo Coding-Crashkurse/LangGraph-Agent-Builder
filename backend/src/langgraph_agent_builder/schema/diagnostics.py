@@ -29,6 +29,7 @@ class DiagnosticCode(StrEnum):
     E015 = "E015"  # ComponentBuildFailed — build() raised while emitting the graph
     E016 = "E016"  # Resource referenced by node ({"$resource": name}) does not exist
     E017 = "E017"  # Resource type mismatch (stored resource_type ≠ field's resource_type)
+    E018 = "E018"  # Expression syntax error in an expression-enabled field ({{ … }})
     # edges
     E020 = "E020"  # Edge type-incompatible
     E021 = "E021"  # Tool edge into non-Tools port / from non-Toolset output
@@ -60,6 +61,7 @@ class DiagnosticCode(StrEnum):
     W202 = "W202"  # Auto list-wrap coercion inserted
     W203 = "W203"  # Implicit coercion inserted
     W204 = "W204"  # BackendSpecificFilter (raw_filter passthrough)
+    W205 = "W205"  # Expression references an unknown path (not statically provable)
     W301 = "W301"  # Deprecated field/output in use
     W302 = "W302"  # Component version migrated
     W303 = "W303"  # Unknown config key (not a declared field; ignored at build)

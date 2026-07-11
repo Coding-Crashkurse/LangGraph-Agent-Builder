@@ -16,6 +16,11 @@ from dataclasses import field as dc_field
 from enum import StrEnum
 from typing import Any, ClassVar
 
+from langgraph_agent_builder.sdk.expressions import (
+    has_expression,
+    render_expression,
+    state_excerpt,
+)
 from langgraph_agent_builder.sdk.fields import Field, MultiselectInput, PromptInput
 from langgraph_agent_builder.sdk.outputs import Output
 from langgraph_agent_builder.sdk.ports import ROUTE, TEXT, PortSpec, ToolDef
@@ -91,6 +96,7 @@ class BuildContext:
     flow_id: str = ""
     label: str = ""
     config: NodeConfig = dc_field(default_factory=dict)
+    fields: dict[str, Field] = dc_field(default_factory=dict)  # field defs (expression opt-in)
     secrets: SecretsResolver = dc_field(default_factory=SecretsResolver)
     registry: Any = None
     logger: logging.Logger = dc_field(default_factory=lambda: logging.getLogger("lab.component"))
@@ -99,20 +105,45 @@ class BuildContext:
     settings: Any = None  # lab Settings when compiled server-side; None headless
 
     def get_field(self, name: str) -> Any:
-        """Resolved config value (tweaks + $var/$secret refs already applied in P2)."""
+        """Resolved config value (tweaks + $var/$secret refs already applied in P2).
+
+        Compile-time accessor: returns the raw template unchanged even for
+        expression-enabled fields (no state to render against). Use
+        :meth:`get_input` / :meth:`render_expr` at runtime to render ``{{ }}``.
+        """
         return self.config.get(name)
 
     def has_input(self, name: str) -> bool:
         return name in self.input_bindings
 
+    def expr_scope(self, state: dict[str, Any]) -> dict[str, Any]:
+        """Scope for ``{{ }}`` expressions (SPEC §10.5): ``input`` (bound
+        input-port values), ``state`` (safe excerpt) and ``vars`` — no secrets."""
+        inputs = {name: binding.read(state) for name, binding in self.input_bindings.items()}
+        excerpt = state_excerpt(state)
+        return {"input": inputs, "state": excerpt, "vars": excerpt["vars"]}
+
+    def render_expr(self, state: dict[str, Any], name: str) -> Any:
+        """Config value, rendering ``{{ }}`` when the field opted into expressions."""
+        raw = self.config.get(name)
+        field = self.fields.get(name)
+        if (
+            field is not None
+            and field.expressions
+            and isinstance(raw, str)
+            and has_expression(raw)
+        ):
+            return render_expression(raw, self.expr_scope(state))
+        return raw
+
     def get_input(self, state: dict[str, Any], name: str) -> Any:
-        """Runtime value of an input port; falls back to the widget value."""
+        """Runtime value of an input port; falls back to the (expression-rendered) widget value."""
         binding = self.input_bindings.get(name)
         if binding is not None:
             value = binding.read(state)
             if value is not None:
                 return value
-        return self.config.get(name)
+        return self.render_expr(state, name)
 
 
 class Component(ABC):

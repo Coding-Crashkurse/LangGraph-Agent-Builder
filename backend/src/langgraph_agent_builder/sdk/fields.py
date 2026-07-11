@@ -49,6 +49,9 @@ class Field(BaseModel):
     placeholder: str = ""
     tool_mode: bool = False
     accepts_global_variable: bool = True
+    # Opt-in: render ``{{ … }}`` expressions over {input, state, vars} at runtime
+    # (SPEC §10.5). NEVER enabled on a Secret field (guarded on SecretInput).
+    expressions: bool = False
     deprecated: bool = False
     # handle capability
     as_port: PortSpec | None = None
@@ -182,6 +185,14 @@ class TabInput(Field):
 
 class SecretInput(Field):
     """Value stored as a secret ref ({"$secret": name}); never echoed back."""
+
+    @model_validator(mode="after")
+    def _forbid_expressions(self) -> SecretInput:
+        # Secrets must never flow through the expression renderer (SPEC §10.5);
+        # the whole point of the scope excerpt is that credentials stay out.
+        if self.expressions:
+            raise ValueError("SecretInput fields cannot enable expressions (secrets never render)")
+        return self
 
     def json_schema(self) -> dict[str, Any]:
         return {

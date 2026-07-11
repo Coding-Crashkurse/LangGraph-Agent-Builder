@@ -7,6 +7,7 @@ from collections import defaultdict
 from langgraph_agent_builder.compiler.ir import FlowIR, NodeIR
 from langgraph_agent_builder.schema.diagnostics import Diagnostic, DiagnosticCode
 from langgraph_agent_builder.sdk.component import NodeKind
+from langgraph_agent_builder.sdk.expressions import analyze_expression, has_expression
 from langgraph_agent_builder.sdk.ports import PortFamily, check_compatibility
 
 
@@ -259,6 +260,39 @@ def validate(ir: FlowIR) -> list[Diagnostic]:
                     D(
                         DiagnosticCode.E010,
                         f"required field {f.name!r} is empty",
+                        node_id=node.id,
+                        field=f.name,
+                    )
+                )
+
+    # ---------------------------------------------------------------- expressions
+    # Static parse-check of expression-enabled string fields (SPEC §10.5): a jinja
+    # syntax error is E018 (blocking); a reference to a root outside the allowed
+    # {input, state, vars, now, today} scope is W205 (not statically provable).
+    for node in ir.nodes.values():
+        for f in node.component.inputs:
+            if not f.expressions:
+                continue
+            raw = node.config.get(f.name)
+            if not isinstance(raw, str) or not has_expression(raw):
+                continue
+            syntax_error, unknown = analyze_expression(raw)
+            if syntax_error is not None:
+                diags.append(
+                    D(
+                        DiagnosticCode.E018,
+                        f"expression syntax error in field {f.name!r}: {syntax_error}",
+                        node_id=node.id,
+                        field=f.name,
+                        fix_hint="Fix the {{ … }} expression; only input/state/vars are in scope.",
+                    )
+                )
+            elif unknown:
+                diags.append(
+                    D(
+                        DiagnosticCode.W205,
+                        f"expression in field {f.name!r} references unknown path(s) "
+                        f"{sorted(unknown)} — only input/state/vars are in scope",
                         node_id=node.id,
                         field=f.name,
                     )

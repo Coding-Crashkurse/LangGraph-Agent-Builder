@@ -55,6 +55,7 @@ class ComponentTestHarness:
             flow_id="test-flow",
             label=component.display_name or node_id,
             config=cfg,
+            fields=component.field_map(),
             secrets=SecretsResolver(secrets or {}),
             input_bindings=bindings,
             tools=tools or [],

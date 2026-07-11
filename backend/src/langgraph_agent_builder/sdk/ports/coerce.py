@@ -77,6 +77,22 @@ def wrap_list(value: Any) -> list[Any]:
     return [value]
 
 
+def string_to_number(value: Any) -> Any:
+    """Best-effort numeric coercion of a text value (int when integral, else
+    float). Non-numeric text passes through unchanged so the target node still
+    sees a value rather than an exception."""
+    if isinstance(value, (int, float)):
+        return value
+    text = str(value).strip()
+    try:
+        return int(text)
+    except ValueError:
+        try:
+            return float(text)
+        except ValueError:
+            return value
+
+
 # (source schema_ref, target schema_ref) → coercion name
 _EDGE_COERCIONS: dict[tuple[str, str], str] = {
     ("lab:Message", "lab:Text"): "message_to_text",
@@ -95,11 +111,23 @@ FUNCTIONS: dict[str, Callable[[Any], Any]] = {
     "table_to_json": table_to_json,
     "table_to_text": table_to_text,
     "wrap_list": wrap_list,
+    "string_to_number": string_to_number,
 }
+
+_NUMERIC_JSON_TYPES = frozenset({"number", "integer"})
 
 
 def find(source: PortSpec, target: PortSpec) -> str | None:
-    return _EDGE_COERCIONS.get((source.schema_ref, target.schema_ref))
+    direct = _EDGE_COERCIONS.get((source.schema_ref, target.schema_ref))
+    if direct is not None:
+        return direct
+    # Text → any DATA port whose declared JSON type is numeric: unambiguous, so
+    # auto-insert string_to_number (W203). Lossy/ambiguous directions still need
+    # an explicit Type Convert.
+    if source.schema_ref == "lab:Text" and isinstance(target.json_schema, dict):
+        if target.json_schema.get("type") in _NUMERIC_JSON_TYPES:
+            return "string_to_number"
+    return None
 
 
 def apply(name: str, value: Any) -> Any:

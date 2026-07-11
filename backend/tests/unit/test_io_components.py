@@ -153,27 +153,31 @@ async def test_webhook_input_defaults_to_empty_object() -> None:
 
 
 # --------------------------------------------------------------------- SetData
-async def test_set_data_renders_jinja_over_message() -> None:
+async def test_set_data_renders_expression_over_message() -> None:
     node = _build(
         SetData,
-        config={"entries": [{"key": "greeting", "template": "Hi {{ message }}"}]},
+        config={
+            "entries": [{"key": "greeting", "template": "Hi {{ state.messages[-1].content }}"}]
+        },
     )
     result = await node({"messages": [HumanMessage(content="world")]})
     assert result["data"] == {"greeting": "Hi world"}
 
 
-async def test_set_data_reads_data_and_route_variables() -> None:
+async def test_set_data_reads_data_variable_and_keeps_typed_value() -> None:
     node = _build(
         SetData,
         config={
             "entries": [
-                {"key": "x", "template": "{{ data.foo }}"},
-                {"key": "r", "template": "{{ route.next }}"},
+                {"key": "x", "template": "{{ state.data.foo }}"},
+                # a whole-cell expression keeps its typed value (the type_convert
+                # replacement): count stays an int, not "3"
+                {"key": "n", "template": "{{ state.data.count }}"},
             ]
         },
     )
-    result = await node({"data": {"foo": "bar"}, "route": {"next": "n1"}})
-    assert result["data"] == {"x": "bar", "r": "n1"}
+    result = await node({"data": {"foo": "bar", "count": 3}})
+    assert result["data"] == {"x": "bar", "n": 3}
 
 
 async def test_set_data_skips_blank_keys() -> None:

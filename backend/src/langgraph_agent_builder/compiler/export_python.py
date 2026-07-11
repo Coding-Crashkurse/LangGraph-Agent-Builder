@@ -101,6 +101,7 @@ def export_python(spec: FlowSpec, registry: ComponentRegistry) -> str:
                     f"# ---- node: {node_id} ({node.component.component_id})",
                     f'_{node_id}_ctx = BuildContext(node_id="{node_id}", '
                     f"config={_render_config(raw_config)}, "
+                    f"fields={node.component.__name__}.field_map(), "
                     f"input_bindings={{{', '.join(bindings)}}})",
                     f'builder.add_node("{node_id}", '
                     f"wrap_component({node.component.__name__}, _{node_id}_ctx))",

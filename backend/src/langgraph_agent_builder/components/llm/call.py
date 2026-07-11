@@ -47,7 +47,13 @@ class Call(Component):
             required=True,
             info="A model provider resource; pick the model on the reference.",
         ),
-        fields.MultilineInput(name="system", display_name="System Prompt", advanced=True),
+        fields.MultilineInput(
+            name="system",
+            display_name="System Prompt",
+            advanced=True,
+            expressions=True,
+            info="Supports {{ … }} expressions over {input, state, vars}.",
+        ),
         fields.BoolInput(
             name="structured_output",
             display_name="Structured Output",
@@ -82,7 +88,7 @@ class Call(Component):
             structured = bool(ctx.get_field("structured_output"))
             schema = ctx.get_field("output_schema") or None
             messages: list[Any] = []
-            system = ctx.get_field("system")
+            system = ctx.get_input(state, "system")
             if system:
                 messages.append(SystemMessage(content=str(system)))
             if structured and schema:

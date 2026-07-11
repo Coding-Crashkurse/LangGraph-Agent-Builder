@@ -91,7 +91,15 @@ class HttpRequest(Component):
     tool_mode_default = True  # pure tools: the toolset port is the point
 
     inputs = [
-        fields.StrInput(name="url", display_name="URL", required=True, tool_mode=True),
+        fields.StrInput(
+            name="url",
+            display_name="URL",
+            required=True,
+            tool_mode=True,
+            expressions=True,
+            info="Supports {{ … }} expressions over {input, state, vars}, e.g. "
+            "https://api/{{ state.data.id }}.",
+        ),
         fields.TabInput(
             name="method", display_name="Method", options=["GET", "POST"], default="GET"
         ),

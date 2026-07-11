@@ -59,6 +59,7 @@ def wire(
             flow_id=flow_id or ir.spec.flow.slug,
             label=node.spec.label or node.component.display_name,
             config=node.config,
+            fields=node.component.field_map(),
             secrets=secrets or SecretsResolver(),
             registry=registry,
             input_bindings=bindings,
