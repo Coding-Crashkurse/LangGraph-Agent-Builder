@@ -35,7 +35,9 @@ class _AsyncComp(Component):
 class _SlowComp(_AsyncComp):
     component_id = "test.dynamic.slow"
 
-    async def on_field_change(self, config: NodeConfig, field_name: str, value: Any) -> NodeConfig:
+    async def on_field_change(  # type: ignore[override]
+        self, config: NodeConfig, field_name: str, value: Any
+    ) -> NodeConfig:
         await asyncio.sleep(30)
         return config  # pragma: no cover - never reached
 
