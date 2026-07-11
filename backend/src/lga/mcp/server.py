@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Coroutine
 
     from lga.app import AppServices
+    from lga.runtime.executor import RunResult
 
 logger = logging.getLogger("lga.mcp.server")
 
@@ -32,6 +33,32 @@ def _start_input_schema(spec: dict[str, Any]) -> dict[str, Any] | None:
     return None
 
 
+class _ToolRegistry:
+    """The ONE seam that touches FastMCP's private tool manager.
+
+    FastMCP has no public remove-tool or patch-schema API, so every private
+    access (`_tool_manager._tools`) lives here — an `mcp` upgrade breaks
+    exactly this class (canary test in tests/test_mcp.py pins the attributes).
+    """
+
+    def __init__(self, mcp: FastMCP) -> None:
+        self._mcp = mcp
+
+    @property
+    def _tools(self) -> dict[str, Any]:
+        return self._mcp._tool_manager._tools
+
+    def remove(self, name: str) -> None:
+        self._tools.pop(name, None)
+
+    def patch_data_schema(self, name: str, schema: dict[str, Any]) -> None:
+        """Type the generic `data` arg from the flow's declared input schema (§8.1)."""
+        tool = self._tools.get(name)
+        if tool is not None and isinstance(tool.parameters, dict):
+            props = tool.parameters.setdefault("properties", {})
+            props["data"] = {**schema, "description": "Structured flow input."}
+
+
 class McpManager:
     def __init__(self, svc: AppServices) -> None:
         self._svc = svc
@@ -43,16 +70,14 @@ class McpManager:
             message_path="/messages/",
             stateless_http=True,
         )
+        self._registry = _ToolRegistry(self.mcp)
         self._tool_names: set[str] = set()
 
     # ------------------------------------------------------------ tools
     async def rebuild(self) -> None:
         svc = self._svc
         for name in list(self._tool_names):
-            try:
-                self.mcp._tool_manager._tools.pop(name, None)  # no public remove in FastMCP
-            except Exception:  # pragma: no cover - defensive
-                pass
+            self._registry.remove(name)
         self._tool_names.clear()
 
         for _flow, version, spec in await svc.flows.published_flows():
@@ -94,13 +119,9 @@ class McpManager:
                 description=description,
             )
             self._tool_names.add(tool_name)
-            # type the generic `data` arg from the flow's declared input schema (§8.1)
             start_schema = _start_input_schema(spec_dict)
             if start_schema is not None:
-                tool = self.mcp._tool_manager._tools.get(tool_name)
-                if tool is not None and isinstance(tool.parameters, dict):
-                    props = tool.parameters.setdefault("properties", {})
-                    props["data"] = {**start_schema, "description": "Structured flow input."}
+                self._registry.patch_data_schema(tool_name, start_schema)
         logger.info("MCP tools mounted: %s", ", ".join(sorted(self._tool_names)) or "(none)")
 
     async def _run(
@@ -116,15 +137,16 @@ class McpManager:
         svc = self._svc
 
         async def _execute() -> tuple[str, dict[str, Any] | None]:
-            run_id, _thread_id, result = await svc.orchestrator.start_run(
+            run_id, _thread_id, started = await svc.orchestrator.start_run(
                 spec=spec,
                 flow_row=await svc.flows.get_by_slug(slug),
-                mode="api",
+                mode="mcp",  # first-class run mode — distinguishes MCP from REST runs
                 input_text=input_text,
                 data={"a2a_input": data} if data else None,
                 session_id=session_id,
                 background=False,
             )
+            result = cast("RunResult", started)  # background=False ⇒ RunResult
             hops = 0
             while result.status == "input_required" and policy and hops < 5:
                 payload = result.interrupt or {}
@@ -133,7 +155,8 @@ class McpManager:
                     if payload.get("kind") == "approval"
                     else {"text": f"auto-{policy}"}
                 )
-                _, result = await svc.orchestrator.resume_run(run_id, resume, background=False)
+                _, resumed = await svc.orchestrator.resume_run(run_id, resume, background=False)
+                result = cast("RunResult", resumed)
                 hops += 1
             if result.status == "input_required":
                 raise RuntimeError(
@@ -145,7 +168,7 @@ class McpManager:
                     f"run {result.status}: {result.error_code or ''} "
                     f"{result.error_message or ''}".strip()
                 )
-            return cast(str, result.result_text), result.result_json
+            return result.result_text, result.result_json
 
         return await asyncio.wait_for(_execute(), timeout=timeout_s)
 

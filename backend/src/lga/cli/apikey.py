@@ -8,7 +8,14 @@ from typing import TYPE_CHECKING, Annotated, Any
 import typer
 from rich.table import Table
 
-from lga.cli._common import build_settings, console, err_console, run_async
+from lga.cli._common import (
+    EXIT_ERROR,
+    EXIT_USAGE,
+    build_settings,
+    console,
+    err_console,
+    run_async,
+)
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncEngine
@@ -50,7 +57,7 @@ def create(
         key, info = run_async(_run())
     except ValueError as exc:
         err_console.print(f"[red]{exc}[/red]")
-        raise typer.Exit(2) from exc
+        raise typer.Exit(EXIT_USAGE) from exc
     if json_out:
         print(json.dumps({**info, "key": key}))
     else:
@@ -101,4 +108,4 @@ def revoke(key_id: Annotated[str, typer.Argument()]) -> None:
         console.print(f"[green]revoked[/green] {key_id}")
     else:
         err_console.print("[red]key not found[/red]")
-        raise typer.Exit(1)
+        raise typer.Exit(EXIT_ERROR)

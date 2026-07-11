@@ -187,6 +187,13 @@ const ALL_FAMILIES: PortFamily[] = [
   "ANY",
 ];
 
+/** §11.4 [MUST]: screen-readable port label — `"output message, type lga:Message"`.
+ * Applied as aria-label on every canvas handle. */
+export function portAriaLabel(name: string, port: PortSpec, side: "in" | "out"): string {
+  const list = port.is_list ? " list" : "";
+  return `${side === "in" ? "input" : "output"} ${name}, type ${port.schema_ref}${list}`;
+}
+
 /** Human-readable "connects to …" line for port tooltips. */
 export function compatSummary(port: PortSpec, side: "in" | "out"): string {
   if (port.family === "ROUTE") {

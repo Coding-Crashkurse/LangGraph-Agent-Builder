@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
 from lga.api.deps import Services, StudioAuth
+from lga.sdk.dynamic import ComponentInitError, invoke_field_change
 
 router = APIRouter(prefix="/components", tags=["components"], dependencies=[StudioAuth])
 
@@ -31,21 +32,16 @@ async def list_components(svc: Services, request: Request, response: Response) -
 async def component_config_change(
     component_id: str, body: ConfigChangeBody, svc: Services
 ) -> dict[str, Any]:
+    """HTTP mapping only — the dispatch itself lives in ``lga.sdk.dynamic``."""
     cls = svc.registry.get(component_id)
     if cls is None:
         raise HTTPException(404, f"unknown component {component_id!r}")
-    import asyncio
-
-    instance = cls()
     try:
-        config = await asyncio.wait_for(
-            asyncio.to_thread(instance.on_field_change, body.config, body.changed_field, body.value)
-            if not asyncio.iscoroutinefunction(instance.on_field_change)
-            else instance.on_field_change(body.config, body.changed_field, body.value),
-            timeout=10.0,
-        )
+        config = await invoke_field_change(cls, body.changed_field, body.value, body.config)
     except TimeoutError as exc:
         raise HTTPException(504, "on_field_change timed out (10s)") from exc
+    except ComponentInitError as exc:
+        raise HTTPException(422, str(exc)) from exc
     descriptor = cls.descriptor(config)
     return {
         "config": config,

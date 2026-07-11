@@ -8,7 +8,9 @@ connections at boot for deploy parity.
 
 from __future__ import annotations
 
+import asyncio
 import builtins
+import json
 from typing import Any, cast
 
 from sqlalchemy import CursorResult, delete, select
@@ -17,7 +19,14 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from lga.db.models import VectorStoreConnectionRow
 from lga.services.secrets import SecretsService
 from lga.services.settings import Settings
-from lga.vectorstores import BACKEND_EXTRAS, VectorStoreProvider, build_provider
+from lga.vectorstores import (
+    BACKEND_EXTRAS,
+    CollectionInfo,
+    CollectionMissing,
+    DimensionMismatch,
+    VectorStoreProvider,
+    build_provider,
+)
 
 
 class VectorStoreService:
@@ -30,6 +39,11 @@ class VectorStoreService:
         self._settings = settings
         self._sessions = sessions
         self._secrets = secrets
+        # providers are cached per connection name and rebuilt only when the
+        # resolved config changes (or the connection is upserted/deleted) —
+        # backends keep a live client/pool, so one instance per connection
+        self._providers: dict[str, tuple[str, VectorStoreProvider]] = {}
+        self._providers_lock = asyncio.Lock()
 
     # ------------------------------------------------------------------ crud
     async def list(self) -> list[dict[str, Any]]:
@@ -68,6 +82,7 @@ class VectorStoreService:
             row.managed = managed
             await session.commit()
             await session.refresh(row)
+        await self._invalidate(name)
         return self._info(row)
 
     async def delete(self, name: str) -> bool:
@@ -76,16 +91,74 @@ class VectorStoreService:
                 delete(VectorStoreConnectionRow).where(VectorStoreConnectionRow.name == name)
             )
             await session.commit()
-            return bool(cast("CursorResult[Any]", result).rowcount)
+        await self._invalidate(name)
+        return bool(cast("CursorResult[Any]", result).rowcount)
 
     # ------------------------------------------------------------------ providers
     async def provider(self, name: str) -> VectorStoreProvider:
-        """Build a live provider for a named connection, resolving ``$secret``."""
+        """Live provider for a named connection, resolving ``$secret`` refs.
+
+        Cached per connection so backends reuse their client/pool instead of
+        reconnecting per call; a changed config (connection CRUD or rotated
+        secret) closes the old provider and builds a fresh one.
+        """
         row = await self._row(name)
         if row is None:
             raise KeyError(name)
         params = await self._resolve_params(dict(row.config or {}))
-        return build_provider(row.backend, name, params, home=self._settings.home)
+        fingerprint = f"{row.backend}:{json.dumps(params, sort_keys=True, default=str)}"
+        async with self._providers_lock:
+            cached = self._providers.get(name)
+            if cached is not None and cached[0] == fingerprint:
+                return cached[1]
+            if cached is not None:
+                await self._aclose_provider(cached[1])
+            provider = build_provider(row.backend, name, params, home=self._settings.home)
+            self._providers[name] = (fingerprint, provider)
+            return provider
+
+    async def _invalidate(self, name: str) -> None:
+        async with self._providers_lock:
+            cached = self._providers.pop(name, None)
+        if cached is not None:
+            await self._aclose_provider(cached[1])
+
+    @staticmethod
+    async def _aclose_provider(provider: VectorStoreProvider) -> None:
+        # aclose is deliberately not part of the SPEC §8b.1 protocol — built-in
+        # providers have it, custom backends may not
+        closer = getattr(provider, "aclose", None)
+        if closer is not None:
+            try:
+                await closer()
+            except Exception:  # pragma: no cover - best-effort teardown
+                pass
+
+    async def aclose(self) -> None:
+        """Close every cached provider (app shutdown / test teardown)."""
+        async with self._providers_lock:
+            cached, self._providers = list(self._providers.values()), {}
+        for _, provider in cached:
+            await self._aclose_provider(provider)
+
+    async def check_collection(
+        self, name: str, collection: str, dim: int | None = None
+    ) -> CollectionInfo:
+        """Deep-validate support (SPEC §8b.4): E902/E903/E904 fodder.
+
+        Raises ``VectorStoreError`` (→ E902) when the backend is unreachable,
+        :class:`CollectionMissing` (→ E903) when the collection is absent, and
+        :class:`DimensionMismatch` (→ E904) when ``dim`` is given and disagrees
+        with the collection. Backends that cannot report a dim (0) are skipped
+        rather than failed.
+        """
+        provider = await self.provider(name)
+        for info in await provider.list_collections():
+            if info.name == collection:
+                if dim is not None and info.dim and info.dim != dim:
+                    raise DimensionMismatch(provider.backend, info.dim, dim)
+                return info
+        raise CollectionMissing(provider.backend, collection)
 
     async def _resolve_params(self, params: dict[str, Any]) -> dict[str, Any]:
         variables, secrets = await self._secrets.snapshot()

@@ -39,9 +39,12 @@ class ApiKeyService:
             await session.refresh(row)
         return key, self._info(row)
 
-    async def list(self) -> list[dict[str, Any]]:
+    async def list(self, limit: int | None = None, offset: int = 0) -> list[dict[str, Any]]:
+        stmt = select(ApiKeyRow).order_by(ApiKeyRow.created_at.desc()).offset(offset)
+        if limit is not None:
+            stmt = stmt.limit(limit)
         async with self._sessions() as session:
-            rows = (await session.execute(select(ApiKeyRow))).scalars().all()
+            rows = (await session.execute(stmt)).scalars().all()
         return [self._info(r) for r in rows]
 
     async def revoke(self, key_id: str) -> bool:

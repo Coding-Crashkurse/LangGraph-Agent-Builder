@@ -33,15 +33,20 @@ def _handle(value: Any) -> VectorStoreHandle:
     return VectorStoreHandle(connection="local")
 
 
-async def _provider(handle: VectorStoreHandle, settings: Any) -> VectorStoreProvider:
-    """Resolve a live provider for a connection — via services when the server
-    is up, else a direct ``local`` provider (headless / ``--local`` runs)."""
+def _services() -> Any:
+    """Best-effort service locator: the running server's services, else None."""
     try:
         from lga.services.locator import get_services
 
-        svc = get_services()
+        return get_services()
     except Exception:
-        svc = None
+        return None
+
+
+async def _provider(handle: VectorStoreHandle, settings: Any) -> VectorStoreProvider:
+    """Resolve a live provider for a connection — via services when the server
+    is up, else a direct ``local`` provider (headless / ``--local`` runs)."""
+    svc = _services()
     if svc is not None and getattr(svc, "vectorstores", None) is not None:
         return cast("VectorStoreProvider", await svc.vectorstores.provider(handle.connection))
     from lga.services.settings import get_settings
@@ -55,6 +60,46 @@ def _embeddings(value: Any) -> LangchainEmbeddings:
     from lga.components.llm._models import resolve_embeddings
 
     return resolve_embeddings(value or {"provider": "fake"})
+
+
+def _embedding_dim(ctx: BuildContext) -> int | None:
+    """Embedding dimension when statically determinable (deep validate, §8b.4).
+
+    The Embedding port carries serializable provider config; a ``dim`` key
+    (fake/test providers, explicit overrides) is authoritative. Wired real
+    providers resolve at runtime only — return None and skip the E904 check
+    rather than guess.
+    """
+    cfg = ctx.get_field("embedding")
+    if cfg is None:
+        binding = ctx.input_bindings.get("embedding")
+        if binding is not None and binding.channel is None:
+            cfg = binding.constant
+    if isinstance(cfg, dict) and cfg.get("dim") is not None:
+        try:
+            return int(cfg["dim"])
+        except (TypeError, ValueError):
+            return None
+    return None
+
+
+def _embedding_config(ctx: BuildContext, state: dict[str, Any], rc: Any) -> Any:
+    """Embedding port value; an unwired port falls back to fake embeddings LOUDLY.
+
+    Fake vectors queried against a collection built with real embeddings return
+    plausible-looking but meaningless hits — never default silently. The
+    testing.fake_embeddings component wires ``{"provider": "fake"}`` explicitly
+    and therefore stays warning-free.
+    """
+    cfg = ctx.get_input(state, "embedding")
+    if cfg is None:
+        rc.emit_log(
+            "warning",
+            "Embedding port not wired — using deterministic fake embeddings; "
+            "wire an Embeddings node for real retrieval",
+        )
+        return {"provider": "fake"}
+    return cfg
 
 
 def _as_document(d: Any) -> Document:
@@ -116,11 +161,14 @@ class VectorRetriever(Component):
                 or last_message_text(state, human_only=True)
                 or last_message_text(state)
             )
-            embedding_cfg = ctx.get_input(state, "embedding") or {"provider": "fake"}
+            embedding_cfg = _embedding_config(ctx, state, rc)
             emb = _embeddings(embedding_cfg)
             vector = list(await emb.aembed_query(query))
             provider = await _provider(handle, settings)
-            flt = ctx.get_field("filter") or ctx.get_field("raw_filter") or None
+            # portable filter and backend-specific raw_filter stay separate
+            # (SPEC §8b.1) — providers enforce their mutual exclusivity
+            flt = ctx.get_field("filter") or None
+            raw_filter = ctx.get_field("raw_filter") or None
             threshold = ctx.get_field("score_threshold")
             try:
                 docs = await provider.query(
@@ -129,6 +177,7 @@ class VectorRetriever(Component):
                     k=int(ctx.get_field("k") or 4),
                     filter=flt,
                     score_threshold=float(threshold) if threshold is not None else None,
+                    raw_filter=raw_filter,
                 )
             except Exception as exc:
                 from lga.schema.diagnostics import RuntimeError_, RuntimeErrorCode
@@ -143,9 +192,33 @@ class VectorRetriever(Component):
         return node
 
     async def health_check(self, ctx: BuildContext) -> None:
+        """Deep validate (SPEC §8b.4): reachability (E902), collection
+        existence (E903), embedding-dimension match (E904).
+
+        Raises :class:`~lga.vectorstores.base.CollectionMissing` /
+        :class:`~lga.vectorstores.base.DimensionMismatch` /
+        ``VectorStoreError`` — mapped to E903/E904/E902 by
+        ``services/orchestrator.py``. The dim check is skipped when the
+        embedding dimension is not statically determinable or the backend
+        cannot report one.
+        """
         handle = _handle(ctx.get_field("vector_store"))
+        collection = handle.collection or "default"
+        dim = _embedding_dim(ctx)
+        svc = _services()
+        if svc is not None and getattr(svc, "vectorstores", None) is not None:
+            await svc.vectorstores.check_collection(handle.connection, collection, dim)
+            return
+        from lga.vectorstores.base import CollectionMissing, DimensionMismatch
+
         provider = await _provider(handle, ctx.settings)
         await provider.health()
+        for info in await provider.list_collections():
+            if info.name == collection:
+                if dim is not None and info.dim and info.dim != dim:
+                    raise DimensionMismatch(provider.backend, info.dim, dim)
+                return
+        raise CollectionMissing(provider.backend, collection)
 
 
 # --------------------------------------------------------------------------- writer
@@ -174,10 +247,11 @@ class VectorWriter(Component):
         settings = ctx.settings
 
         async def node(state: dict[str, Any], config: Any) -> dict[str, Any]:
+            rc = get_run_context(config)
             handle = _handle(ctx.get_field("vector_store"))
             collection = handle.collection or "default"
             docs = [_as_document(d) for d in (ctx.get_input(state, "documents") or [])]
-            embedding_cfg = ctx.get_input(state, "embedding") or {"provider": "fake"}
+            embedding_cfg = _embedding_config(ctx, state, rc)
             emb = _embeddings(embedding_cfg)
             vectors = [list(v) for v in await emb.aembed_documents([d.page_content for d in docs])]
             dim = len(vectors[0]) if vectors else int((embedding_cfg or {}).get("dim") or 32)

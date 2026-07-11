@@ -191,6 +191,57 @@ async def test_mcp_tool_input_schema_from_start(server: str) -> None:
             assert "ticket_id" in data_schema.get("properties", {})
 
 
+def test_tool_registry_canary_pins_fastmcp_privates() -> None:
+    """_ToolRegistry is the ONE seam on FastMCP's private tool manager; pin the
+    attributes it depends on so an `mcp` upgrade fails HERE, not silently in
+    rebuild()."""
+    from mcp.server.fastmcp import FastMCP
+
+    from lga.mcp.server import _ToolRegistry
+
+    mcp = FastMCP("canary")
+
+    async def probe(input_text: str, data: dict[str, Any] | None = None) -> str:
+        return input_text
+
+    mcp.add_tool(probe, name="t1", description="canary tool")
+    # the private surface _ToolRegistry reaches into
+    manager = mcp._tool_manager
+    assert isinstance(manager._tools, dict)
+    assert "t1" in manager._tools
+    assert isinstance(manager._tools["t1"].parameters, dict)
+
+    registry = _ToolRegistry(mcp)
+    schema = {"type": "object", "properties": {"x": {"type": "string"}}}
+    registry.patch_data_schema("t1", schema)
+    patched = manager._tools["t1"].parameters["properties"]["data"]
+    assert patched["properties"] == {"x": {"type": "string"}}
+    assert patched["description"] == "Structured flow input."
+    registry.remove("t1")
+    assert "t1" not in manager._tools
+    registry.remove("t1")  # idempotent
+
+
+async def test_mcp_runs_labeled_mode_mcp(server: str) -> None:
+    """MCP invocations are first-class runs: run rows carry mode='mcp', so the
+    Runs UI can distinguish them from REST runs."""
+    spec = hello_spec("mcp-mode")
+    spec["flow"]["a2a"] = {"enabled": False}  # MCP mode: serving is exclusive (A2A off)
+    spec["flow"]["mcp"] = {"enabled": True, "tool_name": "mode_probe", "description": "probe"}
+    await _publish(server, spec)
+    from mcp import ClientSession
+    from mcp.client.streamable_http import streamablehttp_client
+
+    async with streamablehttp_client(f"{server}/mcp") as (read, write, _):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+            await session.call_tool("mode_probe", {"input_text": "hi"})
+    async with httpx.AsyncClient(base_url=server, timeout=30) as client:
+        runs = (await client.get("/api/v1/runs")).json()
+    modes = {r["mode"] for r in runs if r["flow_slug"] == "mcp-mode"}
+    assert modes == {"mcp"}
+
+
 async def test_e063_interrupt_flow_rejected_without_policy(client: httpx.AsyncClient) -> None:
     spec = approval_spec("mcp-hitl")
     spec["flow"]["a2a"] = {"enabled": False}  # MCP mode: serving is exclusive (A2A off)

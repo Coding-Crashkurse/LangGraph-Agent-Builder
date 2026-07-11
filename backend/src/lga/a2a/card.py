@@ -70,4 +70,7 @@ def build_card(spec: FlowSpec, semver: str, settings: Settings) -> AgentCard:
         skills=[skill],
         security_schemes=security_schemes,
         security=security,
+        # §7.5: wire agent/getAuthenticatedExtendedCard now; v1 serves the same
+        # card (no extended fields yet), so the flag can be flipped later
+        supports_authenticated_extended_card=True,
     )

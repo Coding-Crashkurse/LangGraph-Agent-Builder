@@ -6,7 +6,7 @@ from __future__ import annotations
 from typing import Any
 
 from lga.compiler import parse as parse_pass
-from lga.compiler.resolve import EnvVariablesProvider, resolve
+from lga.compiler.resolve import EnvVariablesProvider, resolve, snapshot_digest
 from lga.schema.diagnostics import Diagnostic, DiagnosticCode
 from lga.schema.flowspec import FlowSpec
 from lga.sdk import BuildContext, Component, fields
@@ -71,7 +71,10 @@ def _codes(diags: list[Diagnostic]) -> list[DiagnosticCode]:
 def test_var_resolves_and_unknown_key_tolerated() -> None:
     spec = _spec("lga.testing.fake_llm", {"replies": ["ok"], "greeting": {"$var": "g"}})
     ir, diags = resolve(spec, get_registry(), _Vars(variables={"g": "hello"}))
-    assert _codes(diags) == []
+    # unknown key still resolves & compiles, but is flagged (W303, warning only)
+    assert _codes(diags) == [DiagnosticCode.W303]
+    assert diags[0].field == "greeting"
+    assert diags[0].severity == "warning"
     assert ir.nodes["n"].config["greeting"] == "hello"  # $var replaced
     assert ir.nodes["n"].config["replies"] == ["ok"]
 
@@ -222,6 +225,25 @@ def test_secret_in_non_secret_field_is_e014() -> None:
     assert diag.field == "replies"
 
 
+def test_nested_secret_in_non_secret_field_is_e014_and_unresolved() -> None:
+    """The credential-leak guard recurses into containers — nesting the ref
+    must not bypass E014, and the plaintext must never be resolved (§10.5)."""
+    spec = _spec("lga.testing.fake_llm", {"replies": [{"auth": {"$secret": "K"}}]})
+    ir, diags = resolve(spec, get_registry(), _Vars(secrets={"K": "sk-leak"}))
+    diag = next(d for d in diags if d.code == DiagnosticCode.E014)
+    assert diag.field == "replies"
+    assert ir.nodes["n"].config["replies"] == [{"auth": None}]  # ref NOT resolved
+
+
+def test_nested_secret_in_secret_field_is_allowed() -> None:
+    spec = _spec(
+        "lga.llm.language_model",
+        {"model": {"provider": "fake", "model": "x"}, "api_key": {"$secret": "K"}},
+    )
+    _ir, diags = resolve(spec, get_registry(), _Vars(secrets={"K": "sk"}))
+    assert DiagnosticCode.E014 not in _codes(diags)
+
+
 def test_field_schema_violation_is_e011() -> None:
     spec = _spec("lga.testing.fake_llm", {"replies": "not-a-list"})
     _ir, diags = resolve(spec, get_registry(), _Vars())
@@ -232,6 +254,32 @@ def test_fallback_returning_none_still_reports_e012() -> None:
     spec = _spec("lga.testing.fake_llm", {"replies": ["ok"], "greeting": {"$var": "other"}})
     _ir, diags = resolve(spec, get_registry(), _FallbackVars())
     assert DiagnosticCode.E012 in _codes(diags)  # fallback returned None
+
+
+# --------------------------------------------------------------- snapshot digest
+
+
+def test_snapshot_digest_tracks_referenced_values() -> None:
+    spec = _spec("lga.testing.fake_llm", {"replies": ["ok"], "greeting": {"$var": "g"}})
+    one_a = snapshot_digest(spec, _Vars(variables={"g": "one"}))
+    one_b = snapshot_digest(spec, _Vars(variables={"g": "one"}))
+    two = snapshot_digest(spec, _Vars(variables={"g": "two"}))
+    assert one_a == one_b
+    assert one_a != two  # edited variable → different compile-cache key
+
+
+def test_snapshot_digest_tracks_tweaks_and_vectorstores() -> None:
+    spec = _spec("lga.testing.fake_llm", {"replies": ["ok"], "vs": {"$vectorstore": "conn"}})
+    base = snapshot_digest(spec, _Vars(), vectorstore_names={"conn"})
+    assert snapshot_digest(spec, _Vars(), vectorstore_names=set()) != base  # store deleted
+    assert snapshot_digest(spec, _Vars(), tweaks={"n": {"replies": ["t"]}}) != snapshot_digest(
+        spec, _Vars()
+    )
+
+
+def test_snapshot_digest_uses_env_fallback() -> None:
+    spec = _spec("lga.testing.fake_llm", {"greeting": {"$var": "needs_fallback"}})
+    assert snapshot_digest(spec, _FallbackVars()) != snapshot_digest(spec, _Vars())
 
 
 def test_edges_receive_resolved_ports() -> None:

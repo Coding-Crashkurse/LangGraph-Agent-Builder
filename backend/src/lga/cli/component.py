@@ -15,10 +15,13 @@ name = "{pkg}"
 version = "0.1.0"
 description = "Custom lga component: {display}"
 requires-python = ">=3.12"
-dependencies = ["lga"]
+dependencies = ["langgraph-agent-builder"]
 
 [project.entry-points."lga.components"]
 {name} = "{pkg}"
+
+[dependency-groups]
+dev = ["pytest>=8", "pytest-asyncio>=0.24"]
 
 [build-system]
 requires = ["hatchling"]
@@ -26,6 +29,9 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/{pkg}"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
 """
 
 COMPONENT_TPL = '''\
@@ -58,8 +64,6 @@ class {cls}(Component):
 '''
 
 TEST_TPL = """\
-import pytest
-
 from lga.sdk.testing import ComponentTestHarness
 
 from {pkg} import {cls}
@@ -71,8 +75,7 @@ def test_descriptor_snapshot():
     assert descriptor["outputs"]
 
 
-@pytest.mark.asyncio
-async def test_build_and_run():
+async def test_build_and_run():  # async works out of the box (asyncio_mode = "auto")
     node = ComponentTestHarness().build({cls}, config={{}}, ports={{"input": "hi"}})
     result = await node()
     assert result["text"] == "hi"

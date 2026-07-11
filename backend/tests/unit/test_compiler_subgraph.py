@@ -7,6 +7,7 @@ import pytest
 from lga.compiler import compile_flow
 from lga.compiler.subgraph import ancestors_of, induce_subgraph
 from lga.runtime.executor import run_compiled_once
+from lga.schema.diagnostics import DiagnosticCode
 from tests.conftest import approval_spec, hello_spec
 
 
@@ -55,3 +56,34 @@ async def test_induced_subgraph_executes_to_terminal_node() -> None:
     pruned = induce_subgraph(compiled, "fake")
     out = await run_compiled_once(pruned, input_text="hello")
     assert out["status"] == "completed"
+
+
+def test_induced_subgraph_report_describes_pruned_graph() -> None:
+    """Debug mode renders the report (§5.3) — it must match the induced graph,
+    not the full parent topology."""
+    compiled = compile_flow(hello_spec(), use_cache=False)
+    pruned = induce_subgraph(compiled, "fake")
+    assert {n["id"] for n in pruned.report.nodes} == {"start", "fake"}
+    assert list(pruned.report.channels) == ["e1"]  # e2 (fake→end) pruned
+    assert pruned.report.fingerprint == pruned.fingerprint
+    # parent report untouched
+    assert {n["id"] for n in compiled.report.nodes} == {"start", "fake", "end"}
+
+
+def test_induced_subgraph_diagnostics_scoped_to_kept_nodes() -> None:
+    spec = hello_spec()
+    spec["nodes"].append(
+        {
+            "id": "island",
+            "component_id": "lga.io.text_output",
+            "component_version": "1.0.0",
+            "config": {},
+            "position": {"x": 0, "y": 0},
+        }
+    )
+    compiled = compile_flow(spec, use_cache=False)
+    assert any(
+        d.code == DiagnosticCode.W401 and d.node_id == "island" for d in compiled.diagnostics
+    )
+    pruned = induce_subgraph(compiled, "fake")
+    assert all(d.node_id != "island" for d in pruned.diagnostics)  # pruned node's diag dropped

@@ -1,4 +1,4 @@
-"""LLM Agent â€” explicit tool-calling loop (SPEC Â§12.2).
+"""LLM Agent — explicit tool-calling loop (SPEC §12.2).
 
 Deliberately not `create_react_agent`: we control tool-call event emission and
 stay robust against prebuilt API drift.

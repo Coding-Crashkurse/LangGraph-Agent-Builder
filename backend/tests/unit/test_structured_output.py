@@ -75,3 +75,55 @@ async def test_missing_input_uses_empty_text_and_default_schema() -> None:
     result = await built()
     assert result["json"] == {"ok": True}
     assert result["table"] == [{"ok": True}]
+
+
+# --------------------------------------------------------------- TableInput schema editor
+async def test_row_based_schema_editor_runs() -> None:
+    result = await _run(
+        '{"name": "ada", "age": 36}',
+        config={
+            "output_schema": [
+                {"name": "name", "description": "person name", "type": "str"},
+                {"name": "age", "type": "int"},
+            ]
+        },
+        input_value=Message(role="user", content="Ada, 36"),
+    )
+    assert result["json"] == {"name": "ada", "age": 36}
+
+
+def test_rows_to_schema_shapes_json_schema() -> None:
+    from lga.components.llm.structured_output import _rows_to_schema
+
+    schema = _rows_to_schema(
+        [
+            {"name": "name", "description": "d", "type": "str"},
+            {"name": "n", "type": "int"},
+            {"name": "", "type": "bool"},  # nameless rows are skipped
+        ]
+    )
+    assert schema == {
+        "type": "object",
+        "properties": {"name": {"type": "string", "description": "d"}, "n": {"type": "integer"}},
+        "required": ["name", "n"],
+    }
+    assert _rows_to_schema([]) == {"type": "object"}
+
+
+def test_migrate_config_converts_legacy_json_schema_to_rows() -> None:
+    migrated = StructuredOutput.migrate_config(
+        "1.0.0",
+        {
+            "output_schema": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "person name"},
+                    "age": {"type": "integer"},
+                },
+            }
+        },
+    )
+    assert migrated["output_schema"] == [
+        {"name": "name", "description": "person name", "type": "str"},
+        {"name": "age", "description": "", "type": "int"},
+    ]

@@ -74,8 +74,37 @@ async def test_update_status_failed_records_error(runs: RunService) -> None:
     assert len(row.error_message or "") == 2000  # truncated
 
 
+async def test_update_status_failed_persists_node_id(runs: RunService) -> None:
+    # SPEC §5.6: every RT error carries node_id and is stored on the run
+    await runs.create("r1", thread_id="t1", mode="api")
+    await runs.update_status(
+        "r1", "failed", error_code="RT103", error_message="boom", node_id="fake"
+    )
+    row = await runs.get("r1")
+    assert row is not None
+    assert row.status == "failed"
+    assert row.node_id == "fake"
+
+
+async def test_update_status_without_node_id_leaves_it_null(runs: RunService) -> None:
+    await runs.create("r1", thread_id="t1", mode="api")
+    await runs.update_status("r1", "completed", result_preview="ok")
+    row = await runs.get("r1")
+    assert row is not None
+    assert row.node_id is None
+
+
 async def test_update_status_missing_run_is_noop(runs: RunService) -> None:
     await runs.update_status("ghost", "completed")  # must not raise
+
+
+async def test_session_opens_working_session_on_shared_db(runs: RunService) -> None:
+    # public seam used by the orchestrator instead of touching runs._sessions
+    await runs.create("r1", thread_id="t1", mode="api")
+    async with runs.session() as session:
+        row = await session.get(RunRow, "r1")
+    assert row is not None
+    assert row.id == "r1"
 
 
 async def test_list_orders_and_filters(runs: RunService) -> None:

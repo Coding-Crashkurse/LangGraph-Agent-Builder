@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
@@ -22,7 +22,7 @@ class ConnectionBody(BaseModel):
 class CollectionBody(BaseModel):
     name: str
     dim: int = 32
-    metric: str = "cosine"
+    metric: Literal["cosine", "l2", "ip"] = "cosine"  # typo → 422, not a backend error
 
 
 @router.get("/backends")

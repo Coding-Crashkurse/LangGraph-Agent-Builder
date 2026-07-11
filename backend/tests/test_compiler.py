@@ -5,13 +5,49 @@ from __future__ import annotations
 import copy
 from typing import Any
 
-from lga.compiler import CompiledFlow, compile_flow
+from lga.compiler import CompiledFlow, compile_flow, validate_flow
 from lga.schema.diagnostics import DiagnosticCode
+from lga.schema.state import FlowState
+from lga.sdk import BuildContext, Component, Output, fields
+from lga.sdk.component import NodeFn
+from lga.sdk.ports import TEXT
+from lga.sdk.registry import ComponentRegistry, get_registry
 from tests.conftest import approval_spec, hello_spec
 
 
 def codes(compiled: CompiledFlow) -> list[str]:
     return sorted(d.code.value for d in compiled.diagnostics)
+
+
+class _Vars:
+    """Minimal VariablesProvider for cache-key tests."""
+
+    def __init__(
+        self, variables: dict[str, str] | None = None, secrets: dict[str, str] | None = None
+    ) -> None:
+        self._vars = variables or {}
+        self._secrets = secrets or {}
+
+    def get_var(self, name: str) -> str | None:
+        return self._vars.get(name)
+
+    def get_secret(self, name: str) -> str | None:
+        return self._secrets.get(name)
+
+    def has_var(self, name: str) -> bool:
+        return name in self._vars
+
+    def has_secret(self, name: str) -> bool:
+        return name in self._secrets
+
+
+def _registry_with(*extra: type[Component]) -> ComponentRegistry:
+    registry = ComponentRegistry()
+    for cls in get_registry().components.values():
+        registry.register(cls, "test")
+    for cls in extra:
+        registry.register(cls, "test")
+    return registry
 
 
 def test_hello_compiles_clean() -> None:
@@ -386,6 +422,179 @@ def test_migration_w302() -> None:
     spec["nodes"][1]["component_version"] = "0.9.0"
     compiled = compile_flow(spec, use_cache=False)
     assert DiagnosticCode.W302 in [d.code for d in compiled.diagnostics]
+
+
+# ------------------------------------------------------------------ cache soundness
+def test_compile_cache_missed_when_variable_changes() -> None:
+    """Editing a global variable must never serve a stale cached compile."""
+    spec = hello_spec("cache-vars")
+    spec["nodes"][1]["config"]["greeting"] = {"$var": "g"}
+    a = compile_flow(spec, variables=_Vars(variables={"g": "one"}))
+    b = compile_flow(spec, variables=_Vars(variables={"g": "one"}))
+    c = compile_flow(spec, variables=_Vars(variables={"g": "two"}))
+    assert a is b  # identical snapshot → cache hit
+    assert c is not a
+    assert c.ir is not None
+    assert c.ir.nodes["fake"].config["greeting"] == "two"
+
+
+def test_compile_cache_missed_when_secret_rotates() -> None:
+    spec = hello_spec("cache-secrets")
+    spec["nodes"].append(
+        {
+            "id": "ws",
+            "component_id": "lga.tools.web_search",
+            "component_version": "1.0.0",
+            "config": {"query": "x", "api_key": {"$secret": "K"}},
+            "position": {"x": 0, "y": 0},
+        }
+    )
+    a = compile_flow(spec, variables=_Vars(secrets={"K": "sk-old"}))
+    b = compile_flow(spec, variables=_Vars(secrets={"K": "sk-new"}))
+    assert b is not a  # rotated secret → recompile, old plaintext gone
+    assert b.ir is not None
+    assert str(b.ir.nodes["ws"].config["api_key"]) == "sk-new"
+
+
+def test_compile_cache_includes_tweaks() -> None:
+    spec = hello_spec("cache-tweaks")
+    a = compile_flow(spec, tweaks={"fake": {"replies": ["one"]}})
+    b = compile_flow(spec, tweaks={"fake": {"replies": ["one"]}})
+    c = compile_flow(spec, tweaks={"fake": {"replies": ["two"]}})
+    assert a is b
+    assert c is not a
+    assert c.ir is not None
+    assert c.ir.nodes["fake"].config["replies"] == ["two"]
+
+
+# ------------------------------------------------------------------ E015 / validate-only
+class _BuildBoom(Component):
+    component_id = "test.compiler.build_boom"
+    display_name = "Build Boom"
+    category = "testing"
+    inputs = [fields.StrInput(name="input", as_port=TEXT)]
+    outputs = [Output(name="message", port=TEXT)]
+    built = 0
+
+    def build(self, ctx: BuildContext) -> NodeFn:
+        type(self).built += 1
+        raise ValueError("boom: invalid config combination")
+
+
+def _boom_spec(slug: str) -> dict[str, Any]:
+    spec = hello_spec(slug)
+    spec["nodes"][1]["component_id"] = _BuildBoom.component_id
+    spec["nodes"][1]["config"] = {}
+    return spec
+
+
+def test_e015_build_failure_becomes_diagnostic() -> None:
+    """A raising build() is an ERROR diagnostic, not an escaping exception (§5.4)."""
+    registry = _registry_with(_BuildBoom)
+    compiled = compile_flow(_boom_spec("boom-e015"), registry=registry, use_cache=False)
+    assert not compiled.ok
+    diag = next(d for d in compiled.diagnostics if d.code == DiagnosticCode.E015)
+    assert diag.node_id == "fake"
+    assert "boom" in diag.message
+
+
+def test_validate_only_never_executes_build() -> None:
+    """validate_flow stops after P3 — component code must not run (§5.3)."""
+    registry = _registry_with(_BuildBoom)
+    _BuildBoom.built = 0
+    diags = validate_flow(_boom_spec("boom-validate"), registry=registry)
+    assert _BuildBoom.built == 0
+    assert not [d for d in diags if d.severity == "error"]
+
+
+# ------------------------------------------------------------------ Output.method (§4.5)
+class _MultiOut(Component):
+    component_id = "test.compiler.multi_out"
+    display_name = "Multi Out"
+    category = "testing"
+    inputs = [fields.StrInput(name="input", as_port=TEXT)]
+    outputs = [
+        Output(name="message", port=TEXT),
+        Output(name="upper", port=TEXT, method="compute_upper"),
+        Output(name="length", port=TEXT, method="compute_length"),
+    ]
+
+    def build(self, ctx: BuildContext) -> NodeFn:
+        async def node(state: dict[str, Any], config: Any) -> dict[str, Any]:
+            return {"message": "from-nodefn"}
+
+        return node
+
+    def compute_upper(self, state: dict[str, Any], config: Any) -> str:
+        return str(state.get("run_meta", {}).get("input_text", "")).upper()
+
+    async def compute_length(self, state: dict[str, Any], config: Any) -> str:
+        return str(len(str(state.get("run_meta", {}).get("input_text", ""))))
+
+
+async def test_output_method_dispatch() -> None:
+    """Outputs naming a method are computed by it — sync or async (§4.5 MUST)."""
+    from langchain_core.messages import HumanMessage
+
+    registry = _registry_with(_MultiOut)
+    spec = hello_spec("method-dispatch")
+    spec["nodes"][1]["component_id"] = _MultiOut.component_id
+    spec["nodes"][1]["config"] = {}
+    compiled = compile_flow(spec, registry=registry, use_cache=False)
+    assert compiled.ok, codes(compiled)
+    state: FlowState = {
+        "messages": [HumanMessage("hi")],
+        "ports": {},
+        "route": {},
+        "run_meta": {"input_text": "hi", "run_id": "t", "thread_id": "t"},
+    }
+    result = await compiled.graph.ainvoke(state)
+    assert result["ports"]["fake.message"] == "from-nodefn"  # returned-dict path intact
+    assert result["ports"]["fake.upper"] == "HI"  # sync method
+    assert result["ports"]["fake.length"] == "2"  # async method
+
+
+class _BadMethod(Component):
+    component_id = "test.compiler.bad_method"
+    display_name = "Bad Method"
+    category = "testing"
+    inputs = [fields.StrInput(name="input", as_port=TEXT)]
+    outputs = [Output(name="message", port=TEXT, method="does_not_exist")]
+
+    def build(self, ctx: BuildContext) -> NodeFn:
+        async def node(state: dict[str, Any], config: Any) -> dict[str, Any]:
+            return {}
+
+        return node
+
+
+def test_output_method_missing_is_e015() -> None:
+    registry = _registry_with(_BadMethod)
+    spec = hello_spec("method-missing")
+    spec["nodes"][1]["component_id"] = _BadMethod.component_id
+    spec["nodes"][1]["config"] = {}
+    compiled = compile_flow(spec, registry=registry, use_cache=False)
+    assert not compiled.ok
+    diag = next(d for d in compiled.diagnostics if d.code == DiagnosticCode.E015)
+    assert diag.node_id == "fake"
+
+
+def test_e014_nested_secret_ref_is_caught() -> None:
+    """The credential-leak guard recurses into containers (SPEC §5.4/§10.5)."""
+    spec = hello_spec()
+    spec["nodes"].append(
+        {
+            "id": "t",
+            "component_id": "lga.io.text_input",
+            "component_version": "1.0.0",
+            "config": {"value": {"headers": {"auth": {"$secret": "OPENAI_KEY"}}}},
+            "position": {"x": 0, "y": 0},
+        }
+    )
+    compiled = compile_flow(spec, use_cache=False)
+    diag = next(d for d in compiled.diagnostics if d.code == DiagnosticCode.E014)
+    assert diag.node_id == "t"
+    assert diag.field == "value"
 
 
 def _deep(obj: Any) -> Any:

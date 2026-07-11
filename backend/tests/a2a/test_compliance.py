@@ -7,6 +7,7 @@ validation and raw JSON-RPC for precise wire-level assertions.
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import uuid
 from typing import TYPE_CHECKING, Any, cast
@@ -69,6 +70,16 @@ async def test_card_served_on_both_paths_and_validates(
     response = await client.get("/a2a/card-flow/")
     assert response.status_code == 200
     assert response.json()["name"]
+
+
+async def test_authenticated_extended_card_wired(client: httpx.AsyncClient) -> None:
+    """agent/getAuthenticatedExtendedCard is a §7.5 MUST; v1 returns the same card."""
+    await create_and_publish(client, hello_spec("ext-flow"))
+    card = (await client.get("/a2a/ext-flow/.well-known/agent-card.json")).json()
+    assert card["supportsAuthenticatedExtendedCard"] is True
+    body = await send(client, "ext-flow", "agent/getAuthenticatedExtendedCard", {})
+    assert body["result"]["name"] == card["name"]
+    assert body["result"]["url"] == card["url"]
 
 
 async def test_card_version_bumps_on_republish(client: httpx.AsyncClient) -> None:
@@ -380,6 +391,39 @@ async def test_push_config_crud(client: httpx.AsyncClient) -> None:
     assert listed2["result"] == []
 
 
+async def test_push_disabled_flow_returns_32003_and_honest_card(
+    client: httpx.AsyncClient,
+) -> None:
+    """§7.9 capability honesty: pushNotifications:false ⇒ card says so and every
+    tasks/pushNotificationConfig/* method returns -32003 (§7.10)."""
+    spec = hello_spec("push-off")
+    spec["flow"]["a2a"]["push_notifications"] = False
+    await create_and_publish(client, spec)
+    card = (await client.get("/a2a/push-off/.well-known/agent-card.json")).json()
+    assert card["capabilities"]["pushNotifications"] is False
+    task = (await send(client, "push-off", "message/send", {"message": user_message("hi")}))[
+        "result"
+    ]
+    calls: list[tuple[str, dict[str, Any]]] = [
+        (
+            "tasks/pushNotificationConfig/set",
+            {
+                "taskId": task["id"],
+                "pushNotificationConfig": {"id": "c1", "url": "https://example.com/hook"},
+            },
+        ),
+        ("tasks/pushNotificationConfig/get", {"id": task["id"]}),
+        ("tasks/pushNotificationConfig/list", {"id": task["id"]}),
+        (
+            "tasks/pushNotificationConfig/delete",
+            {"id": task["id"], "pushNotificationConfigId": "c1"},
+        ),
+    ]
+    for method, params in calls:
+        body = await send(client, "push-off", method, params)
+        assert body["error"]["code"] == -32003, (method, body)
+
+
 async def test_push_config_ssrf_rejected(client: httpx.AsyncClient) -> None:
     await create_and_publish(client, hello_spec("ssrf-flow"))
     task = (await send(client, "ssrf-flow", "message/send", {"message": user_message("hi")}))[
@@ -395,6 +439,88 @@ async def test_push_config_ssrf_rejected(client: httpx.AsyncClient) -> None:
         },
     )
     assert "error" in body
+
+
+# ---------------------------------------------------------- content negotiation (§7.8/§7.10)
+async def test_accepted_output_modes_mismatch_32005(client: httpx.AsyncClient) -> None:
+    """Unsatisfiable acceptedOutputModes ⇒ -32005 ContentTypeNotSupported (§7.5)."""
+    await create_and_publish(client, hello_spec("modes-flow"))
+    body = await send(
+        client,
+        "modes-flow",
+        "message/send",
+        {
+            "message": user_message("hi"),
+            "configuration": {"acceptedOutputModes": ["image/png"]},
+        },
+    )
+    assert body["error"]["code"] == -32005
+
+
+async def test_file_part_disallowed_mime_32005(client: httpx.AsyncClient) -> None:
+    """FilePart outside LGA_A2A_ACCEPTED_MIME ⇒ -32005 (§7.8 mime allowlist)."""
+    await create_and_publish(client, hello_spec("mime-flow"))
+    message = {
+        "role": "user",
+        "messageId": str(uuid.uuid4()),
+        "parts": [
+            {
+                "kind": "file",
+                "file": {
+                    "bytes": base64.b64encode(b"MZ...").decode(),
+                    "mimeType": "application/x-msdownload",
+                    "name": "evil.bin",
+                },
+            }
+        ],
+    }
+    body = await send(client, "mime-flow", "message/send", {"message": message})
+    assert body["error"]["code"] == -32005
+
+
+async def test_file_part_allowed_mime_accepted(client: httpx.AsyncClient) -> None:
+    """A FilePart matching the allowlist runs normally (§7.8)."""
+    await create_and_publish(client, hello_spec("mime-ok-flow"))
+    message = {
+        "role": "user",
+        "messageId": str(uuid.uuid4()),
+        "parts": [
+            {"kind": "text", "text": "hi"},
+            {
+                "kind": "file",
+                "file": {
+                    "bytes": base64.b64encode(b"hello").decode(),
+                    "mimeType": "text/plain",
+                    "name": "note.txt",
+                },
+            },
+        ],
+    }
+    body = await send(client, "mime-ok-flow", "message/send", {"message": message})
+    assert body["result"]["status"]["state"] == "completed"
+
+
+async def test_unexpected_exception_sanitized(
+    client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """§7.6/§7.10: unexpected server errors reach the client as generic
+    diagnostic text — never str(exc), which routinely embeds DSNs or paths."""
+    await create_and_publish(client, hello_spec("boom-flow"))
+
+    from lga.runtime.executor import Executor
+
+    async def explode(self: Executor, *args: Any, **kwargs: Any) -> Any:
+        raise RuntimeError("postgres://user:s3cret@10.0.0.7:5432/lga")
+
+    monkeypatch.setattr(Executor, "execute", explode)
+    body = await send(client, "boom-flow", "message/send", {"message": user_message("hi")})
+    task = body["result"]
+    assert task["status"]["state"] == "failed"
+    parts = task["status"]["message"]["parts"]
+    assert parts[0]["text"] == "internal error"
+    wire = json.dumps(body)
+    assert "s3cret" not in wire
+    assert "postgres://" not in wire
 
 
 # ------------------------------------------------------------------ JSON-RPC errors

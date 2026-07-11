@@ -7,7 +7,8 @@ through the API). Env promotion: LGA_VAR_<NAME> / LGA_CRED_<NAME>.
 from __future__ import annotations
 
 import os
-from typing import Any, cast
+from collections.abc import Iterable, Iterator
+from typing import TYPE_CHECKING, Any, cast
 
 from cryptography.fernet import Fernet, InvalidToken
 from sqlalchemy import CursorResult, delete, select
@@ -16,8 +17,34 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from lga.db.models import GlobalVariableRow
 from lga.services.settings import Settings
 
+if TYPE_CHECKING:
+    from lga.db.models import FlowRow
+
 ENV_VAR_PREFIX = "LGA_VAR_"
 ENV_CRED_PREFIX = "LGA_CRED_"
+
+
+def _spec_refs(value: Any) -> Iterator[str]:
+    """Yield every `{"$var": name}` / `{"$secret": name}` reference in a spec (§10.3)."""
+    if isinstance(value, dict):
+        for key in ("$var", "$secret"):
+            ref = value.get(key)
+            if isinstance(ref, str):
+                yield ref
+        for child in value.values():
+            yield from _spec_refs(child)
+    elif isinstance(value, list):
+        for child in value:
+            yield from _spec_refs(child)
+
+
+def variable_usage(flows: Iterable[FlowRow]) -> dict[str, list[str]]:
+    """Variable name → slugs of flows referencing it — feeds `in_use_by` (§10.3)."""
+    usage: dict[str, set[str]] = {}
+    for flow in flows:
+        for name in _spec_refs(flow.spec or {}):
+            usage.setdefault(name, set()).add(flow.slug)
+    return {name: sorted(slugs) for name, slugs in usage.items()}
 
 
 class SecretsService:
@@ -54,10 +81,13 @@ class SecretsService:
             await session.commit()
             return bool(cast("CursorResult[Any]", result).rowcount)
 
-    async def list(self) -> list[dict[str, Any]]:
+    async def list(self, limit: int | None = None, offset: int = 0) -> list[dict[str, Any]]:
         """Metadata only — credential values are never returned (write-only)."""
+        stmt = select(GlobalVariableRow).order_by(GlobalVariableRow.name).offset(offset)
+        if limit is not None:
+            stmt = stmt.limit(limit)
         async with self._sessions() as session:
-            rows = (await session.execute(select(GlobalVariableRow))).scalars().all()
+            rows = (await session.execute(stmt)).scalars().all()
         return [
             {
                 "name": r.name,

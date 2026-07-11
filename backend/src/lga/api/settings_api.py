@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, UploadFile
-from fastapi.responses import Response
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from lga.api.deps import Services, StudioAuth
@@ -21,8 +22,17 @@ class VariableBody(BaseModel):
 
 
 @router.get("/variables")
-async def list_variables(svc: Services) -> list[dict[str, Any]]:
-    variables: list[dict[str, Any]] = await svc.secrets.list()
+async def list_variables(
+    svc: Services,
+    limit: int | None = Query(default=None, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+) -> list[dict[str, Any]]:
+    from lga.services.secrets import variable_usage
+
+    variables: list[dict[str, Any]] = await svc.secrets.list(limit=limit, offset=offset)
+    usage = variable_usage(await svc.flows.list())
+    for variable in variables:
+        variable["in_use_by"] = usage.get(variable["name"], [])
     return variables
 
 
@@ -45,8 +55,12 @@ class ApiKeyBody(BaseModel):
 
 
 @router.get("/apikeys")
-async def list_apikeys(svc: Services) -> list[dict[str, Any]]:
-    keys: list[dict[str, Any]] = await svc.apikeys.list()
+async def list_apikeys(
+    svc: Services,
+    limit: int | None = Query(default=None, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+) -> list[dict[str, Any]]:
+    keys: list[dict[str, Any]] = await svc.apikeys.list(limit=limit, offset=offset)
     return keys
 
 
@@ -68,12 +82,21 @@ async def revoke_apikey(key_id: str, svc: Services) -> None:
 # ---------------------------------------------------------------- files (§9.6)
 @router.post("/files", status_code=201)
 async def upload_file(file: UploadFile, svc: Services) -> dict[str, Any]:
-    from lga.services.files import FileTooLargeError
+    from lga.services.files import CHUNK_SIZE, FileTooLargeError
 
-    content = await file.read()
+    async def chunks() -> AsyncIterator[bytes]:
+        while True:
+            block = await file.read(CHUNK_SIZE)
+            if not block:
+                return
+            yield block
+
     try:
-        saved: dict[str, Any] = await svc.files.save(
-            file.filename or "upload", file.content_type or "application/octet-stream", content
+        saved: dict[str, Any] = await svc.files.save_stream(
+            file.filename or "upload",
+            file.content_type or "application/octet-stream",
+            chunks(),
+            size_hint=file.size,  # Content-Length → reject oversize before reading
         )
         return saved
     except FileTooLargeError as exc:
@@ -81,8 +104,12 @@ async def upload_file(file: UploadFile, svc: Services) -> dict[str, Any]:
 
 
 @router.get("/files")
-async def list_files(svc: Services) -> list[dict[str, Any]]:
-    files: list[dict[str, Any]] = await svc.files.list()
+async def list_files(
+    svc: Services,
+    limit: int | None = Query(default=None, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+) -> list[dict[str, Any]]:
+    files: list[dict[str, Any]] = await svc.files.list(limit=limit, offset=offset)
     return files
 
 
@@ -129,12 +156,15 @@ async def mcp_client_config(svc: Services) -> dict[str, Any]:
     }
 
 
-# ---------------------------------------------------------------- misc (§9.8)
-misc_router = APIRouter(tags=["misc"])
+# ---------------------------------------------------------------- health (§9.8)
+# own router: mounted under /api/v1 AND unprefixed for load balancers — /version
+# and /config must NOT ride along at the root
+health_router = APIRouter(tags=["misc"])
 
 
-@misc_router.get("/health")
+@health_router.get("/health")
 async def health(svc: Services) -> dict[str, Any]:
+    """db + checkpointer + vector store connections (SPEC §9.8)."""
     db_ok = True
     checkpointer_ok = True
     try:
@@ -148,16 +178,24 @@ async def health(svc: Services) -> dict[str, Any]:
         await svc.checkpointers.get()
     except Exception:
         checkpointer_ok = False
-    status = "ok" if db_ok and checkpointer_ok else "degraded"
+    vectorstores = {
+        conn["name"]: bool(conn["ok"]) for conn in await svc.vectorstores.list_with_health()
+    }
+    status = "ok" if db_ok and checkpointer_ok and all(vectorstores.values()) else "degraded"
     from lga.vectorstores import installed_backends
 
     return {
         "status": status,
         "db": db_ok,
         "checkpointer": checkpointer_ok,
+        "vectorstores": vectorstores,
         "tier": svc.settings.storage_tier,
         "vector_backends": installed_backends(),
     }
+
+
+# ---------------------------------------------------------------- misc (§9.8)
+misc_router = APIRouter(tags=["misc"])
 
 
 @misc_router.get("/version")
@@ -185,9 +223,26 @@ async def version(svc: Services) -> dict[str, Any]:
 
 @misc_router.get("/config", dependencies=[StudioAuth])
 async def config(svc: Services) -> dict[str, Any]:
-    data = svc.settings.model_dump(mode="json")
-    data["secret_key"] = "***" if svc.settings.secret_key else ""
-    return data
+    """Studio-relevant settings only — an explicit allowlist, so new sensitive
+    settings (DSNs, key material) stay private by default (SPEC §10.5)."""
+    s = svc.settings
+    return {
+        "env": s.env,
+        "host_url": s.host_url,
+        "auth_enabled": s.auth_enabled,
+        "storage_tier": s.storage_tier,
+        "auto_saving": s.auto_saving,
+        "auto_saving_interval_ms": s.auto_saving_interval_ms,
+        "max_file_size_mb": s.max_file_size_mb,
+        "max_text_length": s.max_text_length,
+        "webhook_auth": s.webhook_auth,
+        "cancel_on_disconnect": s.cancel_on_disconnect,
+        "checkpoint_ttl_days": s.checkpoint_ttl_days,
+        "recursion_limit_default": s.recursion_limit_default,
+        "create_starter_flows": s.create_starter_flows,
+        "fallback_to_env_var": s.fallback_to_env_var,
+        "secret_key": "***" if s.secret_key else "",  # masked, kept for back-compat
+    }
 
 
 # files need token-only access (A2A FileParts) — outside StudioAuth
@@ -195,13 +250,17 @@ public_files_router = APIRouter(tags=["files"])
 
 
 @public_files_router.get("/files/{file_id}")
-async def download_file(file_id: str, svc: Services, token: str = Query(default="")) -> Response:
-    found = await svc.files.get(file_id, token=token or None)
-    if found is None:
+async def download_file(
+    file_id: str, svc: Services, token: str = Query(default="")
+) -> FileResponse:
+    # the per-file token is REQUIRED here: an absent/empty token must never
+    # bypass the gate (SPEC §9.6 — presigned-ish tokened URL)
+    row = await svc.files.get_public(file_id, token)
+    if row is None:
         raise HTTPException(404, "file not found")
-    row, content = found
-    return Response(
-        content=content,
+    return FileResponse(  # streams from disk — no full read into memory
+        row.path,
         media_type=row.mime,
-        headers={"Content-Disposition": f'inline; filename="{row.name}"'},
+        filename=row.name,
+        content_disposition_type="inline",
     )

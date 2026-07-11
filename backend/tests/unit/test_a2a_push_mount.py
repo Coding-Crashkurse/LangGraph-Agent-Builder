@@ -291,6 +291,7 @@ async def test_rebuild_skips_a2a_disabled_flows(
 
     await create_and_publish(client, enabled)
     await create_and_publish(client, disabled)
+    assert svc.a2a is not None  # mounted by the app lifespan
     await svc.a2a.rebuild()
 
     assert "mounted-on" in svc.a2a.slugs

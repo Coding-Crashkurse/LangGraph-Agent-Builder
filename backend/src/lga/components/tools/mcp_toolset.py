@@ -3,15 +3,17 @@
 from __future__ import annotations
 
 import os
+from datetime import timedelta
 from typing import Any, cast
 
 from lga.sdk import BuildContext, Component, Output, fields, ports
-from lga.sdk.component import NodeConfig, NodeFn
+from lga.sdk.component import NodeFn
 from lga.sdk.ports import LazyToolset, ToolDef
 
 
 def _connection_from_config(config: dict[str, Any]) -> dict[str, Any]:
     transport = str(config.get("transport") or "streamable_http")
+    timeout = float(config.get("timeout_s") or 0)
     if transport in ("streamable_http", "sse"):
         conn: dict[str, Any] = {"transport": transport, "url": str(config.get("url") or "")}
         headers = dict(config.get("headers") or {})
@@ -22,14 +24,19 @@ def _connection_from_config(config: dict[str, Any]) -> dict[str, Any]:
                     headers.setdefault(header, os.environ[env_key])
         if headers:
             conn["headers"] = headers
-        return conn
-    conn = {
-        "transport": "stdio",
-        "command": str(config.get("command") or ""),
-        "args": list(config.get("args") or []),
-    }
-    if config.get("env"):
-        conn["env"] = dict(config["env"])
+        if timeout > 0:
+            conn["timeout"] = timeout
+    else:
+        conn = {
+            "transport": "stdio",
+            "command": str(config.get("command") or ""),
+            "args": list(config.get("args") or []),
+        }
+        if config.get("env"):
+            conn["env"] = dict(config["env"])
+    if timeout > 0:
+        # per-request read timeout on the MCP ClientSession (all transports)
+        conn["session_kwargs"] = {"read_timeout_seconds": timedelta(seconds=timeout)}
     return conn
 
 
@@ -102,7 +109,11 @@ class MCPToolset(Component):
             advanced=True,
         ),
         fields.FloatInput(
-            name="timeout_s", display_name="Timeout (s)", default=30.0, advanced=True
+            name="timeout_s",
+            display_name="Timeout (s)",
+            info="HTTP + per-request read timeout for the MCP session.",
+            default=30.0,
+            advanced=True,
         ),
     ]
     outputs = [Output(name="toolset", display_name="Toolset", port=ports.TOOLSET)]
@@ -117,11 +128,6 @@ class MCPToolset(Component):
             return {}
 
         return node
-
-    def on_field_change(self, config: NodeConfig, field_name: str, value: Any) -> NodeConfig:
-        config = dict(config)
-        config[field_name] = value
-        return config
 
     async def health_check(self, ctx: BuildContext) -> None:
         await load_mcp_tools(dict(ctx.config))

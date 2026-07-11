@@ -4,14 +4,18 @@
 Covered behaviour:
 * portable filter semantics (equality / ``$in`` / ``$eq`` / ``$and`` and the
   ``VectorStoreError`` raised on unsupported operators),
+* the deterministic id helpers (content hash / UUID coercion) and the
+  ``filter_conjuncts`` / ``check_filter_args`` translation helpers,
 * the typed error hierarchy (attributes + messages),
 * the exact ``_score`` metrics (cosine / l2 / ip) and table-name sanitisation,
 * the full ``LocalVectorStore`` lifecycle: ensure/list/upsert/query/delete plus
-  every error branch (missing collection, dimension mismatch, length mismatch).
+  every error branch (missing collection, dimension mismatch, length mismatch),
+  the ``aclose``/reopen cycle, and the SQL-filter → Python-filter fallback.
 """
 
 from __future__ import annotations
 
+import uuid
 from typing import TYPE_CHECKING
 
 import pytest
@@ -25,6 +29,12 @@ from lga.vectorstores.base import (
     DimensionMismatch,
     UpsertResult,
     VectorStoreError,
+    check_filter_args,
+    coerce_uuid_id,
+    content_hash_id,
+    content_hash_uuid,
+    filter_conjuncts,
+    filter_matches_nothing,
     matches_filter,
 )
 from lga.vectorstores.local import LocalVectorStore, _score, _table
@@ -102,6 +112,63 @@ def test_matches_filter_unsupported_nested_operator() -> None:
     assert "$gt" in str(exc.value)
 
 
+# --------------------------------------------------------------------------- id helpers
+def test_content_hash_id_is_deterministic_hex() -> None:
+    a = content_hash_id("alpha")
+    assert a == content_hash_id("alpha")  # process-independent, unlike hash()
+    assert a != content_hash_id("beta")
+    assert len(a) == 24
+    int(a, 16)  # hex-truncated sha256
+
+
+def test_content_hash_uuid_is_a_valid_deterministic_uuid() -> None:
+    u = content_hash_uuid("alpha")
+    assert u == content_hash_uuid("alpha")
+    assert str(uuid.UUID(u)) == u
+
+
+def test_coerce_uuid_id_passes_uuids_and_maps_other_ids() -> None:
+    native = str(uuid.uuid4())
+    assert coerce_uuid_id(native) == native
+    mapped = coerce_uuid_id("doc-1")
+    assert mapped == coerce_uuid_id("doc-1")  # deterministic → upsert/delete round-trip
+    assert str(uuid.UUID(mapped)) == mapped
+    assert coerce_uuid_id("doc-2") != mapped
+
+
+# --------------------------------------------------------------------------- filter helpers
+def test_filter_conjuncts_flattens_to_key_op_operand() -> None:
+    flt = {"$and": [{"lang": "en"}, {"n": {"$in": (1, 2)}}], "k": {"$eq": 3}}
+    assert filter_conjuncts(flt) == [("lang", "eq", "en"), ("n", "in", [1, 2]), ("k", "eq", 3)]
+
+
+def test_filter_conjuncts_empty_inputs() -> None:
+    assert filter_conjuncts(None) == []
+    assert filter_conjuncts({}) == []
+
+
+def test_filter_conjuncts_unsupported_operator_raises() -> None:
+    with pytest.raises(VectorStoreError, match=r"\$gt"):
+        filter_conjuncts({"n": {"$gt": 3}})
+    with pytest.raises(VectorStoreError, match=r"\$or"):
+        filter_conjuncts({"$or": []})
+
+
+def test_filter_matches_nothing_only_on_empty_in() -> None:
+    assert filter_matches_nothing({"n": {"$in": []}}) is True
+    assert filter_matches_nothing({"$and": [{"a": 1}, {"n": {"$in": []}}]}) is True
+    assert filter_matches_nothing({"n": {"$in": [1]}}) is False
+    assert filter_matches_nothing({"$and": []}) is False  # degenerate → matches everything
+    assert filter_matches_nothing(None) is False
+
+
+def test_check_filter_args_rejects_the_combination() -> None:
+    check_filter_args("x", {"a": 1}, None)  # either alone is fine
+    check_filter_args("x", None, {"a": 1})
+    with pytest.raises(VectorStoreError, match="mutually exclusive"):
+        check_filter_args("x", {"a": 1}, {"a": 1})
+
+
 # --------------------------------------------------------------------------- error hierarchy
 def test_dimension_mismatch_attributes() -> None:
     err = DimensionMismatch("local", expected=8, got=4)
@@ -124,7 +191,7 @@ def test_backend_extra_missing_hint() -> None:
     err = BackendExtraMissing("qdrant", "qdrant")
     assert err.extra == "qdrant"
     assert err.backend == "qdrant"
-    assert 'pip install "lga[qdrant]"' in str(err)
+    assert 'pip install "langgraph-agent-builder[qdrant]"' in str(err)
 
 
 def test_vector_store_error_prefixes_backend() -> None:
@@ -251,6 +318,27 @@ async def test_upsert_uses_metadata_id(store: LocalVectorStore, embeddings: Embe
     assert result.ids == ["fixed-1"]
 
 
+async def test_upsert_default_ids_are_content_hashes(
+    store: LocalVectorStore, embeddings: Embeddings
+) -> None:
+    await store.ensure_collection("docs", DIM)
+    result = await store.upsert(
+        "docs", [Document(page_content="alpha")], _embed(embeddings, ["alpha"])
+    )
+    assert result.ids == [content_hash_id("alpha")]
+    # re-ingesting the same content (e.g. a periodic re-seed from a fresh
+    # process) yields the same id → upsert, not a duplicate row
+    await store.upsert("docs", [Document(page_content="alpha")], _embed(embeddings, ["alpha"]))
+    assert (await store.list_collections())[0].count == 1
+
+
+async def test_aclose_releases_connection_and_reopens_lazily(store: LocalVectorStore) -> None:
+    await store.ensure_collection("docs", DIM)
+    await store.aclose()
+    assert store._db is None
+    assert len(await store.list_collections()) == 1  # next call reopens
+
+
 async def test_upsert_replace_same_id_does_not_duplicate(
     store: LocalVectorStore, embeddings: Embeddings
 ) -> None:
@@ -316,6 +404,68 @@ async def test_query_applies_metadata_filter(
     assert [r.page_content for r in results] == ["english doc"]
 
 
+async def test_query_raw_filter_rejected(store: LocalVectorStore) -> None:
+    # local has no vendor filter dialect (base.py contract)
+    await store.ensure_collection("docs", DIM)
+    with pytest.raises(VectorStoreError, match="raw_filter"):
+        await store.query("docs", [0.0] * DIM, raw_filter={"x": 1})
+
+
+async def test_query_filter_null_matches_missing_and_stored_null(
+    store: LocalVectorStore, embeddings: Embeddings
+) -> None:
+    await store.ensure_collection("docs", DIM)
+    docs = [
+        Document(page_content="null", metadata={"id": "1", "flag": None}),
+        Document(page_content="missing", metadata={"id": "2"}),
+        Document(page_content="set", metadata={"id": "3", "flag": "yes"}),
+    ]
+    await store.upsert("docs", docs, _embed(embeddings, ["null", "missing", "set"]))
+    hits = await store.query("docs", embeddings.embed_query("null"), k=5, filter={"flag": None})
+    assert {h.page_content for h in hits} == {"null", "missing"}
+
+
+async def test_query_filter_in_with_null_operand(
+    store: LocalVectorStore, embeddings: Embeddings
+) -> None:
+    await store.ensure_collection("docs", DIM)
+    docs = [
+        Document(page_content="null", metadata={"id": "1", "flag": None}),
+        Document(page_content="yes", metadata={"id": "2", "flag": "yes"}),
+        Document(page_content="no", metadata={"id": "3", "flag": "no"}),
+    ]
+    await store.upsert("docs", docs, _embed(embeddings, ["null", "yes", "no"]))
+    hits = await store.query(
+        "docs", embeddings.embed_query("yes"), k=5, filter={"flag": {"$in": ["yes", None]}}
+    )
+    assert {h.page_content for h in hits} == {"null", "yes"}
+
+
+async def test_query_filter_empty_in_matches_nothing(
+    store: LocalVectorStore, embeddings: Embeddings
+) -> None:
+    await store.ensure_collection("docs", DIM)
+    await store.upsert("docs", [Document(page_content="a")], _embed(embeddings, ["a"]))
+    hits = await store.query("docs", embeddings.embed_query("a"), k=5, filter={"x": {"$in": []}})
+    assert hits == []
+
+
+async def test_query_filter_quoted_key_falls_back_to_python_filter(
+    store: LocalVectorStore, embeddings: Embeddings
+) -> None:
+    """Keys not embeddable in a JSON path can't go to SQL — the exact Python
+    reference filter takes over (never lossy: scoring is brute-force)."""
+    key = 'we"ird'
+    await store.ensure_collection("docs", DIM)
+    docs = [
+        Document(page_content="hit", metadata={"id": "1", key: "x"}),
+        Document(page_content="miss", metadata={"id": "2", key: "y"}),
+    ]
+    await store.upsert("docs", docs, _embed(embeddings, ["hit", "miss"]))
+    hits = await store.query("docs", embeddings.embed_query("hit"), k=5, filter={key: "x"})
+    assert [h.page_content for h in hits] == ["hit"]
+
+
 async def test_query_score_threshold_excludes_low_matches(
     store: LocalVectorStore, embeddings: Embeddings
 ) -> None:
@@ -361,6 +511,20 @@ async def test_delete_by_filter(store: LocalVectorStore, embeddings: Embeddings)
     assert deleted == 2
     remaining = await store.query("docs", embeddings.embed_query("de"), k=5)
     assert [r.page_content for r in remaining] == ["de"]
+
+
+async def test_delete_filter_quoted_key_falls_back_to_python_filter(
+    store: LocalVectorStore, embeddings: Embeddings
+) -> None:
+    key = "back\\slash"
+    await store.ensure_collection("docs", DIM)
+    docs = [
+        Document(page_content="a", metadata={"id": "1", key: "x"}),
+        Document(page_content="b", metadata={"id": "2", key: "y"}),
+    ]
+    await store.upsert("docs", docs, _embed(embeddings, ["a", "b"]))
+    assert await store.delete("docs", filter={key: "x"}) == 1
+    assert (await store.list_collections())[0].count == 1
 
 
 async def test_delete_all_when_no_ids_or_filter(

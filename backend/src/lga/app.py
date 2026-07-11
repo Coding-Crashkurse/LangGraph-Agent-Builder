@@ -3,28 +3,40 @@
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
+from lga.errors import LgaValueError
 from lga.runtime.checkpoint import CheckpointerFactory
 from lga.runtime.executor import Executor
 from lga.runtime.streams import EventBus
 from lga.sdk.registry import ComponentRegistry, get_registry
+from lga.services.errors import ConflictError, NotFoundError
 from lga.services.settings import Settings, get_settings
 
-logger = logging.getLogger("lga.app")
+if TYPE_CHECKING:
+    from lga.a2a.mount import A2AManager
+    from lga.mcp.server import McpManager
+    from lga.services.apikeys import ApiKeyService
+    from lga.services.files import FilesService
+    from lga.services.flows import FlowService
+    from lga.services.mcp_servers import McpServersService
+    from lga.services.orchestrator import Orchestrator
+    from lga.services.runs import RunService
+    from lga.services.secrets import SecretsService
+    from lga.services.vectorstores import VectorStoreService
 
-SWEEP_INTERVAL_S = 3600
+logger = logging.getLogger("lga.app")
 
 
 @dataclass
@@ -36,17 +48,17 @@ class AppServices:
     checkpointers: CheckpointerFactory
     bus: EventBus
     executor: Executor
-    flows: Any
-    runs: Any
-    secrets: Any
-    apikeys: Any
-    files: Any
-    mcp_servers: Any
-    vectorstores: Any
-    orchestrator: Any
-    a2a: Any = None
-    mcp: Any = None
-    _tasks: list[asyncio.Task[None]] = field(default_factory=list)
+    flows: FlowService
+    runs: RunService
+    secrets: SecretsService
+    apikeys: ApiKeyService
+    files: FilesService
+    mcp_servers: McpServersService
+    vectorstores: VectorStoreService
+    orchestrator: Orchestrator
+    a2a: A2AManager | None = None
+    mcp: McpManager | None = None
+    tasks: list[asyncio.Task[None]] = field(default_factory=list)
 
     async def remount(self) -> None:
         """Re-mount published flows after publish/unpublish/delete."""
@@ -82,7 +94,7 @@ async def build_services(settings: Settings) -> AppServices:
     )
     registry = get_registry()
     for directory in settings.component_dirs():
-        registry._scan_dir(directory)
+        registry.scan_dir(directory)
     secrets = SecretsService(settings, sessions)
     vectorstores = VectorStoreService(settings, sessions, secrets)
     orchestrator = Orchestrator(
@@ -124,6 +136,46 @@ def _static_dir(settings: Settings) -> Path | None:
     return bundled if (bundled / "index.html").exists() else None
 
 
+def _cors_origins(settings: Settings) -> list[str]:
+    """SPEC §10.5: CORS locked to the frontend origin; Vite dev hosts only in dev."""
+    origins = [settings.host_url]
+    if settings.env == "dev":
+        origins += ["http://localhost:5173", "http://127.0.0.1:5173"]
+    return list(dict.fromkeys(origins))
+
+
+def _register_exception_handlers(app: FastAPI) -> None:
+    """Domain-exception → HTTP mapping so routes stay parse-call-serialize."""
+
+    def _detail_handler(status: int) -> Callable[[Request, Exception], Awaitable[JSONResponse]]:
+        async def handle(_request: Request, exc: Exception) -> JSONResponse:
+            return JSONResponse({"detail": str(exc)}, status_code=status)
+
+        return handle
+
+    async def integrity(_request: Request, _exc: Exception) -> JSONResponse:
+        # unique-constraint race that no service translated — never a 500,
+        # and never leak the SQL statement to the client
+        return JSONResponse({"detail": "conflicting concurrent write — retry"}, status_code=409)
+
+    app.add_exception_handler(NotFoundError, _detail_handler(404))
+    app.add_exception_handler(ConflictError, _detail_handler(409))
+    app.add_exception_handler(LgaValueError, _detail_handler(422))
+    app.add_exception_handler(IntegrityError, integrity)
+
+
+async def _shutdown(svc: AppServices) -> None:
+    for task in svc.tasks:
+        task.cancel()
+    # aclose, not drain: flushing alone leaves the persist task pending —
+    # "Task was destroyed but it is pending!" at interpreter shutdown
+    await svc.bus.aclose()
+    if svc.a2a is not None:
+        await svc.a2a.aclose()
+    await svc.checkpointers.aclose()
+    await svc.engine.dispose()
+
+
 def create_app(settings: Settings | None = None, *, backend_only: bool = False) -> FastAPI:
     settings = settings or get_settings()
 
@@ -133,6 +185,7 @@ def create_app(settings: Settings | None = None, *, backend_only: bool = False) 
         from lga.db.migrate import upgrade_async
         from lga.mcp.server import McpAuthMiddleware, McpManager
         from lga.schema.scrub import install_log_scrubbing
+        from lga.services import bootstrap
 
         # runs after uvicorn has configured its handlers → scrubs console + file
         # logs. Event scrubbing (the hard guarantee) lives in the event bus (§10.5)
@@ -142,65 +195,36 @@ def create_app(settings: Settings | None = None, *, backend_only: bool = False) 
             await upgrade_async(settings)
         svc = await build_services(settings)
         svc.a2a = A2AManager(svc)
-        svc.mcp = McpManager(svc)
+        mcp_manager = McpManager(svc)
+        svc.mcp = mcp_manager
         app.state.svc = svc
 
         # boot provisioning (SPEC §18.1) before mounting: published imports serve
-        from lga.services import bootstrap
-
-        await svc.vectorstores.provision()  # default `local` + LGA_VECTORSTORE_* (§8b.3)
-        await bootstrap.seed_starter_flows(svc)
-        await bootstrap.load_flows_from_path(svc)
-        await svc.remount()
+        await bootstrap.provision(svc)
 
         # dynamic protocol mounts — inserted at the front so the SPA catch-all
         # (registered at create_app time) can never shadow /a2a and /mcp
         for route in reversed(_protocol_routes(svc, McpAuthMiddleware)):
             app.router.routes.insert(0, route)
 
-        async def sweeper() -> None:
-            while True:
-                await asyncio.sleep(SWEEP_INTERVAL_S)
-                with contextlib.suppress(Exception):
-                    removed = await svc.runs.sweep_expired()
-                    if removed:
-                        logger.info("swept %d expired run events", removed)
-                with contextlib.suppress(Exception):
-                    # checkpoint TTL (SPEC §6.3): drop LangGraph state for idle
-                    # threads so durable checkpoints don't grow without bound
-                    cp = await svc.checkpointers.get()
-                    gone = await svc.runs.sweep_checkpoints(cp, settings.checkpoint_ttl_days)
-                    if gone:
-                        logger.info("swept %d idle checkpoint threads", gone)
+        bootstrap.start_background_tasks(svc)
 
-        svc._tasks.append(asyncio.get_running_loop().create_task(sweeper()))
-        if settings.env == "dev" and settings.component_dirs():
-            svc._tasks.append(
-                asyncio.get_running_loop().create_task(bootstrap.watch_component_dirs(svc))
-            )
-
-        async with svc.mcp.mcp.session_manager.run():
+        async with mcp_manager.mcp.session_manager.run():
             try:
                 yield
             finally:
-                for task in svc._tasks:
-                    task.cancel()
-                await svc.bus.drain()
-                if svc.a2a is not None:
-                    await svc.a2a.aclose()
-                await svc.checkpointers.aclose()
-                await svc.engine.dispose()
+                await _shutdown(svc)
 
     app = FastAPI(title="lga", version=_version(), lifespan=lifespan)
 
-    origins = ["http://localhost:5173", "http://127.0.0.1:5173", settings.host_url]
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=origins,
+        allow_origins=_cors_origins(settings),
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    _register_exception_handlers(app)
 
     from lga.api import components, flows, runs, settings_api, templates, vectorstores, webhook
 
@@ -211,15 +235,17 @@ def create_app(settings: Settings | None = None, *, backend_only: bool = False) 
     app.include_router(templates.router, prefix="/api/v1")
     app.include_router(settings_api.router, prefix="/api/v1")
     app.include_router(settings_api.misc_router, prefix="/api/v1")
+    app.include_router(settings_api.health_router, prefix="/api/v1")
     app.include_router(settings_api.public_files_router, prefix="/api/v1")
     app.include_router(webhook.router, prefix="/api/v1")
-    # unprefixed health for load balancers + packaging tests
-    app.include_router(settings_api.misc_router)
+    # unprefixed health ONLY for load balancers + packaging tests — /version
+    # and /config stay under /api/v1 (they were never meant to be root routes)
+    app.include_router(settings_api.health_router, include_in_schema=False)
 
     @app.get("/.well-known/agent-card.json", include_in_schema=False)
     @app.get("/.well-known/agent.json", include_in_schema=False)
     async def well_known_root() -> JSONResponse:
-        svc = app.state.svc
+        svc: AppServices = app.state.svc
         agents = {
             slug: f"{settings.host_url}/a2a/{slug}/.well-known/agent-card.json"
             for slug in (svc.a2a.slugs if svc.a2a else [])
@@ -252,10 +278,13 @@ def create_app(settings: Settings | None = None, *, backend_only: bool = False) 
 def _protocol_routes(svc: AppServices, mcp_auth_cls: Any) -> list[Any]:
     from starlette.routing import Mount
 
+    assert svc.a2a is not None
+    assert svc.mcp is not None
+    a2a_app: Any = svc.a2a
     mcp_http = mcp_auth_cls(svc.mcp.http_app(), svc)
     mcp_sse = mcp_auth_cls(svc.mcp.sse_app(), svc)
     return [
-        Mount("/a2a", app=svc.a2a),
+        Mount("/a2a", app=a2a_app),
         Mount("/mcp/sse", app=mcp_sse),
         Mount("/mcp", app=mcp_http),
     ]

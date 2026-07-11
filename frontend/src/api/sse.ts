@@ -1,52 +1,41 @@
-/** SSE helpers: tail run events (GET, replayed) or stream a run (POST). */
-
-import { useCallback, useEffect, useRef, useState } from "react";
+/** SSE helpers: one shared frame parser + the POST-based run stream (§6.2). */
 
 import type { RunEvent } from "./types";
 
-export interface SseHandle {
-  close: () => void;
-}
-
-const EVENT_NAMES = [
-  "run_started",
-  "node_started",
-  "node_token",
-  "node_status",
-  "node_log",
-  "tool_call",
-  "tool_result",
-  "node_finished",
-  "node_error",
-  "interrupt_raised",
-  "run_resumed",
-  "run_finished",
-  "run_cancelled",
-  "heartbeat",
-];
-
-/** Tail /api/v1/runs/{id}/events — replay (Last-Event-ID) then live. */
-export function tailRunEvents(
-  runId: string,
-  onEvent: (event: RunEvent) => void,
-  options?: { onEnd?: () => void },
-): SseHandle {
-  const source = new EventSource(`/api/v1/runs/${runId}/events`);
-  const handler = (raw: MessageEvent) => {
-    try {
-      const event = JSON.parse(raw.data) as RunEvent;
-      onEvent(event);
-      if (event.event === "run_finished" || event.event === "run_cancelled") {
-        source.close();
-        options?.onEnd?.();
+/**
+ * Parse an SSE byte stream, invoking `onData` with the JSON payload of every
+ * `data:` line. The frame separator is a blank line — sse-starlette emits CRLF
+ * (`\r\n\r\n`), the a2a-sdk emits LF (`\n\n`); accept both or we parse zero
+ * events. Frames whose payload is not JSON (heartbeats) are skipped.
+ *
+ * This is THE SSE parser — the run stream and the A2A JSON-RPC stream both go
+ * through it so a framing fix lands everywhere at once.
+ */
+export async function parseSseStream(
+  body: ReadableStream<Uint8Array>,
+  onData: (payload: unknown) => void,
+): Promise<void> {
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const frames = buffer.split(/\r?\n\r?\n/);
+    buffer = frames.pop() ?? "";
+    for (const frame of frames) {
+      const dataLine = frame.split("\n").find((line) => line.startsWith("data:"));
+      if (!dataLine) continue;
+      let payload: unknown;
+      try {
+        payload = JSON.parse(dataLine.slice(5).trim());
+      } catch {
+        continue; // heartbeat frames carry non-JSON payloads
       }
-    } catch {
-      /* heartbeat frames are not RunEvents */
+      onData(payload);
     }
-  };
-  for (const name of EVENT_NAMES) source.addEventListener(name, handler);
-  source.onmessage = handler; // custom.<type> events arrive unnamed
-  return { close: () => source.close() };
+  }
 }
 
 /** POST-based streaming run: parse the SSE body of POST /flows/{id}/run. */
@@ -65,47 +54,5 @@ export async function streamRun(
   if (!response.ok || !response.body) {
     throw new Error(`stream failed: ${response.status}`);
   }
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    // frame separator is a blank line — sse-starlette emits CRLF (\r\n\r\n),
-    // the a2a-sdk emits LF (\n\n); accept both or we parse zero events
-    const frames = buffer.split(/\r?\n\r?\n/);
-    buffer = frames.pop() ?? "";
-    for (const frame of frames) {
-      const dataLine = frame.split("\n").find((line) => line.startsWith("data:"));
-      if (!dataLine) continue;
-      try {
-        onEvent(JSON.parse(dataLine.slice(5).trim()) as RunEvent);
-      } catch {
-        /* heartbeat frames carry non-RunEvent payloads */
-      }
-    }
-  }
-}
-
-/** React hook: accumulate the event tail of a run (replay + live). */
-export function useRunEvents(runId: string | null, maxEvents = 2000) {
-  const [events, setEvents] = useState<RunEvent[]>([]);
-  const handleRef = useRef<SseHandle | null>(null);
-
-  useEffect(() => {
-    setEvents([]);
-    handleRef.current?.close();
-    if (!runId) return;
-    handleRef.current = tailRunEvents(runId, (event) => {
-      setEvents((prev) => {
-        const next = [...prev, event];
-        return next.length > maxEvents ? next.slice(-maxEvents) : next;
-      });
-    });
-    return () => handleRef.current?.close();
-  }, [runId, maxEvents]);
-
-  const clear = useCallback(() => setEvents([]), []);
-  return { events, clear };
+  await parseSseStream(response.body, (payload) => onEvent(payload as RunEvent));
 }

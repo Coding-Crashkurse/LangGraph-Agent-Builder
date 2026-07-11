@@ -1,7 +1,8 @@
-/** Canvas node + edge renderers — Langflow-style cards (SPEC §11.3, §18.4):
+/** Canvas node + edge renderers — Langflow-style cards (SPEC §11.2–§11.4, §18.4):
  * fields render INSIDE the node (label + inline widget per row), handles sit on
  * their field's row, connected fields collapse to a chip. Toolset ports live on
- * top/bottom, control-in on top, data left→right. */
+ * top/bottom, control-in on top, data left→right. Edges carry the SOURCE port
+ * family color; during a run the active path animates (§11.4). */
 
 import {
   BaseEdge,
@@ -9,29 +10,55 @@ import {
   Handle,
   Position,
   useConnection,
+  useUpdateNodeInternals,
   type EdgeProps,
   type NodeProps,
 } from "@xyflow/react";
-import { memo, useState, type ReactNode } from "react";
+import {
+  AlertTriangle,
+  ArrowUpRight,
+  Boxes,
+  Check,
+  ChevronDown,
+  ChevronRight,
+  Copy,
+  FlaskConical,
+  GitBranch,
+  Library,
+  Loader2,
+  MoreHorizontal,
+  Pencil,
+  Play,
+  Sparkles,
+  Square,
+  Trash2,
+  Wrench,
+  X,
+  Zap,
+  type LucideIcon,
+} from "lucide-react";
+import { memo, useEffect, useRef, useState, type ReactNode } from "react";
 
 import { PORT_FAMILY_COLORS, type FieldDescriptor, type PortSpec } from "@/api/types";
 import { toast } from "@/components/ui/toast";
 import { cn } from "@/lib/utils";
 
 import type { CanvasEdge, CanvasNode } from "./convert";
-import { ROUTER_TARGET_HANDLE } from "./convert";
+import { defaultConfig, ROUTER_TARGET_HANDLE } from "./convert";
 import { widgetFor } from "./forms/registry";
-import { compatSummary, indexPorts, judgeConnection } from "./guards";
+import { compatSummary, indexPorts, judgeConnection, portAriaLabel } from "./guards";
 import { useBuilder } from "./store";
 
-const CATEGORY_CHIP: Record<string, { emoji: string; tone: string }> = {
-  llm: { emoji: "✨", tone: "bg-violet-500/15 text-violet-300" },
-  rag: { emoji: "📚", tone: "bg-emerald-500/15 text-emerald-300" },
-  flow_control: { emoji: "🔀", tone: "bg-amber-500/15 text-amber-300" },
-  tools: { emoji: "🔧", tone: "bg-sky-500/15 text-sky-300" },
-  io: { emoji: "⚡", tone: "bg-zinc-500/15 text-zinc-300" },
-  data: { emoji: "🧩", tone: "bg-slate-500/15 text-slate-300" },
-  testing: { emoji: "🧪", tone: "bg-pink-500/15 text-pink-300" },
+/** §11.2: 24px icon chip — category color @12% background, category-color icon.
+ * Category colors map onto the port-family tokens (theme.css owns all color). */
+const CATEGORY_ICONS: Record<string, { Icon: LucideIcon; tone: string }> = {
+  llm: { Icon: Sparkles, tone: "bg-port-embedding/12 text-port-embedding" },
+  rag: { Icon: Library, tone: "bg-port-documents/12 text-port-documents" },
+  flow_control: { Icon: GitBranch, tone: "bg-port-route/12 text-port-route" },
+  tools: { Icon: Wrench, tone: "bg-port-toolset/12 text-port-toolset" },
+  io: { Icon: Zap, tone: "bg-port-file/12 text-port-file" },
+  data: { Icon: Boxes, tone: "bg-port-data/12 text-port-data" },
+  testing: { Icon: FlaskConical, tone: "bg-port-vectorstore/12 text-port-vectorstore" },
 };
 
 /** field types rendered inline in the node card (Langflow parity); the rest
@@ -53,24 +80,29 @@ const INLINE_TYPES = new Set([
 ]);
 
 // ------------------------------------------------------------------ dimming
-function useHandleDimmer(nodeId: string) {
+/** While a connection drag is in progress: incompatible handles dim to 25%,
+ * compatible ones scale 1.15 (§11.3). */
+function useHandleDimmer(nodeId: string): {
+  connecting: boolean;
+  dimFor: (port: PortSpec | undefined, side: "in" | "out", handleId: string) => boolean;
+} {
   const connection = useConnection();
   const descriptors = useBuilder((s) => s.descriptors);
   const nodes = useBuilder((s) => s.nodes);
 
   if (!connection.inProgress || !connection.fromHandle || !connection.fromNode) {
-    return () => false;
+    return { connecting: false, dimFor: () => false };
   }
   const fromNode = nodes.find((n) => n.id === connection.fromNode?.id);
   const fromDescriptor = fromNode && descriptors.get(fromNode.data.componentId);
-  if (!fromNode || !fromDescriptor) return () => false;
+  if (!fromNode || !fromDescriptor) return { connecting: false, dimFor: () => false };
   const fromPorts = indexPorts(fromDescriptor, fromNode.data.config);
   const fromType = connection.fromHandle.type;
   const fromId = connection.fromHandle.id ?? "";
   const fromPort =
     fromType === "source" ? fromPorts.outputs.get(fromId) : fromPorts.inputs.get(fromId);
 
-  return (port: PortSpec | undefined, side: "in" | "out", handleId: string): boolean => {
+  const dimFor = (port: PortSpec | undefined, side: "in" | "out", handleId: string): boolean => {
     if (connection.fromNode?.id === nodeId && fromId === handleId) return false;
     if (fromType === "source") {
       if (side === "out") return true;
@@ -86,29 +118,54 @@ function useHandleDimmer(nodeId: string) {
     );
     return !verdict.ok;
   };
+  return { connecting: true, dimFor };
 }
 
 // ------------------------------------------------------------------ port row bits
 function PortTooltip({ name, port, side }: { name: string; port: PortSpec; side: "in" | "out" }) {
-  const color = PORT_FAMILY_COLORS[port.family] ?? "#9ca3af";
+  const color = PORT_FAMILY_COLORS[port.family] ?? "var(--color-port-any)";
   return (
     <div
       className={cn(
-        "pointer-events-none absolute top-1/2 z-50 w-56 -translate-y-1/2 rounded-md border border-surface-700 bg-surface-950/95 px-2.5 py-1.5 shadow-xl",
+        "pointer-events-none absolute top-1/2 z-50 w-56 -translate-y-1/2 rounded-md border border-border bg-canvas/95 px-2.5 py-1.5 shadow-xl",
         side === "in" ? "right-full mr-3" : "left-full ml-3",
       )}
     >
-      <p className="flex items-center gap-1.5 text-[11px] font-semibold text-zinc-100">
+      <p className="flex items-center gap-1.5 text-[11px] font-semibold text-text-1">
         <span className="inline-block h-2 w-2 rounded-full" style={{ background: color }} />
         {name}
-        <span className="font-normal text-zinc-500">{side === "in" ? "input" : "output"}</span>
+        <span className="font-normal text-text-3">{side === "in" ? "input" : "output"}</span>
       </p>
-      <p className="mt-0.5 font-mono text-[10px]" style={{ color }}>
+      <p className="mt-0.5 font-mono text-[10.5px]" style={{ color }}>
         {port.schema_ref}
         {port.is_list ? "[]" : ""} · {port.family}
       </p>
-      <p className="mt-0.5 text-[10px] text-zinc-400">{compatSummary(port, side)}</p>
+      <p className="mt-0.5 text-[11px] text-text-2">{compatSummary(port, side)}</p>
     </div>
+  );
+}
+
+/** The visible 12px diamond/circle inside a 16px invisible hit area (§11.2).
+ * Pointer events stay on the parent Handle. */
+function HandleDot({ port, active }: { port: PortSpec; active: boolean }) {
+  const color = PORT_FAMILY_COLORS[port.family] ?? "var(--color-port-any)";
+  const isDiamond = port.is_list; // §11.1 [MUST]: list = diamond, scalar = circle
+  return (
+    <span
+      aria-hidden
+      className="pointer-events-none absolute left-1/2 top-1/2 block"
+      style={{
+        width: 12,
+        height: 12,
+        background: port.family === "ANY" ? "var(--color-surface-1)" : color,
+        border: `2px ${port.family === "ANY" ? "dashed" : "solid"} ${color}`,
+        borderRadius: isDiamond ? 2 : 999,
+        transform: `translate(-50%, -50%)${isDiamond ? " rotate(45deg)" : ""}${
+          active ? " scale(1.15)" : ""
+        }`,
+        transition: "transform 120ms",
+      }}
+    />
   );
 }
 
@@ -117,38 +174,42 @@ function RowHandle({
   port,
   side,
   dimmed,
+  active,
 }: {
   id: string;
   port: PortSpec;
   side: "in" | "out";
   dimmed: boolean;
+  active: boolean;
 }) {
   const [hovered, setHovered] = useState(false);
-  const color = PORT_FAMILY_COLORS[port.family] ?? "var(--color-port-any)";
-  // §11.1 [MUST]: list ports render as diamonds (square rotated 45°), scalars as circles.
-  const isDiamond = port.is_list;
   return (
     <>
       <Handle
         id={id}
         type={side === "in" ? "target" : "source"}
         position={side === "in" ? Position.Left : Position.Right}
+        aria-label={portAriaLabel(id, port, side)}
+        tabIndex={0}
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
+        onFocus={() => setHovered(true)}
+        onBlur={() => setHovered(false)}
         style={{
-          // centered ON the card border (row spans to the card edge)
-          [side === "in" ? "left" : "right"]: -7,
+          // 16px invisible hit area, dot centered ON the card border
+          [side === "in" ? "left" : "right"]: -9,
           top: "50%",
-          background: port.family === "ANY" ? "var(--color-surface-1)" : color,
-          border: `2px ${port.family === "ANY" ? "dashed" : "solid"} ${color}`,
-          width: 12,
-          height: 12,
-          borderRadius: isDiamond ? 2 : 999,
-          transform: isDiamond ? "translateY(-50%) rotate(45deg)" : undefined,
-          opacity: dimmed ? 0.15 : 1,
+          width: 16,
+          height: 16,
+          background: "transparent",
+          border: "none",
+          borderRadius: 999,
+          opacity: dimmed ? 0.25 : 1,
           transition: "opacity 120ms",
         }}
-      />
+      >
+        <HandleDot port={port} active={active} />
+      </Handle>
       {hovered && <PortTooltip name={id} port={port} side={side} />}
     </>
   );
@@ -158,6 +219,116 @@ function Row({ children, className }: { children: ReactNode; className?: string 
   return <div className={cn("relative px-3.5 py-1.5", className)}>{children}</div>;
 }
 
+// ------------------------------------------------------------------ kebab menu
+function MenuItem({
+  icon: Icon,
+  label,
+  danger,
+  onSelect,
+}: {
+  icon: LucideIcon;
+  label: string;
+  danger?: boolean;
+  onSelect: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      className={cn(
+        "flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-[12px] focus-visible:outline-2 focus-visible:outline-accent",
+        danger
+          ? "text-danger hover:bg-danger/10"
+          : "text-text-2 hover:bg-surface-3 hover:text-text-1",
+      )}
+      onClick={(e) => {
+        e.stopPropagation();
+        onSelect();
+      }}
+    >
+      <Icon size={14} strokeWidth={1.75} aria-hidden />
+      {label}
+    </button>
+  );
+}
+
+/** §11.2 header kebab: rename / duplicate / delete. ("disable" is omitted —
+ * FlowSpec.NodeSpec does not round-trip a disabled flag yet.) */
+function NodeMenu({ nodeId, onRename }: { nodeId: string; onRename: () => void }) {
+  const [open, setOpen] = useState(false);
+  const duplicateNode = useBuilder((s) => s.duplicateNode);
+  const deleteNode = useBuilder((s) => s.deleteNode);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: PointerEvent) => {
+      if (!ref.current?.contains(e.target as globalThis.Node)) setOpen(false);
+    };
+    window.addEventListener("pointerdown", onDown);
+    return () => window.removeEventListener("pointerdown", onDown);
+  }, [open]);
+
+  return (
+    <div
+      className="relative"
+      ref={ref}
+      onKeyDown={(e) => {
+        if (e.key === "Escape") {
+          e.stopPropagation();
+          setOpen(false);
+        }
+      }}
+    >
+      <button
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label="node menu"
+        className="nodrag flex h-5 w-5 items-center justify-center rounded text-text-3 hover:bg-surface-3 hover:text-text-1 focus-visible:outline-2 focus-visible:outline-accent"
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen((v) => !v);
+        }}
+      >
+        <MoreHorizontal size={14} strokeWidth={1.75} aria-hidden />
+      </button>
+      {open && (
+        <div
+          role="menu"
+          className="nodrag nopan absolute right-0 top-6 z-50 w-36 rounded-lg border border-border bg-surface-2 p-1 shadow-xl"
+        >
+          <MenuItem
+            icon={Pencil}
+            label="Rename"
+            onSelect={() => {
+              setOpen(false);
+              onRename();
+            }}
+          />
+          <MenuItem
+            icon={Copy}
+            label="Duplicate"
+            onSelect={() => {
+              setOpen(false);
+              duplicateNode(nodeId);
+            }}
+          />
+          <MenuItem
+            icon={Trash2}
+            label="Delete"
+            danger
+            onSelect={() => {
+              setOpen(false);
+              deleteNode(nodeId);
+            }}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ------------------------------------------------------------------ node card
 export const LgaNode = memo(function LgaNode({ id, data, selected }: NodeProps<CanvasNode>) {
   const descriptors = useBuilder((s) => s.descriptors);
@@ -165,15 +336,26 @@ export const LgaNode = memo(function LgaNode({ id, data, selected }: NodeProps<C
   const edges = useBuilder((s) => s.edges);
   const updateNodeConfig = useBuilder((s) => s.updateNodeConfig);
   const select = useBuilder((s) => s.select);
+  const renameNode = useBuilder((s) => s.renameNode);
+  const toggleCollapsed = useBuilder((s) => s.toggleCollapsed);
   const runState = useBuilder((s) => s.runStates[id]);
   const partialTarget = useBuilder((s) => s.partialTarget);
   const runToNode = useBuilder((s) => s.runToNode);
   const descriptor = descriptors.get(data.componentId);
-  const dimFor = useHandleDimmer(id);
+  const { connecting, dimFor } = useHandleDimmer(id);
+  const [renaming, setRenaming] = useState(false);
+  const [draftLabel, setDraftLabel] = useState("");
+  const collapsed = Boolean(data.collapsed);
+  const updateInternals = useUpdateNodeInternals();
+
+  // handles move when the body folds — tell React Flow to re-measure
+  useEffect(() => {
+    updateInternals(id);
+  }, [collapsed, id, updateInternals]);
 
   if (!descriptor) {
     return (
-      <div className="rounded-xl border border-red-700 bg-surface-900 px-3 py-2 text-xs text-red-400">
+      <div className="rounded-xl border border-danger bg-surface-1 px-3 py-2 text-xs text-danger">
         unknown component: {data.componentId}
       </div>
     );
@@ -185,6 +367,7 @@ export const LgaNode = memo(function LgaNode({ id, data, selected }: NodeProps<C
   const allOutputs = [...ports.outputs.entries()];
   const toolInputs = allInputs.filter(([, p]) => p.family === "TOOLSET");
   const toolOutputs = allOutputs.filter(([, p]) => p.family === "TOOLSET");
+  const dataInputs = allInputs.filter(([, p]) => p.family !== "TOOLSET");
   const dataOutputs = allOutputs.filter(([, p]) => p.family !== "TOOLSET");
   const nodeDiags = diagnostics.filter((d) => d.node_id === id);
   const errorCount = nodeDiags.filter((d) => d.severity === "error").length;
@@ -195,25 +378,32 @@ export const LgaNode = memo(function LgaNode({ id, data, selected }: NodeProps<C
     return (
       <div
         className={cn(
-          "relative rounded-full border bg-surface-800 px-5 py-2 text-sm font-semibold",
-          id === "start" ? "border-emerald-600 text-emerald-300" : "border-zinc-500 text-zinc-200",
-          selected && "ring-2 ring-accent-500",
+          "relative flex items-center gap-1.5 rounded-full border bg-surface-2 px-5 py-2 text-sm font-semibold",
+          id === "start" ? "border-success text-success" : "border-border-strong text-text-1",
+          selected && "ring-2 ring-accent",
         )}
       >
-        {id === "start" ? "▶ start" : "■ end"}
+        {id === "start" ? (
+          <Play size={12} strokeWidth={2} aria-hidden />
+        ) : (
+          <Square size={11} strokeWidth={2} aria-hidden />
+        )}
+        {id}
         {allInputs.map(([name, port], index) => (
           <Handle
             key={name}
             id={name}
             type="target"
             position={Position.Left}
+            aria-label={portAriaLabel(name, port, "in")}
+            tabIndex={0}
             style={{
               top: 12 + index * 14,
               background: PORT_FAMILY_COLORS[port.family],
               border: `2px solid ${PORT_FAMILY_COLORS[port.family]}`,
               width: 11,
               height: 11,
-              opacity: dimFor(port, "in", name) ? 0.15 : 1,
+              opacity: dimFor(port, "in", name) ? 0.25 : 1,
             }}
           />
         ))}
@@ -223,13 +413,15 @@ export const LgaNode = memo(function LgaNode({ id, data, selected }: NodeProps<C
             id={name}
             type="source"
             position={Position.Right}
+            aria-label={portAriaLabel(name, port, "out")}
+            tabIndex={0}
             style={{
               top: 12 + index * 14,
               background: PORT_FAMILY_COLORS[port.family],
               border: `2px solid ${PORT_FAMILY_COLORS[port.family]}`,
               width: 11,
               height: 11,
-              opacity: dimFor(port, "out", name) ? 0.15 : 1,
+              opacity: dimFor(port, "out", name) ? 0.25 : 1,
             }}
           />
         ))}
@@ -239,18 +431,20 @@ export const LgaNode = memo(function LgaNode({ id, data, selected }: NodeProps<C
 
   // ---------------- field partitioning
   const fields = descriptor.fields.filter((f) => !f.port_only && f.show !== false && !f.advanced);
+  // same {...defaults, ...config} merge as the inspector (ConfigPanel) — the
+  // node card and the panel must never disagree on a field's effective value
+  const effectiveConfig = { ...defaultConfig(descriptor), ...data.config };
   const inline = fields.filter((f) => INLINE_TYPES.has(f.type));
   const panelOnly = fields.filter((f) => !INLINE_TYPES.has(f.type));
   const inlineNames = new Set(inline.map((f) => f.name));
   // ports without an inline widget row (HandleFields, prompt vars)
-  const bareInputs = allInputs.filter(
-    ([name, port]) => port.family !== "TOOLSET" && !inlineNames.has(name),
-  );
+  const bareInputs = dataInputs.filter(([name]) => !inlineNames.has(name));
 
   const isConnected = (input: string) =>
     edges.some((e) => e.target === id && e.targetHandle === input);
 
-  const chip = CATEGORY_CHIP[descriptor.category] ?? CATEGORY_CHIP.data;
+  const chip = CATEGORY_ICONS[descriptor.category] ?? CATEGORY_ICONS.data;
+  const running = runState?.status === "running";
   const stateClass =
     runState?.status === "running"
       ? "gf-node-active"
@@ -258,71 +452,144 @@ export const LgaNode = memo(function LgaNode({ id, data, selected }: NodeProps<C
         ? "gf-node-finished"
         : runState?.status === "error"
           ? "gf-node-error"
-          : "";
+          : runState?.status === "interrupted"
+            ? "gf-node-interrupted"
+            : "";
   // §6.4: during a partial run, nodes outside the executed subgraph dim out
   const dimmedByPartial = partialTarget !== null && id !== partialTarget && !runState;
   const installed = descriptor.version;
   const pinned = data.componentVersion;
   const updateAvailable = Boolean(pinned && installed && pinned !== installed && !descriptor.legacy);
 
+  const startRename = () => {
+    setDraftLabel(data.label || descriptor.display_name);
+    setRenaming(true);
+  };
+  const commitRename = () => {
+    setRenaming(false);
+    const label = draftLabel.trim();
+    if (label && label !== data.label) renameNode(id, label);
+  };
+
+  const collapsedStubs = Math.max(dataInputs.length, dataOutputs.length);
+
   return (
     <div
       className={cn(
-        "group relative w-72 rounded-xl border bg-surface-900 shadow-lg shadow-black/30",
-        selected ? "border-accent-500 ring-1 ring-accent-500/50" : "border-surface-700",
+        "group relative w-72 rounded-xl border bg-surface-1 gf-node-shadow",
+        selected ? "border-accent ring-1 ring-accent/50" : "border-border hover:border-border-strong",
         stateClass,
         dimmedByPartial && "gf-node-dimmed",
       )}
     >
-      {/* header */}
-      <div className="flex items-center gap-2.5 px-3.5 pb-2 pt-3">
+      {/* header: 40px surface-2 band (§11.2) */}
+      <div
+        className={cn(
+          "flex h-10 items-center gap-2 rounded-t-xl border-b border-border bg-surface-2 px-3",
+          selected && "gf-header-selected",
+          collapsed && collapsedStubs === 0 && "rounded-b-xl border-b-0",
+        )}
+      >
         <span
-          className={cn(
-            "flex h-8 w-8 items-center justify-center rounded-lg text-base",
-            chip.tone,
+          className={cn("flex h-6 w-6 shrink-0 items-center justify-center rounded-md", chip.tone)}
+        >
+          {running ? (
+            <Loader2
+              size={16}
+              strokeWidth={1.75}
+              className="animate-spin motion-reduce:animate-none"
+              aria-label="running"
+            />
+          ) : (
+            <chip.Icon size={16} strokeWidth={1.75} aria-hidden />
           )}
-        >
-          {chip.emoji}
         </span>
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-[13px] font-semibold text-zinc-100">
-            {data.label || descriptor.display_name}
+        <div className="min-w-0 flex-1 leading-tight">
+          {renaming ? (
+            <input
+              autoFocus
+              value={draftLabel}
+              aria-label="node name"
+              onChange={(e) => setDraftLabel(e.target.value)}
+              onBlur={commitRename}
+              onKeyDown={(e) => {
+                e.stopPropagation();
+                if (e.key === "Enter") commitRename();
+                if (e.key === "Escape") setRenaming(false);
+              }}
+              className="nodrag w-full rounded border border-accent bg-surface-1 px-1 text-[13px] font-semibold text-text-1 outline-none"
+            />
+          ) : (
+            <p
+              className="truncate text-[13px] font-semibold text-text-1"
+              onDoubleClick={startRename}
+            >
+              {data.label || descriptor.display_name}
+            </p>
+          )}
+          {/* mono id — hover/selected only (§11.2) */}
+          <p
+            className={cn(
+              "truncate font-mono text-[10.5px] text-text-3 transition-opacity duration-[120ms]",
+              selected ? "opacity-100" : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100",
+            )}
+          >
+            {id}
           </p>
-          <p className="truncate font-mono text-[9px] text-zinc-600">{id}</p>
         </div>
-        <button
-          type="button"
-          title="Run to here (partial run, §6.4)"
-          className="nodrag hidden text-zinc-500 hover:text-accent-300 group-hover:block"
-          onClick={(e) => {
-            e.stopPropagation();
-            runToNode(id)
-              .then((preview) => toast.success(`ran to ${id}${preview ? `: ${preview.slice(0, 60)}` : ""}`))
-              .catch((err) => toast.error(`run failed: ${(err as Error).message}`));
-          }}
-        >
-          ▶
-        </button>
         {descriptor.node_kind === "interrupt" && (
-          <span className="rounded bg-amber-900/60 px-1 py-0.5 text-[9px] font-bold text-amber-300">
+          <span className="rounded bg-warning/15 px-1 py-0.5 text-[10.5px] font-bold text-warning">
             HITL
           </span>
         )}
         {descriptor.beta && (
-          <span className="rounded bg-violet-900/60 px-1 py-0.5 text-[9px] font-bold text-violet-300">
+          <span className="rounded bg-accent/15 px-1 py-0.5 text-[10.5px] font-bold text-accent">
             BETA
           </span>
         )}
         {errorCount > 0 && (
-          <span className="rounded-full bg-red-900/70 px-1.5 text-[10px] font-bold text-red-300">
+          <span className="rounded-full bg-danger/15 px-1.5 text-[10.5px] font-bold text-danger">
             {errorCount}
           </span>
         )}
         {errorCount === 0 && warnCount > 0 && (
-          <span className="rounded-full bg-amber-900/70 px-1.5 text-[10px] font-bold text-amber-300">
+          <span className="rounded-full bg-warning/15 px-1.5 text-[10.5px] font-bold text-warning">
             {warnCount}
           </span>
         )}
+        <button
+          type="button"
+          title="Run to here (partial run, §6.4)"
+          aria-label="run to this node"
+          className="nodrag flex h-5 w-5 items-center justify-center rounded text-text-3 opacity-0 hover:bg-surface-3 hover:text-accent focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-accent group-hover:opacity-100"
+          onClick={(e) => {
+            e.stopPropagation();
+            runToNode(id)
+              .then((preview) =>
+                toast.success(`ran to ${id}${preview ? `: ${preview.slice(0, 60)}` : ""}`),
+              )
+              .catch((err) => toast.error(`run failed: ${(err as Error).message}`));
+          }}
+        >
+          <Play size={13} strokeWidth={1.75} aria-hidden />
+        </button>
+        <button
+          type="button"
+          aria-label={collapsed ? "expand node" : "collapse node"}
+          aria-expanded={!collapsed}
+          className="nodrag flex h-5 w-5 items-center justify-center rounded text-text-3 hover:bg-surface-3 hover:text-text-1 focus-visible:outline-2 focus-visible:outline-accent"
+          onClick={(e) => {
+            e.stopPropagation();
+            toggleCollapsed(id);
+          }}
+        >
+          {collapsed ? (
+            <ChevronRight size={14} strokeWidth={1.75} aria-hidden />
+          ) : (
+            <ChevronDown size={14} strokeWidth={1.75} aria-hidden />
+          )}
+        </button>
+        <NodeMenu nodeId={id} onRename={startRename} />
       </div>
 
       {/* control-in for router branches (§18.4 top) */}
@@ -330,157 +597,261 @@ export const LgaNode = memo(function LgaNode({ id, data, selected }: NodeProps<C
         id={ROUTER_TARGET_HANDLE}
         type="target"
         position={Position.Top}
+        aria-label="control input, accepts router branches"
+        tabIndex={0}
         style={{
-          background: "#f59e0b",
-          width: 10,
-          height: 10,
-          opacity: dimFor(undefined, "in", ROUTER_TARGET_HANDLE) ? 0.15 : 0.9,
+          top: -9,
+          width: 16,
+          height: 16,
+          background: "transparent",
+          border: "none",
+          opacity: dimFor(undefined, "in", ROUTER_TARGET_HANDLE) ? 0.25 : 0.9,
           transition: "opacity 120ms",
         }}
-      />
-      {/* toolset OUT on top (§18.4: providers point up to their agent) */}
-      {toolOutputs.map(([name, port], index) => (
-        <Handle
-          key={name}
-          id={name}
-          type="source"
-          position={Position.Top}
-          style={{
-            left: `${72 + index * 12}%`,
-            background: PORT_FAMILY_COLORS.TOOLSET,
-            border: `2px solid ${PORT_FAMILY_COLORS.TOOLSET}`,
-            width: 12,
-            height: 12,
-            opacity: dimFor(port, "out", name) ? 0.15 : 1,
-          }}
+      >
+        <span
+          aria-hidden
+          className="pointer-events-none absolute left-1/2 top-1/2 block h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full"
+          style={{ background: "var(--color-port-route)" }}
         />
-      ))}
+      </Handle>
+      {/* toolset OUT on top (§18.4: providers point up to their agent) */}
+      {toolOutputs.map(([name, port], index) => {
+        const dim = dimFor(port, "out", name);
+        return (
+          <Handle
+            key={name}
+            id={name}
+            type="source"
+            position={Position.Top}
+            aria-label={portAriaLabel(name, port, "out")}
+            tabIndex={0}
+            style={{
+              left: `${72 + index * 12}%`,
+              top: -9,
+              width: 16,
+              height: 16,
+              background: "transparent",
+              border: "none",
+              opacity: dim ? 0.25 : 1,
+              transition: "opacity 120ms",
+            }}
+          >
+            <HandleDot port={port} active={connecting && !dim} />
+          </Handle>
+        );
+      })}
 
-      {(inline.length > 0 || bareInputs.length > 0 || panelOnly.length > 0) && (
-        <div className="border-t border-surface-800 pb-1 pt-1.5">
-          {/* bare input ports (HandleFields, prompt {vars}) */}
-          {bareInputs.map(([name, port]) => (
-            <Row key={name} className="py-1">
-              <RowHandle id={name} port={port} side="in" dimmed={dimFor(port, "in", name)} />
-              <span className="text-[11px] text-zinc-400">
-                {name}
-                {isConnected(name) && <span className="ml-1.5 text-[9px] text-emerald-400">●</span>}
-              </span>
-            </Row>
-          ))}
-
-          {/* inline widgets (Langflow style) */}
-          {inline.map((field) => {
-            const port = ports.inputs.get(field.name);
-            const connected = isConnected(field.name);
-            const Widget = widgetFor(field as FieldDescriptor);
-            return (
-              <Row key={field.name}>
-                {port && (
-                  <RowHandle
-                    id={field.name}
-                    port={port}
-                    side="in"
-                    dimmed={dimFor(port, "in", field.name)}
-                  />
-                )}
-                <p className="mb-1 text-[11px] font-medium text-zinc-300">
-                  {field.display_name}
-                  {field.required && <span className="ml-0.5 text-red-400">*</span>}
-                </p>
-                {connected ? (
-                  <p className="rounded-md border border-dashed border-emerald-800/70 bg-emerald-950/20 px-2 py-1 text-[10px] text-emerald-300">
-                    ← connected
-                  </p>
-                ) : (
-                  <div className="nodrag nowheel text-xs">
-                    <Widget
-                      field={field as FieldDescriptor}
-                      value={data.config[field.name]}
-                      onChange={(value) =>
-                        updateNodeConfig(id, { ...data.config, [field.name]: value })
-                      }
+      {collapsed ? (
+        // §11.2 collapse: body folds to header + port stubs (handles stay live)
+        collapsedStubs > 0 && (
+          <div className="py-1.5">
+            {Array.from({ length: collapsedStubs }).map((_, index) => {
+              const input = dataInputs[index];
+              const output = dataOutputs[index];
+              return (
+                <div key={input?.[0] ?? output?.[0] ?? index} className="relative h-3.5">
+                  {input && (
+                    <RowHandle
+                      id={input[0]}
+                      port={input[1]}
+                      side="in"
+                      dimmed={dimFor(input[1], "in", input[0])}
+                      active={connecting && !dimFor(input[1], "in", input[0])}
                     />
-                  </div>
-                )}
-              </Row>
-            );
-          })}
+                  )}
+                  {output && (
+                    <RowHandle
+                      id={output[0]}
+                      port={output[1]}
+                      side="out"
+                      dimmed={dimFor(output[1], "out", output[0])}
+                      active={connecting && !dimFor(output[1], "out", output[0])}
+                    />
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )
+      ) : (
+        <>
+          {(inline.length > 0 || bareInputs.length > 0 || panelOnly.length > 0) && (
+            <div className="pb-1 pt-1.5">
+              {/* bare input ports (HandleFields, prompt {vars}) */}
+              {bareInputs.map(([name, port]) => {
+                const dim = dimFor(port, "in", name);
+                return (
+                  <Row key={name} className="py-1">
+                    <RowHandle
+                      id={name}
+                      port={port}
+                      side="in"
+                      dimmed={dim}
+                      active={connecting && !dim}
+                    />
+                    <span className="text-[11px] text-text-2">
+                      {name}
+                      {isConnected(name) && (
+                        <span
+                          className="ml-1.5 inline-block h-1.5 w-1.5 rounded-full bg-success"
+                          title="connected"
+                          aria-hidden
+                        />
+                      )}
+                    </span>
+                  </Row>
+                );
+              })}
 
-          {panelOnly.length > 0 && (
-            <Row className="py-1">
-              <button
-                type="button"
-                className="nodrag text-[10px] text-zinc-500 underline-offset-2 hover:text-accent-300 hover:underline"
-                onClick={() => select(id)}
-              >
-                {panelOnly.map((f) => f.display_name).join(", ")} — edit in panel ↗
-              </button>
-            </Row>
-          )}
-        </div>
-      )}
+              {/* inline widgets (Langflow style) */}
+              {inline.map((field) => {
+                const port = ports.inputs.get(field.name);
+                const connected = isConnected(field.name);
+                const Widget = widgetFor(field as FieldDescriptor);
+                const dim = port ? dimFor(port, "in", field.name) : false;
+                return (
+                  <Row key={field.name}>
+                    {port && (
+                      <RowHandle
+                        id={field.name}
+                        port={port}
+                        side="in"
+                        dimmed={dim}
+                        active={connecting && !dim}
+                      />
+                    )}
+                    <p className="mb-1 text-[11px] font-medium text-text-2">
+                      {field.display_name}
+                      {field.required && <span className="ml-0.5 text-danger">*</span>}
+                    </p>
+                    {connected ? (
+                      <p className="rounded-md border border-dashed border-success/40 bg-success/10 px-2 py-1 text-[11px] text-success">
+                        ← connected
+                      </p>
+                    ) : (
+                      <div className="nodrag nowheel text-xs">
+                        <Widget
+                          field={field as FieldDescriptor}
+                          value={effectiveConfig[field.name]}
+                          onChange={(value) =>
+                            updateNodeConfig(id, { ...data.config, [field.name]: value })
+                          }
+                        />
+                      </div>
+                    )}
+                  </Row>
+                );
+              })}
 
-      {/* outputs */}
-      {dataOutputs.length > 0 && (
-        <div className="border-t border-surface-800 py-1">
-          {dataOutputs.map(([name, port]) => (
-            <Row key={name} className="py-1 text-right">
-              <RowHandle id={name} port={port} side="out" dimmed={dimFor(port, "out", name)} />
-              <span
-                className={cn(
-                  "text-[11px]",
-                  port.family === "ROUTE" ? "font-semibold text-amber-400" : "text-zinc-400",
-                )}
-              >
-                {name}
-              </span>
-            </Row>
-          ))}
-        </div>
-      )}
+              {panelOnly.length > 0 && (
+                <Row className="py-1">
+                  <button
+                    type="button"
+                    className="nodrag inline-flex items-center gap-0.5 text-[11px] text-text-3 underline-offset-2 hover:text-accent hover:underline focus-visible:outline-2 focus-visible:outline-accent"
+                    onClick={() => select(id)}
+                  >
+                    {panelOnly.map((f) => f.display_name).join(", ")} — edit in panel
+                    <ArrowUpRight size={11} strokeWidth={1.75} aria-hidden />
+                  </button>
+                </Row>
+              )}
+            </div>
+          )}
 
-      {/* footer: last-run chip + version badge with update indicator (§11.2/§4.11) */}
-      <div className="flex items-center justify-between border-t border-surface-800 px-3.5 py-1 text-[10px]">
-        <span className="font-mono tabular-nums">
-          {runState?.status === "finished" && (
-            <span className="text-emerald-400">✓ {runState.durationMs ?? 0}ms</span>
+          {/* outputs */}
+          {dataOutputs.length > 0 && (
+            <div className="border-t border-border py-1">
+              {dataOutputs.map(([name, port]) => {
+                const dim = dimFor(port, "out", name);
+                return (
+                  <Row key={name} className="py-1 text-right">
+                    <RowHandle
+                      id={name}
+                      port={port}
+                      side="out"
+                      dimmed={dim}
+                      active={connecting && !dim}
+                    />
+                    <span
+                      className={cn(
+                        "text-[11px]",
+                        port.family === "ROUTE" ? "font-semibold text-port-route" : "text-text-2",
+                      )}
+                    >
+                      {name}
+                    </span>
+                  </Row>
+                );
+              })}
+            </div>
           )}
-          {runState?.status === "error" && (
-            <span className="text-red-400">✗ {runState.errorCode}</span>
-          )}
-          {runState?.status === "running" && <span className="text-accent-300">running…</span>}
-        </span>
-        <span className="flex items-center gap-1 font-mono text-zinc-600">
-          {descriptor.legacy && <span className="text-amber-500">LEGACY</span>}
-          v{installed}
-          {updateAvailable && (
-            <span className="text-amber-400" title={`pinned ${pinned} → installed ${installed}`}>
-              ⚠ update
+
+          {/* footer: last-run chip + version badge with update indicator (§11.2/§4.11) */}
+          <div className="flex items-center justify-between border-t border-border px-3.5 py-1 text-[10.5px]">
+            <span className="font-mono tabular-nums">
+              {runState?.status === "finished" && (
+                <span className="inline-flex items-center gap-0.5 text-success">
+                  <Check size={11} strokeWidth={2} aria-hidden />
+                  {runState.durationMs ?? 0}ms
+                </span>
+              )}
+              {runState?.status === "error" && (
+                <span className="inline-flex items-center gap-0.5 text-danger">
+                  <X size={11} strokeWidth={2} aria-hidden />
+                  {runState.errorCode}
+                </span>
+              )}
+              {runState?.status === "running" && <span className="text-accent">running…</span>}
+              {runState?.status === "interrupted" && (
+                <span className="text-warning">awaiting input</span>
+              )}
             </span>
-          )}
-        </span>
-      </div>
+            <span className="flex items-center gap-1 font-mono text-text-3">
+              {descriptor.legacy && <span className="text-warning">LEGACY</span>}
+              v{installed}
+              {updateAvailable && (
+                <span
+                  className="inline-flex items-center gap-0.5 text-warning"
+                  title={`pinned ${pinned} → installed ${installed}`}
+                >
+                  <AlertTriangle size={11} strokeWidth={1.75} aria-hidden />
+                  update
+                </span>
+              )}
+            </span>
+          </div>
+        </>
+      )}
 
       {/* tools IN on the bottom (§18.4: tools hang below the agent) */}
-      {toolInputs.map(([name, port], index) => (
-        <Handle
-          key={name}
-          id={name}
-          type="target"
-          position={Position.Bottom}
-          style={{
-            left: `${50 + index * 12}%`,
-            background: PORT_FAMILY_COLORS.TOOLSET,
-            border: `2px solid ${PORT_FAMILY_COLORS.TOOLSET}`,
-            width: 12,
-            height: 12,
-            opacity: dimFor(port, "in", name) ? 0.15 : 1,
-          }}
-        />
-      ))}
-      {toolInputs.length > 0 && (
-        <p className="pb-1 text-center text-[9px] font-medium text-sky-400">tools</p>
+      {toolInputs.map(([name, port], index) => {
+        const dim = dimFor(port, "in", name);
+        return (
+          <Handle
+            key={name}
+            id={name}
+            type="target"
+            position={Position.Bottom}
+            aria-label={portAriaLabel(name, port, "in")}
+            tabIndex={0}
+            style={{
+              left: `${50 + index * 12}%`,
+              bottom: -9,
+              width: 16,
+              height: 16,
+              background: "transparent",
+              border: "none",
+              opacity: dim ? 0.25 : 1,
+              transition: "opacity 120ms",
+            }}
+          >
+            <HandleDot port={port} active={connecting && !dim} />
+          </Handle>
+        );
+      })}
+      {toolInputs.length > 0 && !collapsed && (
+        <p className="pb-1 text-center text-[10.5px] font-medium text-port-toolset">tools</p>
       )}
     </div>
   );
@@ -488,9 +859,9 @@ export const LgaNode = memo(function LgaNode({ id, data, selected }: NodeProps<C
 
 // ------------------------------------------------------------------ sticky notes
 const NOTE_COLORS: Record<string, string> = {
-  amber: "bg-amber-200/95 border-amber-400 text-amber-950",
-  sky: "bg-sky-200/95 border-sky-400 text-sky-950",
-  emerald: "bg-emerald-200/95 border-emerald-400 text-emerald-950",
+  amber: "bg-warning/85 border-warning text-canvas",
+  sky: "bg-port-toolset/85 border-port-toolset text-canvas",
+  emerald: "bg-success/85 border-success text-canvas",
 };
 
 export const NoteNode = memo(function NoteNode({ id, data, selected }: NodeProps<CanvasNode>) {
@@ -508,7 +879,7 @@ export const NoteNode = memo(function NoteNode({ id, data, selected }: NodeProps
       className={cn(
         "w-52 rounded-md border p-2 text-[11px] leading-snug shadow-md",
         NOTE_COLORS[String(data.config?.color ?? "amber")] ?? NOTE_COLORS.amber,
-        selected && "ring-2 ring-accent-500",
+        selected && "ring-2 ring-accent",
       )}
       onDoubleClick={() => {
         setDraft(String(data.notes ?? ""));
@@ -538,23 +909,31 @@ export const NoteNode = memo(function NoteNode({ id, data, selected }: NodeProps
   );
 });
 
+// ------------------------------------------------------------------ edges (§11.3/§11.4)
 export function LgaEdge(props: EdgeProps<CanvasEdge>) {
   const [path, labelX, labelY] = getBezierPath(props);
   const kind = props.data?.kind ?? "data";
-  const style =
-    kind === "tool"
-      ? {
-          stroke: "var(--color-port-toolset)",
-          strokeDasharray: "6 4",
-          strokeWidth: 1.75,
-        }
-      : kind === "router"
-        ? { stroke: "var(--color-port-route)", strokeWidth: 1.75 }
-        : { stroke: "var(--color-border-strong)", strokeWidth: 1.75 };
+  const family =
+    props.data?.family ?? (kind === "tool" ? "TOOLSET" : kind === "router" ? "ROUTE" : undefined);
+  const color = family ? PORT_FAMILY_COLORS[family] : "var(--color-border-strong)";
+  // §11.4 signature moment: while a run is active, edges leaving running or
+  // finished nodes carry a slow dash-flow in the family color.
+  const live = useBuilder((s) => {
+    const status = s.runStates[props.source]?.status;
+    return s.runActive && (status === "running" || status === "finished");
+  });
   const coercion = props.data?.coercion;
   return (
     <>
-      <BaseEdge id={props.id} path={path} style={style} />
+      <BaseEdge
+        id={props.id}
+        path={path}
+        className={cn("gf-edge", kind === "tool" && "gf-edge-tool", live && "gf-edge-live")}
+        style={{ stroke: color }}
+      />
+      {/* endpoint dots — visible on hover/selected (§11.3) */}
+      <circle className="gf-edge-dot" cx={props.sourceX} cy={props.sourceY} r={3} fill={color} />
+      <circle className="gf-edge-dot" cx={props.targetX} cy={props.targetY} r={3} fill={color} />
       {coercion && (
         <foreignObject x={labelX - 9} y={labelY - 9} width={18} height={18}>
           <div

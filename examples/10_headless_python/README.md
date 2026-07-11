@@ -1,6 +1,6 @@
 # 10 · headless_python
 
-`pip install lga` and use it as a library — no frontend, no server, no keys
+`pip install langgraph-agent-builder` and use it as a library — no frontend, no server, no keys
 (SPEC §2.7): `compile_flow` → vanilla `StateGraph`, `arun_flow` for the runtime
 path, and export-to-python (§5.7).
 

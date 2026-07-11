@@ -20,11 +20,10 @@ from lga.sdk.fields import Field, MultiselectInput, PromptInput
 from lga.sdk.outputs import Output
 from lga.sdk.ports import ROUTE, TEXT, PortSpec, ToolDef
 from lga.sdk.ports import coerce as _coerce
+from lga.sdk.templating import PROMPT_VAR_RE  # single source: port spawning ≡ rendering
 
 NodeConfig = dict[str, Any]
 NodeFn = Callable[..., Awaitable[dict[str, Any]]]
-
-PROMPT_VAR_RE = re.compile(r"(?<!\{)\{([a-zA-Z_][a-zA-Z0-9_]*)\}(?!\})")
 
 
 def slugify(text: str) -> str:
@@ -211,7 +210,10 @@ class Component(ABC):
 
     @classmethod
     def config_schema(cls) -> dict[str, Any]:
-        """JSON Schema for node config values (client-side validation)."""
+        """JSON Schema for node config values (client-side validation).
+
+        Includes the implicit tool-mode fields (§4.7) — the form renders them,
+        so the schema must accept them (additionalProperties is False)."""
         props: dict[str, Any] = {}
         required: list[str] = []
         ref_wrapper = {
@@ -221,7 +223,7 @@ class Component(ABC):
                 "$secret": {"type": "string"},
             },
         }
-        for f in cls.inputs:
+        for f in [*cls.inputs, *cls._implicit_field_objects()]:
             if f.port_only:
                 continue
             base = f.json_schema() or {}
@@ -271,7 +273,7 @@ class Component(ABC):
         }
 
     @classmethod
-    def _implicit_fields(cls) -> list[dict[str, Any]]:
+    def _implicit_field_objects(cls) -> list[Field]:
         """Synthetic form fields every tool-capable component gets (§4.7):
         the Tool Mode toggle plus editable tool name/description — Langflow
         lesson: names/descriptions drive agent tool selection."""
@@ -285,20 +287,24 @@ class Component(ABC):
                 display_name="Tool Mode",
                 info="Expose this node as a tool (adds the Toolset port on top).",
                 default=cls.tool_mode_default,
-            ).descriptor(),
+            ),
             StrInput(
                 name="tool_name",
                 display_name="Tool Name",
                 info="Agents pick tools by name — keep it verb-like.",
                 advanced=True,
-            ).descriptor(),
+            ),
             MultilineInput(
                 name="tool_description",
                 display_name="Tool Description",
                 info="Shown to the agent; decisive for tool selection.",
                 advanced=True,
-            ).descriptor(),
+            ),
         ]
+
+    @classmethod
+    def _implicit_fields(cls) -> list[dict[str, Any]]:
+        return [f.descriptor() for f in cls._implicit_field_objects()]
 
     # ------------------------------------------------------------------ tool mode (§4.7)
     @classmethod

@@ -4,15 +4,18 @@ from __future__ import annotations
 
 import builtins
 import re
+from collections.abc import Sequence
 from typing import Any
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from lga.db.models import FlowRow, FlowVersionRow
 from lga.schema.diagnostics import Diagnostic, DiagnosticCode, has_errors
 from lga.schema.flowspec import FlowSpec, parse_flowspec
 from lga.sdk.component import NodeKind
+from lga.services.errors import FlowLockedError, SlugConflictError
 
 SEMVER_RE = re.compile(r"^(\d+)\.(\d+)\.(\d+)$")
 
@@ -89,13 +92,42 @@ class FlowService:
         )
         async with self._sessions() as session:
             session.add(row)
-            await session.commit()
+            try:
+                # the UNIQUE(slug) constraint is the race-safe guard — no
+                # pre-check can prevent two concurrent creates from colliding
+                await session.commit()
+            except IntegrityError as exc:
+                raise SlugConflictError(f"slug {parsed.flow.slug!r} already exists") from exc
             await session.refresh(row)
         return row
 
-    async def list(self) -> list[FlowRow]:
+    async def list(
+        self,
+        *,
+        tag: str | None = None,
+        q: str | None = None,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> list[FlowRow]:
+        stmt = select(FlowRow).order_by(FlowRow.updated_at.desc())
+        if q:
+            needle = f"%{q.lower()}%"
+            stmt = stmt.where(
+                or_(func.lower(FlowRow.name).like(needle), func.lower(FlowRow.slug).like(needle))
+            )
+        if tag is None:
+            stmt = stmt.offset(offset)
+            if limit is not None:
+                stmt = stmt.limit(limit)
+            async with self._sessions() as session:
+                return list((await session.execute(stmt)).scalars().all())
+        # tags live inside the JSON spec — no portable SQL containment across
+        # SQLite/Postgres, so filter in Python and paginate afterwards
         async with self._sessions() as session:
-            return list((await session.execute(select(FlowRow))).scalars().all())
+            rows = list((await session.execute(stmt)).scalars().all())
+        rows = [r for r in rows if tag in (((r.spec or {}).get("flow") or {}).get("tags") or [])]
+        end = offset + limit if limit is not None else None
+        return rows[offset:end]
 
     async def get(self, flow_id: str) -> FlowRow | None:
         async with self._sessions() as session:
@@ -155,16 +187,22 @@ class FlowService:
         return row, None
 
     async def update(self, flow_id: str, spec: dict[str, Any] | FlowSpec) -> FlowRow | None:
+        """Replace the draft spec. Raises FlowLockedError / SlugConflictError (§9.1)."""
         parsed = parse_flowspec(spec)
         async with self._sessions() as session:
             row = await session.get(FlowRow, flow_id)
             if row is None:
                 return None
+            if row.locked:
+                raise FlowLockedError("flow is locked; unlock it before editing")
             row.slug = parsed.flow.slug
             row.name = parsed.flow.name
             row.description = parsed.flow.description
             row.spec = parsed.model_dump(mode="json")
-            await session.commit()
+            try:
+                await session.commit()
+            except IntegrityError as exc:
+                raise SlugConflictError(f"slug {parsed.flow.slug!r} already exists") from exc
             await session.refresh(row)
         return row
 
@@ -212,8 +250,45 @@ class FlowService:
             ).scalar_one_or_none()
 
     async def latest_version(self, flow_id: str) -> FlowVersionRow | None:
-        rows = await self.versions(flow_id)
-        return rows[0] if rows else None
+        async with self._sessions() as session:
+            return (
+                (
+                    await session.execute(
+                        select(FlowVersionRow)
+                        .where(FlowVersionRow.flow_id == flow_id)
+                        .order_by(FlowVersionRow.published_at.desc())
+                        .limit(1)
+                    )
+                )
+                .scalars()
+                .first()
+            )
+
+    async def latest_versions(self, flow_ids: Sequence[str]) -> dict[str, FlowVersionRow]:
+        """Newest published version per flow — one window query, no N+1."""
+        if not flow_ids:
+            return {}
+        rank = (
+            func.row_number()
+            .over(
+                partition_by=FlowVersionRow.flow_id,
+                order_by=FlowVersionRow.published_at.desc(),
+            )
+            .label("rank")
+        )
+        ranked = (
+            select(FlowVersionRow.id.label("version_id"), rank)
+            .where(FlowVersionRow.flow_id.in_(list(flow_ids)))
+            .subquery()
+        )
+        stmt = (
+            select(FlowVersionRow)
+            .join(ranked, FlowVersionRow.id == ranked.c.version_id)
+            .where(ranked.c.rank == 1)
+        )
+        async with self._sessions() as session:
+            rows = (await session.execute(stmt)).scalars().all()
+        return {row.flow_id: row for row in rows}
 
     async def serve_version(self, flow: FlowRow) -> FlowVersionRow | None:
         """The pinned published version an agent serves (SPEC §7.1)."""
@@ -263,9 +338,19 @@ class FlowService:
     # ---------------------------------------------------------------- serving helpers
     async def published_flows(self) -> builtins.list[tuple[FlowRow, FlowVersionRow, FlowSpec]]:
         """All flows with a published version whose spec enables A2A or MCP."""
+        flows = await self.list()
+        unpinned = [
+            f.id for f in flows if not f.serve_version or f.serve_version == "latest_published"
+        ]
+        latest = await self.latest_versions(unpinned)
         result: list[tuple[FlowRow, FlowVersionRow, FlowSpec]] = []
-        for flow in await self.list():
-            version = await self.serve_version(flow)
+        for flow in flows:
+            if flow.id in latest:
+                version: FlowVersionRow | None = latest[flow.id]
+            elif flow.serve_version and flow.serve_version != "latest_published":
+                version = await self.get_version(flow.id, flow.serve_version)
+            else:
+                version = None
             if version is None:
                 continue
             spec = parse_flowspec(version.flowspec)

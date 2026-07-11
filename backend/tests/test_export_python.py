@@ -87,4 +87,14 @@ def test_secret_refs_become_environ(tmp_path: Path) -> None:
         source = export_python(parse_flowspec(spec_dict), get_registry())
     finally:
         del os.environ["LGA_CRED_MY_API_KEY"]
-    assert 'os.environ["MY_API_KEY"]' in source
+    # same env var the headless EnvVariablesProvider reads — exported flow and
+    # `lga flow run` of the same spec must agree on the name
+    assert 'os.environ["LGA_CRED_MY_API_KEY"]' in source
+
+
+def test_vectorstore_refs_become_handles() -> None:
+    spec_dict = hello_spec("export-vs")
+    spec_dict["nodes"][1]["config"]["vs"] = {"$vectorstore": "myconn", "collection": "docs"}
+    source = export_python(parse_flowspec(spec_dict), get_registry())
+    assert "from lga.sdk.ports import VectorStoreHandle" in source
+    assert "VectorStoreHandle(connection='myconn', collection='docs')" in source

@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from contextlib import AsyncExitStack
+import asyncio
+from contextlib import AbstractAsyncContextManager, AsyncExitStack
 from typing import TYPE_CHECKING, Any
 
 from lga.services.settings import Settings
@@ -31,28 +32,32 @@ class CheckpointerFactory:
         self._settings = settings
         self._stack = AsyncExitStack()
         self._checkpointer: Any = None
+        self._lock = asyncio.Lock()
 
     async def get(self) -> Any:
+        # double-checked lock: concurrent first calls (boot remount + webhook,
+        # parallel A2A tasks) must not open two savers against one database
         if self._checkpointer is None:
-            if self._settings.is_postgres:
-                from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-
-                self._checkpointer = await self._stack.enter_async_context(
-                    AsyncPostgresSaver.from_conn_string(self._settings.psycopg_dsn)
-                )
-                self._checkpointer.serde = _serde()
-                await self._checkpointer.setup()
-            else:
-                from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
-
-                self._settings.ensure_dirs()
-                path = self._settings.home / "checkpoints.db"
-                self._checkpointer = await self._stack.enter_async_context(
-                    AsyncSqliteSaver.from_conn_string(str(path))
-                )
-                self._checkpointer.serde = _serde()
-                await self._checkpointer.setup()
+            async with self._lock:
+                if self._checkpointer is None:
+                    self._checkpointer = await self._build()
         return self._checkpointer
+
+    async def _build(self) -> Any:
+        ctx: AbstractAsyncContextManager[Any]
+        if self._settings.is_postgres:
+            from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+
+            ctx = AsyncPostgresSaver.from_conn_string(self._settings.psycopg_dsn)
+        else:
+            from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+
+            self._settings.ensure_dirs()
+            ctx = AsyncSqliteSaver.from_conn_string(str(self._settings.home / "checkpoints.db"))
+        saver: Any = await self._stack.enter_async_context(ctx)
+        saver.serde = _serde()
+        await saver.setup()
+        return saver
 
     async def aclose(self) -> None:
         await self._stack.aclose()

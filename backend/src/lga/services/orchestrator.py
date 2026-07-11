@@ -71,6 +71,11 @@ class Orchestrator:
         if self.settings.fallback_to_env_var:
             import os
 
+            # NOTE(SPEC §9.4/§10.3): the spec says run-start env-fallback misses
+            # "still raise RT106", but every $var/$secret miss (env fallback
+            # included) surfaces right here at compile time as E012 — before a
+            # run row exists to store an RT code on. RT106 is therefore
+            # unreachable in this implementation; SPEC amendment pending.
             vs_provider.env_fallback = lambda name: os.environ.get(name)  # type: ignore[attr-defined]
         return compile_flow(
             parse_flowspec(spec),
@@ -196,6 +201,12 @@ class Orchestrator:
             raise KeyError(run_id)
         spec, _flow_row = await self._spec_for_run(run)
         compiled = await self.compiled(spec)
+        bus = self.executor.bus
+        if bus is not None:
+            # after a restart the bus's in-memory seq counters are gone; resume
+            # numbering above the persisted events, or every new event collides
+            # with uq_run_event_seq and live SSE tails filter them out (§6.2)
+            bus.set_seq_floor(run_id, await self.runs.max_seq(run_id))
         kwargs: dict[str, Any] = dict(
             run_id=run_id,
             thread_id=run.thread_id,
@@ -212,8 +223,7 @@ class Orchestrator:
 
         from lga.db.models import FlowVersionRow
 
-        sessions = self.runs._sessions  # same sessionmaker; internal wiring
-        async with sessions() as session:
+        async with self.runs.session() as session:  # same sessionmaker as run rows
             if run.flow_version_id:
                 version = await session.get(FlowVersionRow, run.flow_version_id)
                 if version is not None:
@@ -233,7 +243,7 @@ class Orchestrator:
     # ---------------------------------------------------------------- threads
     async def thread_state(self, spec: dict[str, Any] | FlowSpec, thread_id: str) -> Any:
         compiled = await self.compiled(spec)
-        checkpointer = await self.executor._get_checkpointer()
+        checkpointer = await self.executor.get_checkpointer()
         graph = compiled.compile(checkpointer=checkpointer)
         return await graph.aget_state({"configurable": {"thread_id": thread_id}})
 
@@ -241,7 +251,7 @@ class Orchestrator:
         self, spec: dict[str, Any] | FlowSpec, thread_id: str, limit: int = 50
     ) -> list[Any]:
         compiled = await self.compiled(spec)
-        checkpointer = await self.executor._get_checkpointer()
+        checkpointer = await self.executor.get_checkpointer()
         graph = compiled.compile(checkpointer=checkpointer)
         history = []
         async for snapshot in graph.aget_state_history({"configurable": {"thread_id": thread_id}}):
@@ -254,7 +264,7 @@ class Orchestrator:
         self, spec: dict[str, Any] | FlowSpec, thread_id: str, values: dict[str, Any]
     ) -> None:
         compiled = await self.compiled(spec)
-        checkpointer = await self.executor._get_checkpointer()
+        checkpointer = await self.executor.get_checkpointer()
         graph = compiled.compile(checkpointer=checkpointer)
         await graph.aupdate_state({"configurable": {"thread_id": thread_id}}, values)
 

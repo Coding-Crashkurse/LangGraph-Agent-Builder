@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 
 
 def _orch(svc: AppServices) -> Orchestrator:
-    return svc.orchestrator  # type: ignore[no-any-return]
+    return svc.orchestrator
 
 
 def _broken_spec() -> dict[str, Any]:

@@ -18,6 +18,20 @@ def get_services(request: Request) -> AppServices:
 Services = Annotated["AppServices", Depends(get_services)]
 
 
+def header_vars(request: Request) -> dict[str, str]:
+    """X-LGA-VAR-<NAME> headers override generic globals for this run (SPEC §9.4).
+
+    Shared by /run and /webhook so the extraction (and any future hardening,
+    e.g. rejecting credential names) cannot diverge between entry points.
+    """
+    out: dict[str, str] = {}
+    for key, value in request.headers.items():
+        lower = key.lower()
+        if lower.startswith("x-lga-var-"):
+            out[lower.removeprefix("x-lga-var-")] = value
+    return out
+
+
 async def require_studio(
     request: Request,
     x_api_key: Annotated[str | None, Header(alias="X-API-Key")] = None,

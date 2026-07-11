@@ -7,7 +7,9 @@ One component, two roles (like Langflow's unified `Language Model`):
   Model → Chat Output).
 * **Language Model handle** — the ``model`` port always carries the provider
   *config dict* (not a client instance) so it serializes cleanly into
-  checkpoints; an Agent/Router consumes it and resolves it lazily.
+  checkpoints; an Agent/Router consumes it and resolves it lazily. A configured
+  ``api_key`` travels as an opaque ``{"$port_secret": token}`` ref — the
+  plaintext stays in the process-local stash (SPEC §10.5), never in checkpoints.
 
 The node only calls the model when an ``input`` is actually connected, so the
 handle-only use (feed the ``model`` port to an Agent) stays a cheap config
@@ -71,14 +73,29 @@ class LanguageModel(Component):
     ]
 
     def build(self, ctx: BuildContext) -> NodeFn:
-        from lga.components.llm._models import parse_model_value, resolve_model
+        from lga.components.llm._models import (
+            parse_model_value,
+            resolve_model,
+            stash_port_secret,
+            stream_completion,
+        )
+
+        # Stash the resolved key at build time: the MODEL port payload is
+        # checkpointed, so it carries only an opaque ref, never the plaintext.
+        api_key_ref: dict[str, str] | None = None
+        api_key = ctx.get_field("api_key")
+        if api_key:
+            from lga.schema.scrub import register_secret
+
+            register_secret(str(api_key))
+            api_key_ref = stash_port_secret(f"{ctx.flow_id}:{ctx.node_id}:api_key", str(api_key))
 
         async def node(state: dict[str, Any], config: Any) -> dict[str, Any]:
             value = parse_model_value(ctx.get_field("model") or {})
             if ctx.get_field("temperature") is not None:
                 value["temperature"] = ctx.get_field("temperature")
-            if ctx.get_field("api_key"):
-                value["api_key"] = str(ctx.get_field("api_key"))
+            if api_key_ref is not None:
+                value["api_key"] = dict(api_key_ref)
             # The MODEL handle is always available (cheap config pass-through).
             out: dict[str, Any] = {"model": value}
 
@@ -96,18 +113,9 @@ class LanguageModel(Component):
                 messages.append(SystemMessage(content=str(system)))
             messages.append(HumanMessage(content=prompt))
 
-            text = ""
-            if ctx.get_field("stream_tokens"):
-                async for chunk in model.astream(messages):
-                    delta = chunk.content if isinstance(chunk.content, str) else ""
-                    if delta:
-                        text += delta
-                        rc.stream_writer(delta)
-            else:
-                response = await model.ainvoke(messages)
-                text = (
-                    response.content if isinstance(response.content, str) else str(response.content)
-                )
+            text = await stream_completion(
+                model, messages, rc, bool(ctx.get_field("stream_tokens"))
+            )
 
             out["message"] = ports.Message(role="assistant", content=text)
             out["text"] = text

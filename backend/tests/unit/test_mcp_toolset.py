@@ -86,6 +86,24 @@ def test_connection_header_forwarding_on_but_no_credential(
     assert "headers" not in conn
 
 
+def test_connection_timeout_plumbed_into_http_and_session() -> None:
+    from datetime import timedelta
+
+    conn = _connection_from_config(
+        {"transport": "streamable_http", "url": "http://x", "timeout_s": 12}
+    )
+    assert conn["timeout"] == 12.0
+    assert conn["session_kwargs"] == {"read_timeout_seconds": timedelta(seconds=12)}
+
+
+def test_connection_timeout_plumbed_for_stdio_session_only() -> None:
+    from datetime import timedelta
+
+    conn = _connection_from_config({"transport": "stdio", "command": "srv", "timeout_s": 7})
+    assert "timeout" not in conn
+    assert conn["session_kwargs"] == {"read_timeout_seconds": timedelta(seconds=7)}
+
+
 # --------------------------------------------------------------------------- fake MCP client
 
 

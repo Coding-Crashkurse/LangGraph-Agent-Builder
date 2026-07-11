@@ -6,7 +6,7 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Header, HTTPException, Request
 
-from lga.api.deps import Services
+from lga.api.deps import Services, header_vars
 from lga.services.orchestrator import FlowNotRunnableError
 
 router = APIRouter(tags=["webhook"])
@@ -29,11 +29,6 @@ async def webhook(
         payload = await request.json()
     except Exception:
         payload = {"raw": (await request.body()).decode(errors="replace")}
-    header_vars = {
-        k.lower().removeprefix("x-lga-var-"): v
-        for k, v in request.headers.items()
-        if k.lower().startswith("x-lga-var-")
-    }
     try:
         # SPEC §10.5: public run endpoints execute the stored definition only —
         # the body lands in data.webhook_payload, tweaks are NOT accepted here.
@@ -43,7 +38,7 @@ async def webhook(
             mode="api",
             data={"webhook_payload": payload},
             background=True,
-            extra_vars=header_vars,
+            extra_vars=header_vars(request),
         )
     except FlowNotRunnableError as exc:
         raise HTTPException(422, str(exc)) from exc

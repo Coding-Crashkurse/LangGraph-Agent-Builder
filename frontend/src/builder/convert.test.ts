@@ -1,8 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import type { FlowSpec } from "@/api/types";
+import type { ComponentDescriptor, FieldDescriptor, FlowSpec } from "@/api/types";
 
-import { canvasToSpec, specToCanvas } from "./convert";
+import {
+  canvasToSpec,
+  defaultConfig,
+  edgeSourceFamily,
+  specToCanvas,
+  withEdgeFamilies,
+} from "./convert";
 
 const FIXTURE: FlowSpec = {
   schema_version: "1",
@@ -64,6 +70,28 @@ const FIXTURE: FlowSpec = {
   ],
 };
 
+/** minimal descriptor: `start` with a MESSAGE output named `message` */
+const START_DESCRIPTOR = {
+  component_id: "lga.io.start",
+  version: "1.0.0",
+  category: "io",
+  node_kind: "task",
+  dynamic_outputs_from: null,
+  fields: [],
+  outputs: [
+    {
+      name: "message",
+      display_name: "Message",
+      port: { schema_ref: "lga:Message", json_schema: {}, family: "MESSAGE", is_list: false },
+      method: null,
+      group: null,
+    },
+  ],
+  input_ports: {},
+} as unknown as ComponentDescriptor;
+
+const DESCRIPTORS = new Map([["lga.io.start", START_DESCRIPTOR]]);
+
 describe("FlowSpec ⇄ canvas mapping (SPEC §5.2)", () => {
   it("round-trips nodes and edges losslessly", () => {
     const { nodes, edges } = specToCanvas(FIXTURE);
@@ -83,6 +111,51 @@ describe("FlowSpec ⇄ canvas mapping (SPEC §5.2)", () => {
   it("router edges target the implicit control-in handle", () => {
     const { edges } = specToCanvas(FIXTURE);
     expect(edges[2].targetHandle).toBe("__in__");
+  });
+
+  it("resolves the SOURCE port family onto edges at load time (§11.3)", () => {
+    const { edges } = specToCanvas(FIXTURE, DESCRIPTORS);
+    // data edge: from the start descriptor's `message` output
+    expect(edges[0].data?.family).toBe("MESSAGE");
+    // tool / router edges have fixed families regardless of descriptors
+    expect(edges[1].data?.family).toBe("TOOLSET");
+    expect(edges[2].data?.family).toBe("ROUTE");
+  });
+
+  it("edge family is canvas-only — never leaks into the FlowSpec", () => {
+    const { nodes, edges } = specToCanvas(FIXTURE, DESCRIPTORS);
+    const back = canvasToSpec(FIXTURE, nodes, edges);
+    expect(back.edges).toEqual(FIXTURE.edges);
+  });
+
+  it("withEdgeFamilies backfills only unresolved edges (descriptors arrive late)", () => {
+    const { nodes, edges } = specToCanvas(FIXTURE); // no descriptors yet
+    expect(edges[0].data?.family).toBeUndefined();
+    const filled = withEdgeFamilies(nodes, edges, DESCRIPTORS);
+    expect(filled[0].data?.family).toBe("MESSAGE");
+    // unknown source components stay unresolved instead of guessing
+    expect(
+      edgeSourceFamily(
+        { source: "fake_llm_1", sourceHandle: "toolset", data: { kind: "data" } },
+        nodes,
+        DESCRIPTORS,
+      ),
+    ).toBeUndefined();
+  });
+
+  it("defaultConfig merge: config wins, descriptor default fills the gap", () => {
+    const descriptor = {
+      fields: [
+        { name: "temperature", default: 0.7, port_only: false } as unknown as FieldDescriptor,
+        { name: "prompt", default: null, port_only: false } as unknown as FieldDescriptor,
+        { name: "message", default: "hi", port_only: true } as unknown as FieldDescriptor,
+      ],
+    } as unknown as ComponentDescriptor;
+    // null defaults and port-only fields never materialize into config
+    expect(defaultConfig(descriptor)).toEqual({ temperature: 0.7 });
+    // node card + inspector both resolve via {...defaults, ...config}
+    const effective = { ...defaultConfig(descriptor), temperature: 0 };
+    expect(effective.temperature).toBe(0); // 0 is a real value
   });
 
   it("round-trips sticky notes through ui.sticky_notes (§11.8)", () => {

@@ -93,22 +93,36 @@ class _FakeResponse:
         json_data: Any = None,
         status_code: int = 200,
         raise_json: bool = False,
+        headers: dict[str, str] | None = None,
     ) -> None:
         self.text = text
         self._json = json_data
         self.status_code = status_code
         self._raise_json = raise_json
+        self.headers = headers or {}
 
     def json(self) -> Any:
         if self._raise_json:
             raise ValueError("no json body")
         return self._json
 
+    def raise_for_status(self) -> _FakeResponse:
+        if self.status_code >= 400:
+            raise httpx.HTTPStatusError(
+                f"HTTP {self.status_code}",
+                request=httpx.Request("GET", "http://fake"),
+                response=httpx.Response(self.status_code),
+            )
+        return self
+
 
 class _FakeHttpClient:
-    def __init__(self, response: _FakeResponse, sink: list[dict[str, Any]]) -> None:
-        self._response = response
+    def __init__(self, responses: list[_FakeResponse], sink: list[dict[str, Any]]) -> None:
+        self._responses = list(responses)
         self._sink = sink
+
+    def _next(self) -> _FakeResponse:
+        return self._responses.pop(0) if len(self._responses) > 1 else self._responses[0]
 
     async def __aenter__(self) -> _FakeHttpClient:
         return self
@@ -125,24 +139,24 @@ class _FakeHttpClient:
         headers: Any = None,
     ) -> _FakeResponse:
         self._sink.append({"verb": "request", "method": method, "url": url, "json": json})
-        return self._response
+        return self._next()
 
     async def post(self, url: str, *, json: Any = None, **_: Any) -> _FakeResponse:
         self._sink.append({"verb": "post", "url": url, "json": json})
-        return self._response
+        return self._next()
 
     async def get(self, url: str, *, params: Any = None, **_: Any) -> _FakeResponse:
         self._sink.append({"verb": "get", "url": url, "params": params})
-        return self._response
+        return self._next()
 
 
 def _install_fake_httpx(
-    monkeypatch: pytest.MonkeyPatch, response: _FakeResponse
+    monkeypatch: pytest.MonkeyPatch, *responses: _FakeResponse
 ) -> list[dict[str, Any]]:
     sink: list[dict[str, Any]] = []
 
     def factory(*_: Any, **__: Any) -> _FakeHttpClient:
-        return _FakeHttpClient(response, sink)
+        return _FakeHttpClient(list(responses), sink)
 
     monkeypatch.setattr(httpx, "AsyncClient", factory)
     return sink
@@ -211,6 +225,51 @@ async def test_http_request_post_sends_body(
     assert sink[0]["json"] == {"k": 1}
 
 
+def _fake_public_dns(monkeypatch: pytest.MonkeyPatch, *public_hosts: str) -> None:
+    """getaddrinfo stub: listed hosts resolve public; everything else is real."""
+    import socket
+
+    real = socket.getaddrinfo
+
+    def fake(host: str, port: Any, *args: Any, **kwargs: Any) -> Any:
+        if host in public_hosts:
+            return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 0))]
+        return real(host, port, *args, **kwargs)
+
+    monkeypatch.setattr(socket, "getaddrinfo", fake)
+
+
+async def test_http_request_redirect_to_private_is_blocked(
+    sqlite_settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # a public URL 302-ing into a private address must fail the per-hop guard
+    _fake_public_dns(monkeypatch, "public.example")
+    sink = _install_fake_httpx(
+        monkeypatch,
+        _FakeResponse(status_code=302, headers={"location": "http://127.0.0.1:8010/api"}),
+        _FakeResponse(text="never", json_data={}),
+    )
+    node = _build(HttpRequest, {"url": "http://public.example/x"}, sqlite_settings)
+    out = await node({}, {})
+    assert out["text"].startswith("blocked:")
+    assert len(sink) == 1  # the private hop was never fetched
+
+
+async def test_http_request_follows_validated_public_redirect(
+    sqlite_settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _fake_public_dns(monkeypatch, "public.example", "cdn.example")
+    sink = _install_fake_httpx(
+        monkeypatch,
+        _FakeResponse(status_code=302, headers={"location": "http://cdn.example/y"}),
+        _FakeResponse(text='{"ok": true}', json_data={"ok": True}),
+    )
+    node = _build(HttpRequest, {"url": "http://public.example/x"}, sqlite_settings)
+    out = await node({}, {})
+    assert out["json"] == {"ok": True}
+    assert [s["url"] for s in sink] == ["http://public.example/x", "http://cdn.example/y"]
+
+
 # --------------------------------------------------------------------------- WebSearch
 
 
@@ -233,9 +292,40 @@ async def test_web_search_serpapi_maps_results(
         monkeypatch,
         _FakeResponse(json_data={"organic_results": [{"title": "T", "link": "L", "snippet": "S"}]}),
     )
-    node = _build(WebSearch, {"provider": "serpapi", "query": "q"}, sqlite_settings)
+    node = _build(WebSearch, {"provider": "serpapi", "query": "q", "api_key": "k"}, sqlite_settings)
     out = await node({}, {})
     assert out["table"] == [{"title": "T", "url": "L", "content": "S"}]
+
+
+async def test_web_search_missing_api_key_is_error_row(sqlite_settings: Settings) -> None:
+    node = _build(WebSearch, {"provider": "tavily", "query": "q"}, sqlite_settings)
+    out = await node({}, {})
+    assert "api_key is required" in out["table"][0]["error"]
+
+
+async def test_web_search_http_error_is_error_row(
+    sqlite_settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _install_fake_httpx(monkeypatch, _FakeResponse(status_code=401, json_data={}))
+    node = _build(WebSearch, {"provider": "tavily", "query": "q", "api_key": "k"}, sqlite_settings)
+    out = await node({}, {})
+    assert out["table"] == [{"error": "tavily search failed: HTTP 401"}]
+
+
+async def test_web_search_non_json_body_is_error_row(
+    sqlite_settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _install_fake_httpx(monkeypatch, _FakeResponse(text="<html>", raise_json=True))
+    node = _build(WebSearch, {"provider": "serpapi", "query": "q", "api_key": "k"}, sqlite_settings)
+    out = await node({}, {})
+    assert out["table"] == [{"error": "serpapi returned a non-JSON response"}]
+
+
+def test_web_search_descriptor_marks_api_key_required_per_provider() -> None:
+    for provider, required in (("tavily", True), ("serpapi", True), ("searxng", False)):
+        desc = WebSearch.descriptor({"provider": provider})
+        field = next(f for f in desc["fields"] if f["name"] == "api_key")
+        assert field["required"] is required
 
 
 async def test_web_search_unknown_provider_returns_empty_table(

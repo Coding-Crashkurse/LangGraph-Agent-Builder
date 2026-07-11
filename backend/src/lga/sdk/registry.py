@@ -80,7 +80,7 @@ class ComponentRegistry:
                 continue
             self._register_module_tree(module, origin=f"entry-point:{ep.name}")
         for directory in extra_dirs or []:
-            self._scan_dir(directory)
+            self.scan_dir(directory)
 
     def _register_module_tree(self, module: ModuleType, origin: str) -> None:
         self._register_module(module, origin)
@@ -108,7 +108,9 @@ class ComponentRegistry:
                     continue
                 self.register(obj, origin=origin)
 
-    def _scan_dir(self, directory: Path) -> None:
+    def scan_dir(self, directory: Path) -> None:
+        """Import ``<dir>/**/*.py`` component files (public: app boot +
+        dev hot-reload re-scan the configured dirs through this)."""
         directory = directory.expanduser()
         if not directory.is_dir():
             self.diagnostics.append(

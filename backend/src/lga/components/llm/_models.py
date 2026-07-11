@@ -7,6 +7,7 @@ ModelInput values look like {"provider": "openai", "model": "gpt-4o-mini",
 
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING, Any, cast
 
 from lga.errors import LgaRuntimeError
@@ -18,12 +19,69 @@ if TYPE_CHECKING:
     from langchain_core.messages import BaseMessage
     from langchain_core.outputs import ChatResult
 
+    from lga.sdk.runtime import RunContext
+
 PROVIDERS = ("openai", "anthropic", "ollama", "fake", "echo")
 
 
 class ProviderNotInstalledError(LgaRuntimeError):
     def __init__(self, provider: str, extra: str) -> None:
-        super().__init__(f"model provider {provider!r} is not installed — install lga[{extra}]")
+        super().__init__(
+            f"model provider {provider!r} is not installed — "
+            f"install langgraph-agent-builder[{extra}]"
+        )
+
+
+# ------------------------------------------------------------------ port secrets
+# The LANGUAGE_MODEL port payload lands in FlowState.ports and is persisted by
+# the checkpointer, so it must never carry a plaintext credential (SPEC §10.5).
+# Components stash the resolved key here at build time (compile runs in the same
+# process before any node executes, including on resume) and put only the opaque
+# `{"$port_secret": token}` ref on the wire.
+_PORT_SECRETS: dict[str, str] = {}
+_PORT_SECRET_KEY = "$port_secret"
+
+
+def stash_port_secret(token: str, value: str) -> dict[str, str]:
+    """Store a resolved credential under *token*; returns the serializable ref."""
+    _PORT_SECRETS[token] = value
+    return {_PORT_SECRET_KEY: token}
+
+
+def _resolve_port_secret(ref: dict[str, Any]) -> str:
+    token = str(ref.get(_PORT_SECRET_KEY, ""))
+    if token not in _PORT_SECRETS:
+        raise LgaRuntimeError(
+            f"model api_key reference {token!r} is not available in this process — "
+            "re-run the flow so the credential is re-resolved"
+        )
+    return _PORT_SECRETS[token]
+
+
+# ------------------------------------------------------------------ shared plumbing
+async def stream_completion(
+    model: BaseChatModel, messages: list[BaseMessage], rc: RunContext, stream: bool
+) -> str:
+    """One completion; with *stream* the token deltas go to the run context."""
+    if stream:
+        text = ""
+        async for chunk in model.astream(messages):
+            delta = chunk.content if isinstance(chunk.content, str) else ""
+            if delta:
+                text += delta
+                rc.stream_writer(delta)
+        return text
+    response = await model.ainvoke(messages)
+    return response.content if isinstance(response.content, str) else str(response.content)
+
+
+def parse_json_reply(text: str) -> Any:
+    """Parse a model's JSON reply, tolerating ```json fences; invalid → {"raw": ...}."""
+    raw = text.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        return {"raw": raw}
 
 
 def _echo_chat_model(prefix: str = "") -> BaseChatModel:
@@ -79,8 +137,11 @@ def resolve_model(value: Any) -> BaseChatModel:
     kwargs: dict[str, Any] = {}
     if cfg.get("temperature") is not None:
         kwargs["temperature"] = cfg["temperature"]
-    if cfg.get("api_key"):
-        kwargs["api_key"] = str(cfg["api_key"])
+    api_key = cfg.get("api_key")
+    if isinstance(api_key, dict) and _PORT_SECRET_KEY in api_key:
+        api_key = _resolve_port_secret(api_key)
+    if api_key:
+        kwargs["api_key"] = str(api_key)
     if provider == "openai":
         try:
             from langchain_openai import ChatOpenAI

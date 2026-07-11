@@ -5,6 +5,10 @@ seq". The sdk only taps live queues, which (a) races with its immediate-close
 on final events (tapped children get wiped) and (b) can block silently forever
 on an open-but-quiet queue. We replay the persisted Task snapshot first, then
 consume the live tap under a watchdog that falls back to the task store.
+
+Also enforces push-capability honesty (SPEC §7.9/§7.10): when the agent card
+says `pushNotifications: false`, every `tasks/pushNotificationConfig/*` method
+returns `-32003 PushNotificationNotSupported`.
 """
 
 from __future__ import annotations
@@ -15,28 +19,72 @@ from typing import Any
 
 from a2a.server.context import ServerCallContext
 from a2a.server.events import Event
-from a2a.server.request_handlers import DefaultRequestHandler
+from a2a.server.request_handlers import DefaultRequestHandler, JSONRPCHandler
 from a2a.types import (
+    DeleteTaskPushNotificationConfigParams,
+    GetTaskPushNotificationConfigParams,
+    JSONRPCErrorResponse,
+    ListTaskPushNotificationConfigParams,
+    PushNotificationNotSupportedError,
+    SetTaskPushNotificationConfigRequest,
+    SetTaskPushNotificationConfigResponse,
     TaskIdParams,
     TaskNotFoundError,
-    TaskState,
+    TaskPushNotificationConfig,
     TaskStatusUpdateEvent,
 )
 from a2a.utils.errors import ServerError
 
-TERMINAL = {
-    TaskState.completed,
-    TaskState.failed,
-    TaskState.canceled,
-    TaskState.rejected,
-}
-FINAL_STATES = TERMINAL | {TaskState.input_required, TaskState.auth_required}
+from lga.a2a.tasks import FINAL_STATES
 
 WATCHDOG_INTERVAL_S = 1.0
 OVERALL_DEADLINE_S = 120.0
 
 
 class LGARequestHandler(DefaultRequestHandler):
+    def __init__(self, *args: Any, push_supported: bool = True, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self._push_supported = push_supported
+
+    # ------------------------------------------------------ push honesty (§7.9)
+    def _require_push_support(self) -> None:
+        """Card says pushNotifications:false ⇒ -32003, not the sdk's -32004."""
+        if not self._push_supported:
+            raise ServerError(error=PushNotificationNotSupportedError())
+
+    async def on_set_task_push_notification_config(
+        self,
+        params: TaskPushNotificationConfig,
+        context: ServerCallContext | None = None,
+    ) -> TaskPushNotificationConfig:
+        self._require_push_support()
+        return await super().on_set_task_push_notification_config(params, context)
+
+    async def on_get_task_push_notification_config(
+        self,
+        params: TaskIdParams | GetTaskPushNotificationConfigParams,
+        context: ServerCallContext | None = None,
+    ) -> TaskPushNotificationConfig:
+        self._require_push_support()
+        return await super().on_get_task_push_notification_config(params, context)
+
+    async def on_list_task_push_notification_config(
+        self,
+        params: ListTaskPushNotificationConfigParams,
+        context: ServerCallContext | None = None,
+    ) -> list[TaskPushNotificationConfig]:
+        self._require_push_support()
+        return await super().on_list_task_push_notification_config(params, context)
+
+    async def on_delete_task_push_notification_config(
+        self,
+        params: DeleteTaskPushNotificationConfigParams,
+        context: ServerCallContext | None = None,
+    ) -> None:
+        self._require_push_support()
+        await super().on_delete_task_push_notification_config(params, context)
+
+    # ------------------------------------------------------ resubscribe (§7.5)
     async def on_resubscribe_to_task(
         self,
         params: TaskIdParams,
@@ -98,3 +146,27 @@ class LGARequestHandler(DefaultRequestHandler):
                 yield final_event(refreshed)
                 return
             await asyncio.sleep(0.25)
+
+
+class LGAJSONRPCHandler(JSONRPCHandler):
+    """JSONRPC-layer push honesty for `tasks/pushNotificationConfig/set`.
+
+    The sdk's `@validate` gate on `set_push_notification_config` raises a bare
+    ServerError when `capabilities.pushNotifications` is false, which surfaces
+    as -32603/-32004 on the wire — SPEC §7.9/§7.10 pin -32003. Intercept before
+    the gate; every other method reaches LGARequestHandler's own gates.
+    """
+
+    async def set_push_notification_config(
+        self,
+        request: SetTaskPushNotificationConfigRequest,
+        context: ServerCallContext | None = None,
+    ) -> SetTaskPushNotificationConfigResponse:
+        if not self.agent_card.capabilities.push_notifications:
+            return SetTaskPushNotificationConfigResponse(
+                root=JSONRPCErrorResponse(id=request.id, error=PushNotificationNotSupportedError())
+            )
+        response: SetTaskPushNotificationConfigResponse = (
+            await super().set_push_notification_config(request, context)
+        )
+        return response

@@ -8,8 +8,11 @@ import type {
   EdgeSpec,
   FlowSpec,
   NodeSpec,
+  PortFamily,
   StickyNote,
 } from "@/api/types";
+
+import { indexPorts } from "./guards";
 
 export interface CanvasNodeData extends Record<string, unknown> {
   componentId: string;
@@ -17,10 +20,19 @@ export interface CanvasNodeData extends Record<string, unknown> {
   label: string;
   config: Record<string, unknown>;
   notes: string;
+  /** canvas-only view state (§11.2 collapse chevron) — never serialized */
+  collapsed?: boolean;
+}
+
+export interface CanvasEdgeData extends Record<string, unknown> {
+  kind: EdgeKind;
+  coercion?: string;
+  /** SOURCE port family (§11.3: edge stroke = source family color); canvas-only */
+  family?: PortFamily;
 }
 
 export type CanvasNode = Node<CanvasNodeData>;
-export type CanvasEdge = Edge<{ kind: EdgeKind; coercion?: string }>;
+export type CanvasEdge = Edge<CanvasEdgeData>;
 
 export const ROUTER_TARGET_HANDLE = "__in__";
 /** sticky notes ride along as canvas nodes with this marker componentId (§11.8) */
@@ -46,7 +58,42 @@ export function noteToNode(note: StickyNote): CanvasNode {
   };
 }
 
-export function specToCanvas(spec: FlowSpec): { nodes: CanvasNode[]; edges: CanvasEdge[] } {
+/** Resolve the SOURCE port family of an edge (§11.3: stroke color) from the
+ * source node's live port index. Router/tool edges have fixed families. */
+export function edgeSourceFamily(
+  edge: Pick<CanvasEdge, "source" | "sourceHandle" | "data">,
+  nodes: CanvasNode[],
+  descriptors: Map<string, ComponentDescriptor>,
+): PortFamily | undefined {
+  if (edge.data?.kind === "router") return "ROUTE";
+  if (edge.data?.kind === "tool") return "TOOLSET";
+  const node = nodes.find((n) => n.id === edge.source);
+  const descriptor = node && descriptors.get(node.data.componentId);
+  if (!node || !descriptor) return undefined;
+  return indexPorts(descriptor, node.data.config).outputs.get(edge.sourceHandle ?? "")?.family;
+}
+
+/** Backfill `data.family` on edges that miss it (loaded before descriptors
+ * arrived, or created by older canvas code). Edges that stay unresolvable are
+ * returned untouched so a later pass can retry. */
+export function withEdgeFamilies(
+  nodes: CanvasNode[],
+  edges: CanvasEdge[],
+  descriptors: Map<string, ComponentDescriptor>,
+): CanvasEdge[] {
+  if (descriptors.size === 0) return edges;
+  return edges.map((edge) => {
+    if (edge.data?.family) return edge;
+    const family = edgeSourceFamily(edge, nodes, descriptors);
+    if (!family) return edge;
+    return { ...edge, data: { ...(edge.data ?? { kind: "data" as EdgeKind }), family } };
+  });
+}
+
+export function specToCanvas(
+  spec: FlowSpec,
+  descriptors?: Map<string, ComponentDescriptor>,
+): { nodes: CanvasNode[]; edges: CanvasEdge[] } {
   const nodes: CanvasNode[] = spec.nodes.map((node) => ({
     id: node.id,
     type: "lga",
@@ -73,7 +120,10 @@ export function specToCanvas(spec: FlowSpec): { nodes: CanvasNode[]; edges: Canv
   for (const note of spec.ui?.sticky_notes ?? []) {
     nodes.push(noteToNode(note));
   }
-  return { nodes, edges };
+  return {
+    nodes,
+    edges: descriptors ? withEdgeFamilies(nodes, edges, descriptors) : edges,
+  };
 }
 
 export function canvasToSpec(
@@ -135,6 +185,11 @@ export function newNodeId(descriptor: ComponentDescriptor, taken: Set<string>): 
   return candidate;
 }
 
+/** Descriptor defaults as a config map. Node cards and the inspector both
+ * resolve field values through the SAME `{...defaultConfig(d), ...config}`
+ * merge so the two views of one field never disagree (e.g. after a
+ * dynamic-field refresh returns fields whose defaults were never
+ * materialized into config). */
 export function defaultConfig(descriptor: ComponentDescriptor): Record<string, unknown> {
   const config: Record<string, unknown> = {};
   for (const field of descriptor.fields) {

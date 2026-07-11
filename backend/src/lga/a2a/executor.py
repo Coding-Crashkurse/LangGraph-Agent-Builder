@@ -25,12 +25,15 @@ from a2a.types import (
     FileWithUri,
     InvalidParamsError,
     Part,
+    Task,
     TaskState,
     TextPart,
 )
 from a2a.utils import new_task
 from a2a.utils.errors import ServerError
 
+from lga.a2a.scope import resolve_client_scope
+from lga.a2a.tasks import TERMINAL_STATES
 from lga.runtime.executor import Executor, RunResult
 from lga.schema.events import RunEvent
 from lga.sdk.interrupts import parse_approval_resume, parse_input_resume
@@ -39,12 +42,6 @@ from lga.services.settings import Settings
 
 logger = logging.getLogger("lga.a2a.executor")
 
-TERMINAL = {
-    TaskState.completed,
-    TaskState.failed,
-    TaskState.canceled,
-    TaskState.rejected,
-}
 STATUS_THROTTLE_S = 0.5  # max 2/s working updates (SPEC §7.8)
 
 
@@ -76,23 +73,26 @@ class LGAAgentExecutor(AgentExecutor):
         self._stream_tokens = stream_tokens
 
     # ------------------------------------------------------------ helpers
-    def _client_scope(self, context: RequestContext) -> str:
-        call_ctx = getattr(context, "call_context", None)
-        if call_ctx is not None and getattr(call_ctx, "state", None):
-            value = call_ctx.state.get("lga_client_scope")
-            if value:
-                return str(value)
-        from lga.a2a.scope import current_client_scope
-
-        return current_client_scope.get()
-
     def _thread_id(self, context_id: str, scope: str) -> str:
         if self._public:
             return scoped_thread_id(scope, context_id)
         return context_id
 
+    def _validate_parts(self, context: RequestContext) -> None:
+        """FilePart mime allowlist (SPEC §7.8) — side-effect-free, raises -32005."""
+        for part in (context.message.parts if context.message else []) or []:
+            root = part.root
+            if isinstance(root, FilePart):
+                mime = getattr(root.file, "mime_type", None) or "application/octet-stream"
+                if not _mime_allowed(mime, self._settings.a2a_accepted_mime):
+                    raise ServerError(
+                        error=ContentTypeNotSupportedError(
+                            message=f"mime type {mime!r} not accepted"
+                        )
+                    )
+
     async def _inbound(self, context: RequestContext) -> dict[str, Any]:
-        """Message parts → run input (SPEC §7.8 inbound)."""
+        """Message parts → run input (SPEC §7.8 inbound); parts pre-validated."""
         text_parts: list[str] = []
         data: dict[str, Any] = {}
         files: list[dict[str, Any]] = []
@@ -105,12 +105,6 @@ class LGAAgentExecutor(AgentExecutor):
             elif isinstance(root, FilePart):
                 file = root.file
                 mime = getattr(file, "mime_type", None) or "application/octet-stream"
-                if not _mime_allowed(mime, self._settings.a2a_accepted_mime):
-                    raise ServerError(
-                        error=ContentTypeNotSupportedError(
-                            message=f"mime type {mime!r} not accepted"
-                        )
-                    )
                 if isinstance(file, FileWithBytes) and self._files is not None:
                     import base64
 
@@ -149,8 +143,10 @@ class LGAAgentExecutor(AgentExecutor):
                 )
             )
 
-    # ------------------------------------------------------------ execute
-    async def execute(self, context: RequestContext, event_queue: EventQueue) -> None:
+    # ------------------------------------------------------------ execute steps
+    async def _ensure_task(self, context: RequestContext, event_queue: EventQueue) -> Task | None:
+        """Create or reuse the task; None ⇒ messageId dedup hit (prior result
+        re-enqueued, SPEC §7.5)."""
         task = context.current_task
         if task is None:
             if context.message is None:
@@ -159,111 +155,66 @@ class LGAAgentExecutor(AgentExecutor):
                 )
             task = new_task(context.message)
             await event_queue.enqueue_event(task)
-        elif task.status.state in TERMINAL:
+            return task
+        if task.status.state in TERMINAL_STATES:
             raise ServerError(
                 error=InvalidParamsError(
                     message=f"task {task.id} is {task.status.state.value}; terminal tasks "
                     "cannot be restarted — send a new message without taskId"
                 )
             )
-
-        # messageId dedup (SPEC §7.5): same messageId on this task ⇒ prior result
         msg_id = context.message.message_id if context.message else None
-        if msg_id and task.history:
-            if any(m.message_id == msg_id for m in task.history[:-1]):
-                await event_queue.enqueue_event(task)
-                return
+        if msg_id and task.history and any(m.message_id == msg_id for m in task.history[:-1]):
+            await event_queue.enqueue_event(task)
+            return None
+        return task
 
-        self._check_output_modes(context)
-        updater = TaskUpdater(event_queue, task.id, task.context_id)
-        scope = self._client_scope(context)
-        thread_id = self._thread_id(task.context_id or task.id, scope)
-        spec = await self._spec_provider()
-        compiled = await self._orchestrator.compiled(spec)
-        if not compiled.ok:
-            await updater.failed(
-                message=updater.new_agent_message(
-                    parts=[Part(root=TextPart(text="flow has compile errors"))]
-                )
+    def _resolve_resume_payload(
+        self, payload: dict[str, Any], context: RequestContext, inbound: dict[str, Any]
+    ) -> Any:
+        """Client answer → Command(resume=…) payload; None ⇒ unparseable (§7.7)."""
+        client_value: Any = None
+        for part in (context.message.parts if context.message else []) or []:
+            if isinstance(part.root, DataPart):
+                client_value = part.root.data
+                break
+        if client_value is None:
+            client_value = inbound["input_text"]
+        kind = payload.get("kind")
+        if kind == "approval":
+            return parse_approval_resume(
+                client_value, payload.get("options") or ["approve", "reject"]
             )
-            return
+        if kind == "free_text":
+            return parse_input_resume(client_value, payload.get("schema"))
+        return client_value
 
-        # resume vs new run: does the thread hold a pending interrupt?
-        checkpointer = await self._executor._get_checkpointer()
-        graph = compiled.compile(checkpointer=checkpointer)
-        snapshot = await graph.aget_state({"configurable": {"thread_id": thread_id}})
-        pending = [i for t in (snapshot.tasks or ()) for i in (t.interrupts or ())]
+    @staticmethod
+    async def _reprompt_unparsed(updater: TaskUpdater, payload: dict[str, Any]) -> None:
+        """Unparseable answer: stay input-required, explain accepted answers (§7.7)."""
+        options = payload.get("options") or []
+        hint = (
+            f"Could not parse your answer. Accepted answers: {', '.join(options)}."
+            if options
+            else "Could not parse your answer against the expected schema."
+        )
+        await updater.update_status(
+            TaskState.input_required,
+            message=updater.new_agent_message(
+                parts=[Part(root=TextPart(text=hint)), Part(root=DataPart(data=payload))]
+            ),
+            final=True,
+        )
 
-        inbound = await self._inbound(context)
-        resume_payload: Any = None
-        if pending:
-            raw = pending[0].value if pending else {}
-            payload = raw if isinstance(raw, dict) else {}
-            kind = payload.get("kind")
-            client_value: Any = None
-            for part in (context.message.parts if context.message else []) or []:
-                if isinstance(part.root, DataPart):
-                    client_value = part.root.data
-                    break
-            if client_value is None:
-                client_value = inbound["input_text"]
-            if kind == "approval":
-                resume_payload = parse_approval_resume(
-                    client_value, payload.get("options") or ["approve", "reject"]
-                )
-            elif kind == "free_text":
-                resume_payload = parse_input_resume(client_value, payload.get("schema"))
-            else:
-                resume_payload = client_value
-            if resume_payload is None:
-                # unparseable answer: stay input-required, explain accepted answers
-                options = payload.get("options") or []
-                hint = (
-                    f"Could not parse your answer. Accepted answers: {', '.join(options)}."
-                    if options
-                    else "Could not parse your answer against the expected schema."
-                )
-                await updater.update_status(
-                    TaskState.input_required,
-                    message=updater.new_agent_message(
-                        parts=[Part(root=TextPart(text=hint)), Part(root=DataPart(data=payload))]
-                    ),
-                    final=True,
-                )
-                return
-
-        run_row = await self._orchestrator.runs.get(task.id)
-        if run_row is None:
+    async def _ensure_run_row(self, run_id: str, thread_id: str) -> None:
+        if await self._orchestrator.runs.get(run_id) is None:
             await self._orchestrator.runs.create(
-                task.id, thread_id=thread_id, mode="a2a", flow_slug=self._flow_slug
+                run_id, thread_id=thread_id, mode="a2a", flow_slug=self._flow_slug
             )
 
-        await updater.start_work()
-
-        sink = _A2ASink(updater, stream_tokens=self._stream_tokens)
-        try:
-            result: RunResult = await self._executor.execute(
-                compiled,
-                run_id=task.id,
-                thread_id=thread_id,
-                mode="a2a",
-                input_text=inbound["input_text"],
-                data=inbound["data"],
-                files=inbound["files"],
-                resume=resume_payload if pending else None,
-                event_sink=sink,
-            )
-        except asyncio.CancelledError:
-            raise
-        except Exception as exc:  # sanitized failure (SPEC §7.6)
-            logger.exception("a2a task %s failed unexpectedly", task.id)
-            await updater.failed(
-                message=updater.new_agent_message(
-                    parts=[Part(root=TextPart(text=f"internal error: {exc}"))]
-                )
-            )
-            return
-
+    @staticmethod
+    async def _emit_terminal(result: RunResult, updater: TaskUpdater, sink: _A2ASink) -> None:
+        """RunResult → terminal protocol event (SPEC §7.6/§7.8/§7.10)."""
         await sink.flush_tokens(last=result.status == "completed")
 
         if result.status == "input_required":
@@ -278,18 +229,18 @@ class LGAAgentExecutor(AgentExecutor):
             )
             return
         if result.status == "failed":
-            await updater.failed(
-                message=updater.new_agent_message(
-                    parts=[
-                        Part(
-                            root=TextPart(
-                                text=f"{result.error_code or 'error'}: "
-                                f"{result.error_message or 'run failed'}"
-                            )
-                        )
-                    ]
+            parts = [
+                Part(
+                    root=TextPart(
+                        text=f"{result.error_code or 'error'}: "
+                        f"{result.error_message or 'run failed'}"
+                    )
                 )
-            )
+            ]
+            if result.error_code:
+                # machine-readable RT code (§7.10: data.run_error_code)
+                parts.append(Part(root=DataPart(data={"run_error_code": result.error_code})))
+            await updater.failed(message=updater.new_agent_message(parts=parts))
             return
         if result.status == "cancelled":
             # the canceled status event is enqueued by cancel() on the cancel
@@ -297,11 +248,82 @@ class LGAAgentExecutor(AgentExecutor):
             # consumer's immediate-close which wipes tapped child queues
             return
 
-        parts: list[Part] = [Part(root=TextPart(text=result.result_text))]
+        parts = [Part(root=TextPart(text=result.result_text))]
         if result.result_json is not None:
             parts.append(Part(root=DataPart(data=result.result_json)))
         await updater.add_artifact(parts, name="response")
         await updater.complete()
+
+    # ------------------------------------------------------------ execute
+    async def execute(self, context: RequestContext, event_queue: EventQueue) -> None:
+        # negotiation/part validation BEFORE task creation: a -32005 must not
+        # orphan a freshly-enqueued task in `submitted` (SPEC §7.10)
+        self._check_output_modes(context)
+        self._validate_parts(context)
+
+        task = await self._ensure_task(context, event_queue)
+        if task is None:
+            return  # messageId dedup — prior result already re-enqueued (§7.5)
+
+        updater = TaskUpdater(event_queue, task.id, task.context_id)
+        scope = resolve_client_scope(getattr(context, "call_context", None))
+        thread_id = self._thread_id(task.context_id or task.id, scope)
+        compiled = await self._orchestrator.compiled(await self._spec_provider())
+        if not compiled.ok:
+            await updater.failed(
+                message=updater.new_agent_message(
+                    parts=[Part(root=TextPart(text="flow has compile errors"))]
+                )
+            )
+            return
+
+        inbound = await self._inbound(context)
+        pending = await self._executor.pending_interrupt(compiled, thread_id)
+        resume_payload: Any = None
+        if pending is not None:
+            resume_payload = self._resolve_resume_payload(pending, context, inbound)
+            if resume_payload is None:
+                await self._reprompt_unparsed(updater, pending)
+                return
+            bus = self._executor.bus
+            if bus is not None:
+                # restart-proof resume (§6.2): the bus's in-memory seq counters
+                # are gone after a restart — continue numbering above the
+                # persisted events, or every post-resume event collides with
+                # uq_run_event_seq (dropped by the persist loop) and live SSE
+                # tails filter the run's remaining events as already-replayed
+                bus.set_seq_floor(task.id, await self._orchestrator.runs.max_seq(task.id))
+
+        await self._ensure_run_row(task.id, thread_id)
+        await updater.start_work()
+
+        sink = _A2ASink(updater, stream_tokens=self._stream_tokens)
+        try:
+            result: RunResult = await self._executor.execute(
+                compiled,
+                run_id=task.id,
+                thread_id=thread_id,
+                mode="a2a",
+                input_text=inbound["input_text"],
+                data=inbound["data"],
+                files=inbound["files"],
+                resume=resume_payload if pending is not None else None,
+                event_sink=sink,
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            # sanitized failure (SPEC §7.6/§7.10): the traceback stays in the
+            # server log; remote clients get a generic message, never str(exc)
+            logger.exception("a2a task %s failed unexpectedly", task.id)
+            await updater.failed(
+                message=updater.new_agent_message(
+                    parts=[Part(root=TextPart(text="internal error"))]
+                )
+            )
+            return
+
+        await self._emit_terminal(result, updater, sink)
 
     async def cancel(self, context: RequestContext, event_queue: EventQueue) -> None:
         task = context.current_task

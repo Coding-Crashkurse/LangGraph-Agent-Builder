@@ -26,6 +26,7 @@ class DiagnosticCode(StrEnum):
     E012 = "E012"  # $secret/$var reference does not exist
     E013 = "E013"  # Vector store connection referenced by node does not exist
     E014 = "E014"  # Credential ($secret) assigned to a non-credential (non-Secret) field
+    E015 = "E015"  # ComponentBuildFailed — build() raised while emitting the graph
     # edges
     E020 = "E020"  # Edge type-incompatible
     E021 = "E021"  # Tool edge into non-Tools port / from non-Toolset output
@@ -56,7 +57,9 @@ class DiagnosticCode(StrEnum):
     W204 = "W204"  # BackendSpecificFilter (raw_filter passthrough)
     W301 = "W301"  # Deprecated field/output in use
     W302 = "W302"  # Component version migrated
+    W303 = "W303"  # Unknown config key (not a declared field; ignored at build)
     W401 = "W401"  # Node unreachable from start
+    W402 = "W402"  # Embedding port unwired — runtime falls back to fake embeddings
     # info
     I501 = "I501"  # Cycle detected — recursion_limit applies
 

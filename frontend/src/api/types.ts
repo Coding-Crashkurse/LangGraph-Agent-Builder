@@ -1,9 +1,13 @@
 /** Domain types for the /api/v1 contracts.
  *
- * Path/method safety comes from the generated `schema.gen.ts` (npm run gen:api,
+ * Path/method safety comes from the generated `schema.gen.ts` (pnpm gen:api,
  * SPEC §11.2); these interfaces mirror the backend's *pydantic-exported JSON
- * schemas* (FlowSpec, Diagnostic, RunEvent, component descriptors) and are
- * structurally checked against fixtures in vitest.
+ * schemas* (FlowSpec, Diagnostic, RunEvent, component descriptors).
+ *
+ * KNOWN DEBT (SPEC §11.5 forbids hand-written mirrors): these should be
+ * aliases of `components["schemas"]` once the backend endpoints expose the
+ * real pydantic models to OpenAPI — until then schema.gen.ts types FlowSpec
+ * as a plain object and this file is the single hand-written mirror.
  */
 
 // ------------------------------------------------------------------ FlowSpec (§5.2)

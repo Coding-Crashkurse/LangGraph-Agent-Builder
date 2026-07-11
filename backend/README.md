@@ -1,12 +1,14 @@
-# lga
+# langgraph-agent-builder
+
+> Distribution name: **`langgraph-agent-builder`**. CLI command and Python import package: **`lga`**.
 
 LangGraph-native visual agent builder — compose agent flows on a canvas, compile
 them to real LangGraph `StateGraph`s, and serve every published flow as an
 A2A agent and/or MCP tool.
 
 ```bash
-uv tool install lga        # or: pip install lga
-lga run                    # zero-config: SQLite, bundled frontend, opens browser
+uv tool install langgraph-agent-builder   # or: pip install langgraph-agent-builder
+lga run                                    # zero-config: SQLite, bundled frontend, opens browser
 ```
 
 - **Zero config:** `lga run` starts on SQLite under `~/.lga`; switch to Postgres by
@@ -17,6 +19,8 @@ lga run                    # zero-config: SQLite, bundled frontend, opens browse
 - **SDK:** ship custom components as installed Python packages via the
   `lga.components` entry point — no string-eval, ever.
 
-Extras: `lga[openai]`, `lga[anthropic]`, `lga[ollama]`, `lga[postgres]`, `lga[pgvector]`, `lga[all]`.
+Extras (install as `langgraph-agent-builder[<name>]`): `openai`, `anthropic`, `ollama`,
+`postgres`, `pgvector`, `qdrant`, `weaviate`, `chroma`, `all`.
 
-See `SPEC.md` in the repository for the full specification.
+See the [GitHub repository](https://github.com/Coding-Crashkurse/LangGraph-Agent-Builder)
+for documentation and examples.

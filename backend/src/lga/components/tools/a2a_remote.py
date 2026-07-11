@@ -115,10 +115,11 @@ class A2ARemoteAgent(Component):
         auth = ctx.get_field("auth")
         if auth:
             headers["X-API-Key"] = str(auth)
+        # no follow_redirects: a redirecting endpoint fails loudly instead of
+        # silently hopping to an unvalidated (possibly private) address
         return httpx.AsyncClient(
             headers=headers,
             timeout=float(ctx.get_field("timeout_s") or 120.0),
-            follow_redirects=True,
         )
 
     @staticmethod
@@ -266,8 +267,3 @@ class A2ARemoteAgent(Component):
             ]
 
         return LazyToolset(factory)
-
-    def on_field_change(self, config: NodeConfig, field_name: str, value: Any) -> NodeConfig:
-        config = dict(config)
-        config[field_name] = value
-        return config

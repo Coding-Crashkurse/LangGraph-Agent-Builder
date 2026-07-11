@@ -2,8 +2,10 @@
  * with A2A / MCP / API tabs incl. live card preview + snippets (SPEC §11.6). */
 
 import { useQueryClient } from "@tanstack/react-query";
+import { Bot, ChevronDown, ChevronRight, Download, TriangleAlert } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
+import { fetchAgentCard } from "@/api/a2a";
 import { api } from "@/api/client";
 import type { Diagnostic, FlowInfo } from "@/api/types";
 import { Button } from "@/components/ui/button";
@@ -12,7 +14,16 @@ import { Input } from "@/components/ui/input";
 import { Select, Tabs } from "@/components/ui/controls";
 import { toast } from "@/components/ui/toast";
 
+import { CopyButton } from "./playground/CopyButton";
 import { useBuilder } from "./store";
+
+type Bump = "patch" | "minor" | "major";
+
+const BUMP_HINTS: Record<Bump, string> = {
+  patch: "fixes, no contract change",
+  minor: "new capability, backwards compatible",
+  major: "breaking change to inputs/outputs",
+};
 
 export function PublishDialog({
   open,
@@ -25,7 +36,7 @@ export function PublishDialog({
   flow: FlowInfo;
   beforePublish: () => Promise<void>;
 }) {
-  const [bump, setBump] = useState("patch");
+  const [bump, setBump] = useState<Bump>("patch");
   const [changelog, setChangelog] = useState("");
   const [blocking, setBlocking] = useState<Diagnostic[]>([]);
   const [busy, setBusy] = useState(false);
@@ -53,28 +64,40 @@ export function PublishDialog({
   return (
     <Dialog open={open} onClose={onClose} title="Publish version">
       <div className="space-y-3">
-        <label className="block text-xs text-zinc-400">
-          Version bump
-          <Select value={bump} onChange={(e) => setBump(e.target.value)} className="mt-1">
-            <option value="patch">patch</option>
-            <option value="minor">minor</option>
-            <option value="major">major</option>
-          </Select>
-        </label>
-        <label className="block text-xs text-zinc-400">
+        <div>
+          <p className="mb-1 text-xs font-medium text-text-2">Version bump</p>
+          <Tabs
+            value={bump}
+            onChange={setBump}
+            items={[
+              { value: "patch", label: "patch" },
+              { value: "minor", label: "minor" },
+              { value: "major", label: "major" },
+            ]}
+          />
+          <p className="mt-1 text-[11px] text-text-3">{BUMP_HINTS[bump]}</p>
+        </div>
+        <label className="block text-xs text-text-2">
           Changelog
           <textarea
-            className="mt-1 min-h-[64px] w-full rounded-md border border-surface-700 bg-surface-900 px-2 py-1.5 text-sm text-zinc-100 focus:border-accent-500 focus:outline-none"
+            className="mt-1 min-h-[64px] w-full rounded-lg border border-border bg-surface-1 px-2 py-1.5 text-sm text-text-1 focus:border-accent focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent"
             value={changelog}
             onChange={(e) => setChangelog(e.target.value)}
             placeholder="What changed?"
           />
         </label>
         {blocking.length > 0 && (
-          <div className="space-y-1 rounded border border-red-900/60 bg-red-950/30 p-2">
+          <div role="alert" className="space-y-1.5 rounded-lg border-l-2 border-danger bg-danger/10 p-2.5">
+            <p className="flex items-center gap-1.5 text-xs font-semibold text-danger">
+              <TriangleAlert className="h-3.5 w-3.5 shrink-0" strokeWidth={1.75} />
+              Publishing blocked — {blocking.length} diagnostic{blocking.length === 1 ? "" : "s"}
+            </p>
             {blocking.map((d, i) => (
-              <p key={i} className="text-xs text-red-300">
-                <span className="font-mono">{d.code}</span> {d.message}
+              <p key={i} className="text-xs text-danger">
+                <span className="rounded bg-danger/15 px-1 py-px font-mono text-[11px]">
+                  {d.code}
+                </span>{" "}
+                {d.message}
               </p>
             ))}
           </div>
@@ -123,10 +146,7 @@ export function ShareDialog({
 
   useEffect(() => {
     if (!open || !a2a.enabled) return;
-    fetch(`/a2a/${flow.slug}/.well-known/agent-card.json`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then(setCard)
-      .catch(() => setCard(null));
+    fetchAgentCard(flow.slug).then(setCard);
   }, [open, flow.slug, a2a.enabled]);
 
   const curl = useMemo(
@@ -152,20 +172,24 @@ export function ShareDialog({
   );
 
   const download = async (format: "json" | "python") => {
-    const response = await fetch(`/api/v1/flows/${flow.id}/export?format=${format}`);
-    if (!response.ok) {
-      toast.error(`export failed: ${response.status}`);
-      return;
+    try {
+      let content = await api.flows.export(flow.id, format);
+      if (format === "json") {
+        try {
+          content = JSON.stringify(JSON.parse(content), null, 2);
+        } catch {
+          /* already text */
+        }
+      }
+      const blob = new Blob([content], { type: "text/plain" });
+      const anchor = document.createElement("a");
+      anchor.href = URL.createObjectURL(blob);
+      anchor.download = format === "json" ? `${flow.slug}.flow.json` : `${flow.slug}_flow.py`;
+      anchor.click();
+      URL.revokeObjectURL(anchor.href);
+    } catch (error) {
+      toast.error(`export failed: ${(error as Error).message}`);
     }
-    const content = format === "json"
-      ? JSON.stringify(await response.json(), null, 2)
-      : await response.text();
-    const blob = new Blob([content], { type: "text/plain" });
-    const anchor = document.createElement("a");
-    anchor.href = URL.createObjectURL(blob);
-    anchor.download = format === "json" ? `${flow.slug}.flow.json` : `${flow.slug}_flow.py`;
-    anchor.click();
-    URL.revokeObjectURL(anchor.href);
   };
 
   return (
@@ -173,16 +197,16 @@ export function ShareDialog({
       <div className="space-y-3">
         <Tabs
           value={mode}
-          onChange={(m) => setMode(m as ShareTab)}
+          onChange={(m) => setMode(m)}
           items={[
             { value: "a2a", label: "A2A" },
             { value: "mcp", label: "MCP" },
             { value: "api", label: "API" },
           ]}
         />
-        <p className="text-[10px] text-zinc-500">
+        <p className="text-[11px] text-text-3">
           Serving surfaces are exclusive — this flow is served as{" "}
-          <span className="text-zinc-300">{mode.toUpperCase()}</span> and the others are off.
+          <span className="text-text-2">{mode.toUpperCase()}</span> and the others are off.
         </p>
         {mode === "a2a" && (
           <div className="space-y-3">
@@ -226,10 +250,8 @@ export function ShareDialog({
             <Snippet label={`Endpoint · ${endpoint}`} text={curl} />
             <Snippet label="Python (JSON-RPC)" text={python} />
             <div>
-              <p className="mb-1 text-xs font-medium text-zinc-400">Live Agent Card</p>
-              <pre className="max-h-52 overflow-auto rounded bg-surface-900 p-2 text-[10px] text-emerald-300">
-                {card ? JSON.stringify(card, null, 2) : "publish with A2A enabled to see the card"}
-              </pre>
+              <p className="mb-1 text-xs font-medium text-text-2">Live Agent Card</p>
+              <AgentCardPreview card={card} />
             </div>
           </div>
         )}
@@ -277,21 +299,12 @@ export function ShareDialog({
         )}
         {mode === "api" && (
           <div className="space-y-3">
-            <div className="flex items-center gap-2 rounded border border-surface-800 bg-surface-900 px-2.5 py-1.5">
-              <span className="text-[10px] uppercase tracking-widest text-zinc-500">
+            <div className="flex items-center gap-2 rounded-lg border border-border bg-surface-2 px-2.5 py-1.5">
+              <span className="text-[11px] uppercase tracking-widest text-text-3">
                 base url
               </span>
-              <code className="text-xs text-emerald-300">{runUrl}</code>
-              <button
-                type="button"
-                className="ml-auto text-[10px] text-accent-400 hover:text-accent-300"
-                onClick={() => {
-                  navigator.clipboard.writeText(runUrl);
-                  toast.success("copied");
-                }}
-              >
-                copy
-              </button>
+              <code className="truncate font-mono text-xs text-text-1">{runUrl}</code>
+              <CopyButton text={runUrl} label="Copy base url" className="ml-auto" />
             </div>
             <Snippet label="Run (blocking; tweaks are one-time overrides)" text={apiCurl} />
             <Snippet
@@ -303,20 +316,22 @@ export function ShareDialog({
               text={headlessSnippet}
             />
             <div className="flex items-center gap-2">
-              <span className="text-xs font-medium text-zinc-400">Export:</span>
+              <span className="text-xs font-medium text-text-2">Export:</span>
               <Button variant="ghost" className="!h-7 !text-xs" onClick={() => download("json")}>
-                ⬇ flow.json
+                <Download className="h-3.5 w-3.5" strokeWidth={1.75} />
+                flow.json
               </Button>
               <Button variant="ghost" className="!h-7 !text-xs" onClick={() => download("python")}>
-                ⬇ standalone flow.py
+                <Download className="h-3.5 w-3.5" strokeWidth={1.75} />
+                standalone flow.py
               </Button>
-              <span className="text-[10px] text-zinc-600">
+              <span className="text-[11px] text-text-3">
                 flow.py runs under vanilla LangGraph
               </span>
             </div>
           </div>
         )}
-        <p className="text-[10px] text-zinc-600">
+        <p className="text-[11px] text-text-3">
           Settings live in the FlowSpec — hit Save, then Publish to serve the new version.
         </p>
       </div>
@@ -327,31 +342,117 @@ export function ShareDialog({
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-xs font-medium text-zinc-400">{label}</span>
+      <span className="mb-1 block text-xs font-medium text-text-2">{label}</span>
       {children}
     </label>
   );
 }
 
+/** Mono snippet block with an icon copy button + copied feedback (§11.6). */
 function Snippet({ label, text }: { label: string; text: string }) {
   return (
     <div>
       <div className="mb-1 flex items-center justify-between">
-        <p className="text-xs font-medium text-zinc-400">{label}</p>
-        <button
-          type="button"
-          className="text-[10px] text-accent-400 hover:text-accent-300"
-          onClick={() => {
-            navigator.clipboard.writeText(text);
-            toast.success("copied");
-          }}
-        >
-          copy
-        </button>
+        <p className="text-xs font-medium text-text-2">{label}</p>
+        <CopyButton text={text} label={`Copy: ${label}`} />
       </div>
-      <pre className="overflow-x-auto rounded bg-surface-900 p-2 text-[10px] text-zinc-300">
+      <pre className="overflow-x-auto rounded-lg border border-border bg-surface-2 p-2.5 font-mono text-[11px] leading-relaxed text-text-2">
         {text}
       </pre>
     </div>
+  );
+}
+
+/** The live agent card rendered as a card (name, skills, capabilities) with a
+ * collapsible raw-JSON view — not a bare JSON dump. */
+function AgentCardPreview({ card }: { card: Record<string, unknown> | null }) {
+  const [showRaw, setShowRaw] = useState(false);
+  if (!card) {
+    return (
+      <p className="rounded-lg border border-border bg-surface-2 p-2.5 text-xs text-text-3">
+        Publish with A2A enabled to see the live card.
+      </p>
+    );
+  }
+  const capabilities = (card.capabilities ?? {}) as Record<string, unknown>;
+  const skills = Array.isArray(card.skills)
+    ? (card.skills as Record<string, unknown>[])
+    : [];
+  const Chevron = showRaw ? ChevronDown : ChevronRight;
+
+  return (
+    <div className="space-y-2 rounded-[10px] border border-border bg-surface-2 p-3">
+      <div className="flex items-center gap-2">
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-accent/15">
+          <Bot className="h-4 w-4 text-accent" strokeWidth={1.75} />
+        </span>
+        <div className="min-w-0">
+          <p className="truncate text-sm font-semibold text-text-1">
+            {String(card.name ?? "agent")}
+          </p>
+          <p className="truncate font-mono text-[10.5px] text-text-3">{String(card.url ?? "")}</p>
+        </div>
+        {typeof card.version === "string" && (
+          <span className="ml-auto shrink-0 rounded-[6px] bg-surface-3 px-1.5 py-0.5 font-mono text-[10.5px] text-text-2">
+            v{card.version}
+          </span>
+        )}
+      </div>
+      {typeof card.description === "string" && card.description && (
+        <p className="text-xs leading-relaxed text-text-2">{card.description}</p>
+      )}
+      <div className="flex flex-wrap gap-1">
+        {Boolean(capabilities.streaming) && <CapabilityChip label="streaming" />}
+        {Boolean(capabilities.pushNotifications) && <CapabilityChip label="push notifications" />}
+        {Boolean(capabilities.stateTransitionHistory) && <CapabilityChip label="history" />}
+      </div>
+      {skills.length > 0 && (
+        <div className="space-y-1.5">
+          <p className="text-[11px] uppercase tracking-widest text-text-3">skills</p>
+          {skills.map((skill, index) => (
+            <div key={index} className="rounded-lg border border-border bg-surface-1 px-2.5 py-1.5">
+              <p className="font-mono text-xs text-text-1">{String(skill.name ?? skill.id ?? "")}</p>
+              {typeof skill.description === "string" && skill.description && (
+                <p className="text-[11px] text-text-2">{skill.description}</p>
+              )}
+              {Array.isArray(skill.tags) && skill.tags.length > 0 && (
+                <div className="mt-1 flex flex-wrap gap-1">
+                  {(skill.tags as unknown[]).map((tag, tagIndex) => (
+                    <span
+                      key={tagIndex}
+                      className="rounded-[6px] bg-surface-3 px-1.5 py-px text-[10.5px] text-text-3"
+                    >
+                      {String(tag)}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+      <button
+        type="button"
+        aria-expanded={showRaw}
+        onClick={() => setShowRaw((v) => !v)}
+        className="flex items-center gap-1 rounded text-[11px] text-text-3 hover:text-text-1 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent"
+      >
+        <Chevron className="h-3 w-3" strokeWidth={1.75} />
+        raw card JSON
+      </button>
+      {showRaw && (
+        <pre className="max-h-52 overflow-auto rounded-lg border border-border bg-surface-1 p-2 font-mono text-[10.5px] leading-relaxed text-text-2">
+          {JSON.stringify(card, null, 2)}
+        </pre>
+      )}
+    </div>
+  );
+}
+
+function CapabilityChip({ label }: { label: string }) {
+  return (
+    <span className="rounded-[6px] bg-success/15 px-1.5 py-px text-[10.5px] text-success">
+      {label}
+    </span>
   );
 }

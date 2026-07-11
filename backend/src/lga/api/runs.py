@@ -3,18 +3,23 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 from collections.abc import AsyncGenerator
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 
 from fastapi import APIRouter, Header, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
 
-from lga.api.deps import Services, StudioAuth
+from lga.api.deps import Services, StudioAuth, header_vars
 from lga.db.models import RunRow
 from lga.schema.events import HEARTBEAT_INTERVAL_S
 from lga.services.orchestrator import FlowNotRunnableError
+
+if TYPE_CHECKING:
+    from lga.app import AppServices
+    from lga.runtime.executor import RunResult
 
 router = APIRouter(tags=["runs"], dependencies=[StudioAuth])
 
@@ -29,16 +34,6 @@ class RunBody(BaseModel):
     background: bool = False  # 202 + poll (SPEC §6.5)
     until_node: str | None = None  # partial run (SPEC §6.4)
     mode: str = "api"  # playground | api | debug
-
-
-def _header_vars(request: Request) -> dict[str, str]:
-    """X-LGA-VAR-<NAME> headers override generic globals for this run (§9.4)."""
-    out: dict[str, str] = {}
-    for key, value in request.headers.items():
-        lower = key.lower()
-        if lower.startswith("x-lga-var-"):
-            out[lower.removeprefix("x-lga-var-")] = value
-    return out
 
 
 class ResumeBody(BaseModel):
@@ -56,13 +51,14 @@ def run_info(row: RunRow) -> dict[str, Any]:
         "status": row.status,
         "error_code": row.error_code,
         "error_message": row.error_message,
+        "node_id": row.node_id,
         "result_preview": row.result_preview,
         "started_at": row.started_at.isoformat(),
         "finished_at": row.finished_at.isoformat() if row.finished_at else None,
     }
 
 
-async def _resolve_files(svc: Any, file_ids: list[str]) -> list[dict[str, Any]]:
+async def _resolve_files(svc: AppServices, file_ids: list[str]) -> list[dict[str, Any]]:
     files: list[dict[str, Any]] = []
     for file_id in file_ids:
         found = await svc.files.get(file_id)
@@ -73,10 +69,15 @@ async def _resolve_files(svc: Any, file_ids: list[str]) -> list[dict[str, Any]]:
     return files
 
 
-def _event_source(svc: Any, run_id: str, after_seq: int) -> EventSourceResponse:
-    async def gen() -> AsyncGenerator[dict[str, Any], None]:
-        heartbeat = 0.0
-        agen = svc.bus.subscribe(run_id, after_seq=after_seq).__aiter__()
+async def _run_event_gen(
+    svc: AppServices, run_id: str, after_seq: int, cancel_on_disconnect: bool
+) -> AsyncGenerator[dict[str, Any], None]:
+    """SSE frames for a run. If the stream is torn down before the run finishes
+    and ``cancel_on_disconnect`` is set, request cancellation (SPEC §6.1)."""
+    heartbeat = 0.0
+    finished = False  # True only when the run reached a terminal event
+    agen = svc.bus.subscribe(run_id, after_seq=after_seq).__aiter__()
+    try:
         while True:
             try:
                 event = await asyncio.wait_for(agen.__anext__(), timeout=HEARTBEAT_INTERVAL_S)
@@ -85,10 +86,22 @@ def _event_source(svc: Any, run_id: str, after_seq: int) -> EventSourceResponse:
                 yield {"event": "heartbeat", "data": json.dumps({"n": heartbeat})}
                 continue
             except StopAsyncIteration:
+                finished = True
                 return
             yield event.sse()
+    finally:
+        # The finally runs on normal completion (finished=True → no-op) and when
+        # the client disconnects mid-run (GeneratorExit/CancelledError → cancel).
+        # executor.cancel is non-blocking and never awaits, so this is teardown-safe.
+        if cancel_on_disconnect and not finished:
+            with contextlib.suppress(Exception):
+                await svc.executor.cancel(run_id)
 
-    return EventSourceResponse(gen())
+
+def _event_source(svc: AppServices, run_id: str, after_seq: int) -> EventSourceResponse:
+    return EventSourceResponse(
+        _run_event_gen(svc, run_id, after_seq, bool(svc.settings.cancel_on_disconnect))
+    )
 
 
 @router.post("/flows/{id_or_slug}/run")
@@ -113,7 +126,7 @@ async def run_flow_endpoint(id_or_slug: str, body: RunBody, request: Request, sv
             debug=body.mode == "debug",
             background=background,
             until_node=body.until_node,
-            extra_vars=_header_vars(request),
+            extra_vars=header_vars(request),
         )
     except FlowNotRunnableError as exc:
         raise HTTPException(
@@ -129,15 +142,19 @@ async def run_flow_endpoint(id_or_slug: str, body: RunBody, request: Request, sv
         from fastapi.responses import JSONResponse
 
         return JSONResponse({"run_id": run_id, "thread_id": thread_id}, status_code=202)
-    result = handle_or_result
+    # background=False → the orchestrator returns the blocking RunResult
+    result = cast("RunResult", handle_or_result)
     return {"run_id": run_id, "thread_id": thread_id, **result.model_dump(mode="json")}
 
 
 @router.get("/runs")
 async def list_runs(
-    svc: Services, flow_id: str | None = None, limit: int = Query(default=100, le=1000)
+    svc: Services,
+    flow_id: str | None = None,
+    limit: int = Query(default=100, le=1000),
+    offset: int = Query(default=0, ge=0),
 ) -> list[dict[str, Any]]:
-    return [run_info(r) for r in await svc.runs.list(flow_id=flow_id, limit=limit)]
+    return [run_info(r) for r in await svc.runs.list(flow_id=flow_id, limit=limit, offset=offset)]
 
 
 @router.get("/runs/{run_id}")
@@ -182,13 +199,12 @@ async def delete_finished_runs(svc: Services, flow_id: str | None = None) -> dic
 
 @router.post("/runs/{run_id}/cancel")
 async def cancel_run(run_id: str, svc: Services) -> dict[str, Any]:
-    row = await svc.runs.get(run_id)
-    if row is None:
+    if await svc.runs.get(run_id) is None:
         raise HTTPException(404, "run not found")
     cancelled = await svc.executor.cancel(run_id)
-    if not cancelled and row.status in ("pending", "running", "input_required"):
-        await svc.runs.update_status(run_id, "cancelled", error_code="RT104")
-        cancelled = True
+    if not cancelled:
+        # no live task (e.g. server restarted) — the state rule lives in RunService
+        cancelled = await svc.runs.mark_cancelled_if_active(run_id)
     return {"cancelled": cancelled}
 
 
@@ -200,24 +216,32 @@ async def resume_run(run_id: str, body: ResumeBody, svc: Services) -> dict[str, 
     if row.status not in ("input_required",):
         raise HTTPException(409, f"run is {row.status}, not input_required")
     try:
-        _, result = await svc.orchestrator.resume_run(
+        _, resumed = await svc.orchestrator.resume_run(
             run_id, body.payload, debug_action=body.debug_action, background=False
         )
     except KeyError as exc:
         raise HTTPException(404, "flow for run not found") from exc
+    # background=False → the orchestrator returns the blocking RunResult
+    result = cast("RunResult", resumed)
     return {"run_id": run_id, **result.model_dump(mode="json")}
 
 
 # ---------------------------------------------------------------- threads (§6.3)
 @router.get("/threads")
-async def list_threads(svc: Services, flow_slug: str | None = None) -> list[dict[str, Any]]:
-    threads: list[dict[str, Any]] = await svc.runs.list_threads(flow_slug=flow_slug)
+async def list_threads(
+    svc: Services,
+    flow_slug: str | None = None,
+    limit: int = Query(default=100, le=1000),
+    offset: int = Query(default=0, ge=0),
+) -> list[dict[str, Any]]:
+    threads: list[dict[str, Any]] = await svc.runs.list_threads(
+        flow_slug=flow_slug, limit=limit, offset=offset
+    )
     return threads
 
 
-async def _thread_flow_spec(svc: Any, thread_id: str) -> dict[str, Any]:
-    runs = await svc.runs.list(limit=1000)
-    run = next((r for r in runs if r.thread_id == thread_id), None)
+async def _thread_flow_spec(svc: AppServices, thread_id: str) -> dict[str, Any]:
+    run = await svc.runs.get_by_thread(thread_id)
     if run is None:
         raise HTTPException(404, "thread not found")
     flow = (

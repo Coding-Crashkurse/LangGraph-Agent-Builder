@@ -3,7 +3,9 @@ field-level config validation (SPEC §5.3-P2, E002/E010/E011/E012, W30x)."""
 
 from __future__ import annotations
 
-from typing import Any, Protocol
+import hashlib
+import json
+from typing import Any, Protocol, runtime_checkable
 
 import jsonschema  # type: ignore[import-untyped]  # no stubs installed for jsonschema
 
@@ -11,6 +13,7 @@ from lga.compiler.ir import EdgeIR, FlowIR, NodeIR
 from lga.schema.diagnostics import Diagnostic, DiagnosticCode
 from lga.schema.flowspec import FlowSpec
 from lga.sdk.component import SecretRef
+from lga.sdk.fields import Field, SecretInput
 from lga.sdk.registry import ComponentRegistry
 
 
@@ -23,8 +26,23 @@ class VariablesProvider(Protocol):
     def has_secret(self, name: str) -> bool: ...
 
 
+@runtime_checkable
+class SupportsEnvFallback(Protocol):
+    """Optional VariablesProvider extension (Settings.fallback_to_env_var):
+    raw-environment lookup for $var refs missing from the snapshot."""
+
+    def env_fallback(self, name: str) -> str | None: ...
+
+
+def _env_fallback(variables: VariablesProvider, name: str) -> str | None:
+    if isinstance(variables, SupportsEnvFallback):
+        return variables.env_fallback(name)
+    return None
+
+
 class EnvVariablesProvider:
-    """Headless default: LGA_VAR_<NAME> / LGA_CRED_<NAME> + raw env fallback for creds."""
+    """Headless default: LGA_VAR_<NAME> / LGA_CRED_<NAME>, each with a raw-env
+    fallback (``name`` looked up verbatim when the prefixed form is absent)."""
 
     def __init__(self, env: dict[str, str] | None = None) -> None:
         import os
@@ -51,9 +69,16 @@ def _resolve_refs(
     node_id: str,
     field: str,
     vectorstore_names: set[str] | None = None,
+    field_def: Field | None = None,
 ) -> Any:
     """Recursively replace {"$var": name} / {"$secret": name} /
-    {"$vectorstore": name} refs with concrete values / handles."""
+    {"$vectorstore": name} refs with concrete values / handles.
+
+    Credential-leak guard (E014, SPEC §5.4/§10.5): a {"$secret": name} ref —
+    at ANY nesting depth — may only live in a Secret field, so a resolved
+    credential can never flow into a plaintext/content field (LLM prompt,
+    output, log); the analogue of Langflow's _reject_credential_in_non_password.
+    Generic $var refs are unrestricted."""
     if isinstance(value, dict):
         if "$vectorstore" in value:
             from lga.sdk.ports import VectorStoreHandle
@@ -75,11 +100,9 @@ def _resolve_refs(
         if set(value.keys()) == {"$var"}:
             name = str(value["$var"])
             if not variables.has_var(name):
-                fallback = getattr(variables, "env_fallback", None)
-                if callable(fallback):
-                    resolved = fallback(name)
-                    if resolved is not None:
-                        return resolved
+                resolved = _env_fallback(variables, name)
+                if resolved is not None:
+                    return resolved
                 diagnostics.append(
                     Diagnostic.make(
                         DiagnosticCode.E012,
@@ -94,6 +117,17 @@ def _resolve_refs(
             return variables.get_var(name)
         if set(value.keys()) == {"$secret"}:
             name = str(value["$secret"])
+            if field_def is None or not isinstance(field_def, SecretInput):
+                diagnostics.append(
+                    Diagnostic.make(
+                        DiagnosticCode.E014,
+                        f"credential $secret {name!r} assigned to non-credential field {field!r}",
+                        node_id=node_id,
+                        field=field,
+                        fix_hint="Use a generic $var here, or move the value into a Secret field.",
+                    )
+                )
+                return None
             if not variables.has_secret(name):
                 diagnostics.append(
                     Diagnostic.make(
@@ -112,12 +146,14 @@ def _resolve_refs(
             register_secret(secret_value)
             return SecretRef(secret_value)
         return {
-            k: _resolve_refs(v, variables, diagnostics, node_id, field, vectorstore_names)
+            k: _resolve_refs(
+                v, variables, diagnostics, node_id, field, vectorstore_names, field_def
+            )
             for k, v in value.items()
         }
     if isinstance(value, list):
         return [
-            _resolve_refs(v, variables, diagnostics, node_id, field, vectorstore_names)
+            _resolve_refs(v, variables, diagnostics, node_id, field, vectorstore_names, field_def)
             for v in value
         ]
     return value
@@ -125,6 +161,57 @@ def _resolve_refs(
 
 def _is_empty(value: Any) -> bool:
     return value is None or (isinstance(value, str) and value.strip() == "")
+
+
+def snapshot_digest(
+    spec: FlowSpec,
+    variables: VariablesProvider,
+    tweaks: dict[str, dict[str, Any]] | None = None,
+    vectorstore_names: set[str] | None = None,
+) -> str:
+    """Digest of everything P2 injects beyond the FlowSpec bytes: resolved
+    values of referenced $var/$secret refs, $vectorstore existence, and tweaks.
+
+    Folded into the compile-cache key so a rotated secret, an edited global
+    variable, or per-run tweaks/header vars (§9.4) can never be served from a
+    stale cached compile."""
+    h = hashlib.sha256()
+
+    def visit(value: Any) -> None:
+        if isinstance(value, dict):
+            if "$vectorstore" in value:
+                name = str(value["$vectorstore"])
+                known = "?" if vectorstore_names is None else str(name in vectorstore_names)
+                h.update(f"vs:{name}={known};".encode())
+                return
+            if set(value.keys()) == {"$var"}:
+                name = str(value["$var"])
+                resolved = (
+                    variables.get_var(name)
+                    if variables.has_var(name)
+                    else _env_fallback(variables, name)
+                )
+                h.update(f"var:{name}={resolved!r};".encode())
+                return
+            if set(value.keys()) == {"$secret"}:
+                name = str(value["$secret"])
+                resolved = variables.get_secret(name) if variables.has_secret(name) else None
+                h.update(f"secret:{name}={resolved!r};".encode())
+                return
+            for key in sorted(value):
+                visit(value[key])
+            return
+        if isinstance(value, list):
+            for item in value:
+                visit(item)
+
+    for node in spec.nodes:
+        visit(node.config)
+    if tweaks:
+        h.update(json.dumps(tweaks, sort_keys=True, default=str).encode())
+        for override in tweaks.values():
+            visit(override)
+    return h.hexdigest()[:16]
 
 
 def resolve(
@@ -178,8 +265,6 @@ def resolve(
                     )
                 )
                 continue
-            from lga.sdk.fields import SecretInput
-
             if isinstance(f, SecretInput):
                 diagnostics.append(
                     Diagnostic.make(
@@ -192,34 +277,19 @@ def resolve(
                 continue
             config[fname] = fvalue
 
-        # $var/$secret/$vectorstore refs → concrete values (E012/E013 when missing).
-        # Credential-leak guard (E014, SPEC §5.4/§10.5): a bare {"$secret": name}
-        # may only be assigned to a Secret field, so a resolved credential can
-        # never flow into a plaintext/content field (LLM prompt, output, log) —
-        # the analogue of Langflow's _reject_credential_in_non_password. Generic
-        # $var refs are unrestricted; nested secrets (connection params) are left
-        # to their structured field.
-        from lga.sdk.fields import SecretInput
-
+        # $var/$secret/$vectorstore refs → concrete values (E012/E013 when
+        # missing); _resolve_refs enforces the E014 credential-leak guard at
+        # any nesting depth, keyed off the owning field's class.
         field_map = cls.field_map()
         for fname in list(config.keys()):
-            raw = config[fname]
-            if isinstance(raw, dict) and set(raw.keys()) == {"$secret"}:
-                target = field_map.get(fname)
-                if target is not None and not isinstance(target, SecretInput):
-                    diagnostics.append(
-                        Diagnostic.make(
-                            DiagnosticCode.E014,
-                            f"credential $secret {str(raw['$secret'])!r} assigned to "
-                            f"non-credential field {fname!r}",
-                            node_id=node.id,
-                            field=fname,
-                            fix_hint="Use a generic $var here, or move the value into a "
-                            "Secret field.",
-                        )
-                    )
             config[fname] = _resolve_refs(
-                config[fname], variables, diagnostics, node.id, fname, vectorstore_names
+                config[fname],
+                variables,
+                diagnostics,
+                node.id,
+                fname,
+                vectorstore_names,
+                field_map.get(fname),
             )
 
         # field-level validation (E010/E011, W301)
@@ -251,10 +321,21 @@ def resolve(
                             field=f.name,
                         )
                     )
+        # unknown keys are tolerated (forward compat) but flagged — catches
+        # typo'd field names in hand-edited FlowSpecs that would vanish silently
+        implicit_names = {f.name for f in cls._implicit_field_objects()}
         for fname in config:
-            if fname not in field_map and fname not in ("tool_name", "tool_description"):
-                # unknown keys are tolerated (forward compat) but never validated
-                pass
+            if fname not in field_map and fname not in implicit_names:
+                diagnostics.append(
+                    Diagnostic.make(
+                        DiagnosticCode.W303,
+                        f"unknown config key {fname!r} — not a field of "
+                        f"{cls.component_id}; ignored",
+                        node_id=node.id,
+                        field=fname,
+                        fix_hint="Check the field name against the component form.",
+                    )
+                )
 
         # defaults fill-in so build() sees complete config
         for f in cls.inputs:

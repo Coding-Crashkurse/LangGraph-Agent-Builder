@@ -80,6 +80,9 @@ def test_component_new_scaffold(cli_env: Path) -> None:
     pkg = cli_env / "components" / "lga_my_widget"
     pyproject = (pkg / "pyproject.toml").read_text(encoding="utf-8")
     assert '[project.entry-points."lga.components"]' in pyproject
+    # the generated async test must be runnable out of the box
+    assert "pytest-asyncio" in pyproject
+    assert 'asyncio_mode = "auto"' in pyproject
     source = (pkg / "src" / "lga_my_widget" / "__init__.py").read_text(encoding="utf-8")
     assert "class MyWidget(Component)" in source
     assert (pkg / "tests" / "test_my_widget.py").exists()

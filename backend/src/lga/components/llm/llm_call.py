@@ -1,4 +1,4 @@
-"""LLM Call â€” one-shot completion with dynamic {var} prompt ports (SPEC Â§12.2)."""
+"""LLM Call — one-shot completion with dynamic {var} prompt ports (SPEC §12.2)."""
 
 from __future__ import annotations
 
@@ -67,7 +67,7 @@ class LLMCall(Component):
     ]
 
     def build(self, ctx: BuildContext) -> NodeFn:
-        from lga.components.llm._models import resolve_model
+        from lga.components.llm._models import parse_json_reply, resolve_model, stream_completion
 
         async def node(state: dict[str, Any], config: Any) -> dict[str, Any]:
             rc = get_run_context(config)
@@ -91,18 +91,9 @@ class LLMCall(Component):
 
             messages.append(HumanMessage(content=prompt))
 
-            text = ""
-            if ctx.get_field("stream_tokens"):
-                async for chunk in model.astream(messages):
-                    delta = chunk.content if isinstance(chunk.content, str) else ""
-                    if delta:
-                        text += delta
-                        rc.stream_writer(delta)
-            else:
-                response = await model.ainvoke(messages)
-                text = (
-                    response.content if isinstance(response.content, str) else str(response.content)
-                )
+            text = await stream_completion(
+                model, messages, rc, bool(ctx.get_field("stream_tokens"))
+            )
 
             result: dict[str, Any] = {
                 "message": ports.Message(role="assistant", content=text),
@@ -110,10 +101,7 @@ class LLMCall(Component):
                 "messages": [AIMessage(content=text)],
             }
             if structured:
-                try:
-                    result["json"] = json.loads(text)
-                except json.JSONDecodeError:
-                    result["json"] = {"raw": text}
+                result["json"] = parse_json_reply(text)
             return result
 
         return node

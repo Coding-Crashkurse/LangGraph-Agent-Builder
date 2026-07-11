@@ -2,7 +2,10 @@
 
 ``compile_flow`` is pure and deterministic: same FlowSpec bytes + same registry
 versions ⇒ identical graph & report. Results are cached by
-``sha256(flowspec) + registry_fingerprint`` (only for tweak-/constant-free compiles).
+``sha256(flowspec) + registry_fingerprint`` plus a snapshot digest of the
+referenced $var/$secret values, vector-store names and tweaks — so a rotated
+secret or per-run override is never served from a stale cache (constant-free
+compiles only).
 """
 
 from __future__ import annotations
@@ -10,7 +13,7 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from langgraph.graph import StateGraph
 from langgraph.graph.state import CompiledStateGraph
@@ -30,7 +33,13 @@ from lga.schema.state import FlowState
 from lga.sdk.component import BuildContext, NodeKind, SecretsResolver
 from lga.sdk.registry import ComponentRegistry, get_registry
 
-__all__ = ["CompileReport", "CompiledFlow", "clear_compile_cache", "compile_flow"]
+__all__ = [
+    "CompileReport",
+    "CompiledFlow",
+    "build_report",
+    "clear_compile_cache",
+    "compile_flow",
+]
 
 
 class CompileReport(BaseModel):
@@ -86,14 +95,16 @@ class CompiledFlow:
         return self.builder.compile(**kwargs)
 
 
-_cache: dict[tuple[str, str], CompiledFlow] = {}
+_cache: dict[str, CompiledFlow] = {}
+_CACHE_MAX = 256
 
 
 def clear_compile_cache() -> None:
     _cache.clear()
 
 
-def _report(ir: FlowIR, contexts: dict[str, BuildContext], fingerprint: str) -> CompileReport:
+def build_report(ir: FlowIR, contexts: dict[str, BuildContext], fingerprint: str) -> CompileReport:
+    """Compile report from a (possibly pruned, §6.4) IR + node contexts."""
     providers = emit_pass.pure_tool_providers(ir)
     return CompileReport(
         nodes=[
@@ -141,7 +152,10 @@ def compile_flow(
     settings: Any = None,
     vectorstore_names: set[str] | None = None,
     use_cache: bool = True,
+    stop_after: Literal["validate"] | None = None,
 ) -> CompiledFlow:
+    """Compile ``source``; ``stop_after="validate"`` returns after P3 with
+    diagnostics only — no component code (build()) is ever executed."""
     registry = registry or get_registry()
     variables = variables or EnvVariablesProvider()
 
@@ -154,12 +168,18 @@ def compile_flow(
             report=CompileReport(),
         )
 
-    cacheable = use_cache and not tweaks and not constants
     fingerprint = hashlib.sha256(
         (spec.canonical_json() + registry.fingerprint()).encode()
     ).hexdigest()[:16]
-    if cacheable and (fingerprint, registry.fingerprint()) in _cache:
-        return _cache[(fingerprint, registry.fingerprint())]
+    cacheable = use_cache and not constants and stop_after is None
+    cache_key = ""
+    if cacheable:
+        cache_key = fingerprint + resolve_pass.snapshot_digest(
+            spec, variables, tweaks, vectorstore_names
+        )
+        cached = _cache.get(cache_key)
+        if cached is not None:
+            return cached
 
     # P2 resolve
     ir, d2 = resolve_pass.resolve(
@@ -169,7 +189,7 @@ def compile_flow(
 
     # P3 validate
     diagnostics += validate_pass.validate(ir)
-    if has_errors(diagnostics):
+    if has_errors(diagnostics) or stop_after == "validate":
         return CompiledFlow(
             spec=spec,
             diagnostics=diagnostics,
@@ -186,20 +206,32 @@ def compile_flow(
         settings=settings,
     )
 
-    # P5 emit
-    builder = emit_pass.emit(ir, contexts)
+    # P5 emit (build() failures → E015 diagnostics, no builder)
+    builder, d5 = emit_pass.emit(ir, contexts)
+    diagnostics += d5
+    if builder is None:
+        return CompiledFlow(
+            spec=spec,
+            diagnostics=diagnostics,
+            report=CompileReport(fingerprint=fingerprint),
+            ir=ir,
+            node_contexts=contexts,
+            fingerprint=fingerprint,
+        )
 
     compiled = CompiledFlow(
         spec=spec,
         diagnostics=diagnostics,
-        report=_report(ir, contexts, fingerprint),
+        report=build_report(ir, contexts, fingerprint),
         builder=builder,
         ir=ir,
         node_contexts=contexts,
         fingerprint=fingerprint,
     )
     if cacheable:
-        _cache[(fingerprint, registry.fingerprint())] = compiled
+        if len(_cache) >= _CACHE_MAX:
+            _cache.clear()
+        _cache[cache_key] = compiled
     return compiled
 
 
@@ -209,5 +241,12 @@ def validate_flow(
     registry: ComponentRegistry | None = None,
     variables: VariablesProvider | None = None,
 ) -> list[Diagnostic]:
-    """Validation-only entry (used by /validate and `lga flow validate`)."""
-    return compile_flow(source, registry=registry, variables=variables, use_cache=False).diagnostics
+    """Validation-only entry (used by /validate and `lga flow validate`):
+    stops after P3, so component build() code never runs."""
+    return compile_flow(
+        source,
+        registry=registry,
+        variables=variables,
+        use_cache=False,
+        stop_after="validate",
+    ).diagnostics

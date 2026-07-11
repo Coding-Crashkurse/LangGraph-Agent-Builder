@@ -1,4 +1,4 @@
-"""Routers (SPEC Â§5.5, Â§12.3): LLM Router + Rule Router."""
+"""Routers (SPEC §5.5, §12.3): LLM Router + Rule Router."""
 
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ class LLMRouter(Component):
         fields.MultiselectInput(
             name="labels",
             display_name="Labels",
-            info="Branch labels â€” one amber output handle per label.",
+            info="Branch labels — one amber output handle per label.",
             required=True,
         ),
         fields.ModelInput(
@@ -82,9 +82,9 @@ class LLMRouter(Component):
                     (lb for lb in labels if lb.lower() in lowered), None
                 )
             if label is None:
-                # no match â†’ last label (catch-all by convention, e.g. "other")
+                # no match → last label (catch-all by convention, e.g. "other")
                 label = labels[-1] if labels else ""
-            rc.emit_status(f"routed â†’ {label}")
+            rc.emit_status(f"routed → {label}")
             return {"route": label}
 
         return node

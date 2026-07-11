@@ -11,18 +11,12 @@ from a2a.types import Task, TaskState
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from lga.a2a.scope import resolve_client_scope
 from lga.db.models import A2ATaskRow, TaskTransitionRow
 from lga.errors import LgaRuntimeError
 from lga.services.settings import Settings
 
 logger = logging.getLogger("lga.a2a.tasks")
-
-TERMINAL_STATES = {
-    TaskState.completed,
-    TaskState.failed,
-    TaskState.canceled,
-    TaskState.rejected,
-}
 
 # explicit transition table — illegal transitions indicate executor bugs
 ALLOWED_TRANSITIONS: dict[str, set[str]] = {
@@ -34,6 +28,17 @@ ALLOWED_TRANSITIONS: dict[str, set[str]] = {
     "failed": set(),
     "canceled": set(),
     "rejected": set(),
+}
+
+# the §7.6/§7.11 state sets live HERE, derived from the transition table so the
+# store's state machine and the executor/handler guards cannot drift
+TERMINAL_STATES: set[TaskState] = {
+    TaskState(state) for state, targets in ALLOWED_TRANSITIONS.items() if not targets
+}
+# final-for-a-stream: terminal + the paused states that close an SSE stream (§7.7)
+FINAL_STATES: set[TaskState] = TERMINAL_STATES | {
+    TaskState.input_required,
+    TaskState.auth_required,
 }
 
 
@@ -83,16 +88,6 @@ class DbTaskStore(TaskStore):
         self._sessions = sessions
         self._flow_slug = flow_slug
 
-    @staticmethod
-    def _scope(context: ServerCallContext | None) -> str:
-        if context is not None and context.state:
-            value = context.state.get("lga_client_scope")
-            if value:
-                return str(value)
-        from lga.a2a.scope import current_client_scope
-
-        return current_client_scope.get()
-
     async def save(self, task: Task, context: ServerCallContext | None = None) -> None:
         new_state = (
             task.status.state.value
@@ -108,7 +103,7 @@ class DbTaskStore(TaskStore):
                     flow_slug=self._flow_slug,
                     state=new_state,
                     task=task.model_dump(mode="json", exclude_none=True),
-                    client_scope=self._scope(context),
+                    client_scope=resolve_client_scope(context),
                 )
                 session.add(row)
                 session.add(TaskTransitionRow(task_id=task.id, from_state="", to_state=new_state))
@@ -139,7 +134,7 @@ class DbTaskStore(TaskStore):
             row = await session.get(A2ATaskRow, task_id)
         if row is None:
             return None
-        scope = self._scope(context)
+        scope = resolve_client_scope(context)
         if row.client_scope and scope and row.client_scope != scope:
             # foreign session (public-agent namespacing, §7.11): behave as unknown
             return None

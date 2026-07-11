@@ -81,11 +81,15 @@ async def test_load_existing_skip_vs_overwrite(svc: AppServices, tmp_path: Path)
 
     svc.settings.load_flows_overwrite = False
     assert await load_flows_from_path(svc) == 0  # existing → skipped
-    assert (await svc.flows.get_by_slug("dupe")).description == "original"
+    row = await svc.flows.get_by_slug("dupe")
+    assert row is not None
+    assert row.description == "original"
 
     svc.settings.load_flows_overwrite = True
     assert await load_flows_from_path(svc) == 1  # existing → overwritten
-    assert (await svc.flows.get_by_slug("dupe")).description == "from disk"
+    row = await svc.flows.get_by_slug("dupe")
+    assert row is not None
+    assert row.description == "from disk"
 
 
 async def test_load_auto_publishes_when_enabled(svc: AppServices, tmp_path: Path) -> None:

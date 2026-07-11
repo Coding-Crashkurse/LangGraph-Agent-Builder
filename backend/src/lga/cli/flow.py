@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Annotated, Any, cast
+from typing import Annotated, Any
 
 import httpx
 import typer
 
 from lga.cli._common import (
     EXIT_CONNECTION,
+    EXIT_ERROR,
     EXIT_VALIDATION,
     console,
     err_console,
@@ -28,16 +29,29 @@ def _client(server: str, api_key: str | None) -> httpx.Client:
     return httpx.Client(base_url=server.rstrip("/"), headers=headers, timeout=60.0)
 
 
+def _check(response: httpx.Response) -> httpx.Response:
+    """Print the server's detail and map HTTP status → exit code (SPEC §2.6)."""
+    if response.is_success:
+        return response
+    if response.status_code in (401, 403):
+        err_console.print("[red]authentication failed[/red] (set --api-key / LGA_API_KEY)")
+        raise typer.Exit(EXIT_CONNECTION)
+    try:
+        body = response.json()
+    except ValueError:
+        body = None
+    detail = (body.get("detail") if isinstance(body, dict) else None) or response.text
+    err_console.print(f"[red]HTTP {response.status_code}[/red] {detail}")
+    raise typer.Exit(EXIT_VALIDATION if response.status_code == 422 else EXIT_ERROR)
+
+
 def _request(client: httpx.Client, method: str, path: str, **kwargs: Any) -> httpx.Response:
     try:
         response = client.request(method, path, **kwargs)
     except httpx.ConnectError as exc:
         err_console.print(f"[red]cannot reach server:[/red] {exc}")
         raise typer.Exit(EXIT_CONNECTION) from exc
-    if response.status_code == 401:
-        err_console.print("[red]authentication failed[/red] (set --api-key / LGA_API_KEY)")
-        raise typer.Exit(EXIT_CONNECTION)
-    return response
+    return _check(response)
 
 
 @flow_app.command("import")
@@ -46,21 +60,13 @@ def import_flows(
     server: ServerOpt = "http://127.0.0.1:8000",
     api_key: ApiKeyOpt = None,
 ) -> None:
-    """Import FlowSpec files via POST /flows/import."""
+    """Import FlowSpec files via POST /flows/import (server-side upsert, SPEC §9.1)."""
     with _client(server, api_key) as client:
         for path in paths:
             spec = json.loads(path.read_text(encoding="utf-8"))
-            response = _request(client, "POST", "/api/v1/flows/import", json={"spec": spec})
-            if response.status_code == 409:
-                # slug exists → update the draft in place
-                slug = spec.get("flow", {}).get("slug", "")
-                existing = _request(client, "GET", "/api/v1/flows").json()
-                target = next((f for f in existing if f["slug"] == slug), None)
-                if target:
-                    response = _request(
-                        client, "PATCH", f"/api/v1/flows/{target['id']}", json={"spec": spec}
-                    )
-            response.raise_for_status()
+            response = _request(
+                client, "POST", "/api/v1/flows/import", json={"spec": spec, "upsert": True}
+            )
             info = response.json()
             console.print(f"[green]imported[/green] {path.name} → {info['id']} ({info['slug']})")
 
@@ -73,21 +79,11 @@ def export_flow(
     api_key: ApiKeyOpt = None,
 ) -> None:
     with _client(server, api_key) as client:
-        flow_id = _resolve_id(client, flow_id)
+        # routes are slug-first (§9) — pass the ref straight through
         response = _request(
             client, "GET", f"/api/v1/flows/{flow_id}/export", params={"format": format}
         )
-        response.raise_for_status()
         print(response.text if format == "python" else json.dumps(response.json(), indent=2))
-
-
-def _resolve_id(client: httpx.Client, ref: str) -> str:
-    flows = _request(client, "GET", "/api/v1/flows").json()
-    for flow in flows:
-        if flow["id"] == ref or flow["slug"] == ref:
-            return cast(str, flow["id"])
-    err_console.print(f"[red]flow {ref!r} not found on server[/red]")
-    raise typer.Exit(EXIT_CONNECTION)
 
 
 @flow_app.command("validate")
@@ -124,14 +120,12 @@ def publish_flow(
     api_key: ApiKeyOpt = None,
 ) -> None:
     with _client(server, api_key) as client:
-        flow_id = _resolve_id(client, flow_id)
         response = _request(
             client,
             "POST",
             f"/api/v1/flows/{flow_id}/publish",
             json={"version": bump, "changelog": changelog},
         )
-        response.raise_for_status()
         body = response.json()
         if not body["published"]:
             for d in body["diagnostics"]:
@@ -175,10 +169,9 @@ def run_flow_cmd(
             console.print(f"[yellow]interrupt:[/yellow] {json.dumps(result.interrupt)}")
         if result.status == "failed":
             err_console.print(f"[red]{result.error_code}[/red] {result.error_message}")
-            raise typer.Exit(1)
+            raise typer.Exit(EXIT_ERROR)
         return
     with _client(server, api_key) as client:
-        flow_id = _resolve_id(client, ref)
         body = {
             "input_text": input,
             "data": payload_data,
@@ -187,16 +180,21 @@ def run_flow_cmd(
             "until_node": until,
         }
         if stream:
-            with client.stream(
-                "POST", f"/api/v1/flows/{flow_id}/run", json=body, timeout=None
-            ) as response:
-                response.raise_for_status()
-                for line in response.iter_lines():
-                    if line.startswith("data:"):
-                        print(line[5:].strip())
+            try:
+                with client.stream(
+                    "POST", f"/api/v1/flows/{ref}/run", json=body, timeout=None
+                ) as response:
+                    if not response.is_success:
+                        response.read()  # body needed for the detail message
+                        _check(response)
+                    for line in response.iter_lines():
+                        if line.startswith("data:"):
+                            print(line[5:].strip())
+            except httpx.ConnectError as exc:
+                err_console.print(f"[red]cannot reach server:[/red] {exc}")
+                raise typer.Exit(EXIT_CONNECTION) from exc
             return
-        response = _request(client, "POST", f"/api/v1/flows/{flow_id}/run", json=body)
-        response.raise_for_status()
+        response = _request(client, "POST", f"/api/v1/flows/{ref}/run", json=body)
         result = response.json()
         console.print(f"status: [bold]{result['status']}[/bold]")
         if result.get("result_text"):

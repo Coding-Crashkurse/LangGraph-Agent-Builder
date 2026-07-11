@@ -22,7 +22,7 @@ RUN_CTX_KEY = "__lga_run_ctx__"
 current_node_id: ContextVar[str] = ContextVar("lga_current_node_id", default="")
 
 
-def _stream_write(payload: dict[str, Any]) -> None:
+def stream_write(payload: dict[str, Any]) -> None:
     """Best-effort write to langgraph's custom stream; no-op outside a stream."""
     try:
         from langgraph.config import get_stream_writer
@@ -36,6 +36,10 @@ def _stream_write(payload: dict[str, Any]) -> None:
         writer(payload)
     except Exception:  # pragma: no cover - defensive
         logger.debug("stream write failed", exc_info=True)
+
+
+# Back-compat alias from when the compiler reached for the private name.
+_stream_write = stream_write
 
 
 @dataclass
@@ -66,7 +70,7 @@ class RunContext:
     def _emit(self, event_type: str, data: dict[str, Any]) -> None:
         if self._noop:
             return
-        _stream_write(
+        stream_write(
             {
                 "event": event_type,
                 "node_id": current_node_id.get(),

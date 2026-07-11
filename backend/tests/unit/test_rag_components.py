@@ -121,6 +121,42 @@ def test_embeddings_resolves_fake_dim() -> None:
     assert default.size == 32  # type: ignore[attr-defined]
 
 
+class _RcSpy:
+    def __init__(self) -> None:
+        self.logs: list[tuple[str, str]] = []
+
+    def emit_log(self, level: str, msg: str) -> None:
+        self.logs.append((level, msg))
+
+
+def test_unwired_embedding_port_warns_and_falls_back() -> None:
+    from lga.components.rag.components import _embedding_config
+
+    ctx = BuildContext(node_id="t")
+    rc = _RcSpy()
+    assert _embedding_config(ctx, {}, rc) == {"provider": "fake"}
+    assert len(rc.logs) == 1
+    assert rc.logs[0][0] == "warning"
+    assert "fake embeddings" in rc.logs[0][1]
+
+
+def test_wired_embedding_port_stays_silent() -> None:
+    # the explicit testing.fake_embeddings wiring must NOT trigger the warning
+    from lga.components.rag.components import _embedding_config
+
+    ctx = BuildContext(
+        node_id="t",
+        input_bindings={
+            "embedding": InputBinding(
+                input_name="embedding", channel=None, constant={"provider": "fake"}
+            )
+        },
+    )
+    rc = _RcSpy()
+    assert _embedding_config(ctx, {}, rc) == {"provider": "fake"}
+    assert rc.logs == []
+
+
 def test_as_document_variants() -> None:
     doc = Document(page_content="already")
     assert _as_document(doc) is doc
@@ -270,13 +306,15 @@ async def test_writer_dimension_mismatch_raises_rt107(sqlite_settings: Settings)
 
 
 async def test_retriever_health_check_ok(sqlite_settings: Settings) -> None:
+    # health_check deep-validates (SPEC §8b.4): reachability + collection
+    # existence (E903) + dim match — so seed the collection before checking.
+    await _ingest(sqlite_settings, "health", [{"page_content": "seed", "metadata": {}}])
     comp = VectorRetriever()
     ctx = BuildContext(
         node_id="h",
         config={"vector_store": _vs("health")},
         settings=sqlite_settings,
     )
-    # local backend health() connects & closes without raising
     await comp.health_check(ctx)
 
 

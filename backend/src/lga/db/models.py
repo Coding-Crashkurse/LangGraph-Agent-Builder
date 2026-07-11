@@ -67,6 +67,7 @@ class RunRow(Base):
     status: Mapped[str] = mapped_column(sa.String(20), default="pending", index=True)
     error_code: Mapped[str | None] = mapped_column(sa.String(10), nullable=True)
     error_message: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
+    node_id: Mapped[str | None] = mapped_column(sa.String(100), nullable=True)  # failing node §5.6
     result_preview: Mapped[str] = mapped_column(sa.Text, default="")
     started_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), default=utcnow)
     finished_at: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True), nullable=True)

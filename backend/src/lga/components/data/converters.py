@@ -9,7 +9,7 @@ from typing import Any
 from lga.sdk import Component, Output, fields, ports
 from lga.sdk.component import BuildContext, NodeConfig, NodeFn
 from lga.sdk.ports import Document, Message
-from lga.sdk.templating import PROMPT_VAR_RE, message_text, render_prompt
+from lga.sdk.templating import message_text, render_prompt
 
 
 class PromptTemplate(Component):
@@ -28,16 +28,11 @@ class PromptTemplate(Component):
     ]
 
     def build(self, ctx: BuildContext) -> NodeFn:
+        from lga.components.llm.llm_call import collect_prompt_values
+
         async def node(state: dict[str, Any], config: Any) -> dict[str, Any]:
             template = str(ctx.get_field("template") or "")
-            data = state.get("data") or {}
-            values: dict[str, Any] = {}
-            for var in PROMPT_VAR_RE.findall(template):
-                value = ctx.get_input(state, var)
-                if value is None:
-                    value = data.get(var)
-                values[var] = value
-            text = render_prompt(template, values)
+            text = render_prompt(template, collect_prompt_values(ctx, state, template))
             return {"text": text, "message": Message(role="user", content=text)}
 
         return node

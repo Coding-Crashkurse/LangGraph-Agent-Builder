@@ -16,7 +16,7 @@ from starlette.routing import Route
 
 from lga.a2a.card import LEGACY_WELL_KNOWN_PATH, WELL_KNOWN_PATH, build_card
 from lga.a2a.executor import LGAAgentExecutor
-from lga.a2a.handler import LGARequestHandler
+from lga.a2a.handler import LGAJSONRPCHandler, LGARequestHandler
 from lga.a2a.push import DbPushConfigStore, GuardedPushSender
 from lga.a2a.scope import current_client_scope, scope_for_api_key, scope_for_ip
 from lga.a2a.tasks import resolve_task_store
@@ -118,7 +118,10 @@ class A2AManager:
                     public=spec.flow.a2a.auth == "public",
                     stream_tokens=spec.flow.a2a.stream_tokens,
                 )
-                push_store = DbPushConfigStore(svc.sessions, svc.settings)
+                # push honesty (§7.9): card says pushNotifications:false ⇒ no
+                # store/sender wired, and pushNotificationConfig/* → -32003
+                push_enabled = spec.flow.a2a.push_notifications
+                push_store = DbPushConfigStore(svc.sessions, svc.settings) if push_enabled else None
                 handler = LGARequestHandler(
                     agent_executor=agent_executor,
                     task_store=resolve_task_store(
@@ -128,11 +131,24 @@ class A2AManager:
                         settings=svc.settings,
                     ),
                     push_config_store=push_store,
-                    push_sender=GuardedPushSender(self._http, push_store, svc.settings),
+                    push_sender=(
+                        GuardedPushSender(self._http, push_store, svc.settings)
+                        if push_store is not None
+                        else None
+                    ),
+                    push_supported=push_enabled,
                 )
-                app = A2AStarletteApplication(agent_card=card, http_handler=handler).build(
-                    agent_card_url=WELL_KNOWN_PATH, rpc_url="/"
+                # v1 extended card == public card (§7.5) — wired so the
+                # capability flag can be flipped without protocol changes
+                a2a_app = A2AStarletteApplication(
+                    agent_card=card, http_handler=handler, extended_agent_card=card
                 )
+                # the sdk hardwires a plain JSONRPCHandler; swap in ours so the
+                # push-set capability gate answers -32003 (§7.10), not -32603
+                a2a_app.handler = LGAJSONRPCHandler(
+                    agent_card=card, request_handler=handler, extended_agent_card=card
+                )
+                app = a2a_app.build(agent_card_url=WELL_KNOWN_PATH, rpc_url="/")
                 card_json = json.loads(card.model_dump_json(exclude_none=True, by_alias=True))
 
                 async def card_endpoint(

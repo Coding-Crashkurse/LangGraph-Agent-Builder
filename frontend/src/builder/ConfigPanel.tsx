@@ -1,42 +1,95 @@
 /** Node inspector: renders purely from the component descriptor via the
- * FieldWidgetRegistry; dynamic fields round-trip to /components/{cid}/config. */
+ * FieldWidgetRegistry; dynamic fields round-trip to /components/{cid}/config.
+ *
+ * The inner <Inspector> is keyed by node id so per-node UI state (liveFields
+ * from dynamic refreshes, the Advanced disclosure, pending debounce timers)
+ * can never leak from one node into another. */
 
-import { useMemo, useRef, useState } from "react";
+import {
+  BookOpen,
+  Boxes,
+  ChevronDown,
+  ChevronRight,
+  FlaskConical,
+  GitBranch,
+  MousePointerClick,
+  Sparkles,
+  Wrench,
+  Zap,
+  type LucideIcon,
+} from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { api } from "@/api/client";
-import type { FieldDescriptor } from "@/api/types";
+import type { ComponentDescriptor, FieldDescriptor } from "@/api/types";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "@/components/ui/toast";
 
+import type { CanvasNode } from "./convert";
+import { defaultConfig } from "./convert";
 import { widgetFor } from "./forms/registry";
 import { useBuilder } from "./store";
+
+const CATEGORY_ICONS: Record<string, LucideIcon> = {
+  llm: Sparkles,
+  rag: BookOpen,
+  flow_control: GitBranch,
+  tools: Wrench,
+  io: Zap,
+  data: Boxes,
+  testing: FlaskConical,
+};
 
 export function ConfigPanel() {
   const selectedNodeId = useBuilder((s) => s.selectedNodeId);
   const nodes = useBuilder((s) => s.nodes);
   const descriptors = useBuilder((s) => s.descriptors);
-  const updateNodeConfig = useBuilder((s) => s.updateNodeConfig);
-  const diagnostics = useBuilder((s) => s.diagnostics);
 
   const node = nodes.find((n) => n.id === selectedNodeId);
   const descriptor = node ? descriptors.get(node.data.componentId) : undefined;
-  const [showAdvanced, setShowAdvanced] = useState(false);
-  const [liveFields, setLiveFields] = useState<FieldDescriptor[] | null>(null);
-  const debounce = useRef<number | null>(null);
-
-  const fields = useMemo(() => {
-    const list = liveFields ?? descriptor?.fields ?? [];
-    return list.filter((f) => !f.port_only && f.show && !f.deprecated);
-  }, [descriptor, liveFields]);
 
   if (!node || !descriptor) {
     return (
-      <div className="p-4 text-sm text-zinc-500">
-        Select a node to configure it. Fields are generated from the component
-        descriptor — adding a component never needs frontend changes.
+      <div className="flex h-full flex-col items-center justify-center gap-1.5 px-6 py-10 text-center">
+        <MousePointerClick size={22} strokeWidth={1.75} className="text-text-3" aria-hidden />
+        <p className="text-[13px] text-text-2">Select a node to configure</p>
+        <p className="text-xs text-text-3">
+          Fields are generated from the component descriptor — adding a
+          component never needs frontend changes.
+        </p>
       </div>
     );
   }
+
+  return <Inspector key={node.id} node={node} descriptor={descriptor} />;
+}
+
+function Inspector({ node, descriptor }: { node: CanvasNode; descriptor: ComponentDescriptor }) {
+  const updateNodeConfig = useBuilder((s) => s.updateNodeConfig);
+  const diagnostics = useBuilder((s) => s.diagnostics);
+
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [liveFields, setLiveFields] = useState<FieldDescriptor[] | null>(null);
+  const debounce = useRef<number | null>(null);
+  useEffect(
+    () => () => {
+      // never let a pending dynamic refresh outlive this node's inspector
+      if (debounce.current) window.clearTimeout(debounce.current);
+    },
+    [],
+  );
+
+  const fields = useMemo(() => {
+    const list = liveFields ?? descriptor.fields;
+    return list.filter((f) => !f.port_only && f.show && !f.deprecated);
+  }, [descriptor, liveFields]);
+
+  // descriptor defaults materialize through convert.ts's defaultConfig — the
+  // single source shared with node creation (inline widgets read the same map).
+  const effectiveConfig = useMemo(
+    () => ({ ...defaultConfig(descriptor), ...node.data.config }),
+    [descriptor, node.data.config],
+  );
 
   const nodeDiags = diagnostics.filter((d) => d.node_id === node.id);
 
@@ -64,60 +117,87 @@ export function ConfigPanel() {
 
   const visible = fields.filter((f) => !f.advanced);
   const advanced = fields.filter((f) => f.advanced);
+  const HeaderIcon = CATEGORY_ICONS[descriptor.category] ?? Boxes;
 
   return (
     <div className="flex h-full flex-col overflow-y-auto">
-      <div className="border-b border-surface-800 px-4 py-3">
+      <div className="border-b border-border px-4 py-3">
         <div className="flex items-center gap-2">
-          <h2 className="text-sm font-semibold text-zinc-100">{descriptor.display_name}</h2>
+          <span
+            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-surface-2 text-text-2"
+            aria-hidden
+          >
+            <HeaderIcon size={14} strokeWidth={1.75} />
+          </span>
+          <h2 className="truncate text-[13px] font-semibold text-text-1">
+            {node.data.label || descriptor.display_name}
+          </h2>
           <Badge tone="muted">{descriptor.node_kind}</Badge>
-          {descriptor.beta && <Badge tone="violet">beta</Badge>}
+          {descriptor.beta && <Badge tone="accent">beta</Badge>}
         </div>
-        <p className="mt-1 text-xs text-zinc-500">{descriptor.description}</p>
-        <p className="mt-1 font-mono text-[10px] text-zinc-600">
-          {descriptor.component_id} @ {descriptor.version} · node {node.id}
+        <p className="mt-1.5 text-xs leading-relaxed text-text-3">{descriptor.description}</p>
+        <p className="mt-1 truncate font-mono text-[10.5px] text-text-3">
+          {descriptor.component_id} @ {descriptor.version} · {node.id}
         </p>
       </div>
 
       {nodeDiags.length > 0 && (
-        <div className="space-y-1 border-b border-surface-800 px-4 py-2">
+        <div className="space-y-1 border-b border-border border-l-2 border-l-danger px-4 py-2">
           {nodeDiags.map((d, i) => (
             <p
               key={i}
               className={
                 d.severity === "error"
-                  ? "text-xs text-red-400"
+                  ? "text-xs text-danger"
                   : d.severity === "warning"
-                    ? "text-xs text-amber-400"
-                    : "text-xs text-sky-400"
+                    ? "text-xs text-warning"
+                    : "text-xs text-port-toolset"
               }
             >
               <span className="font-mono">{d.code}</span> {d.message}
-              {d.fix_hint ? <span className="text-zinc-500"> — {d.fix_hint}</span> : null}
+              {d.fix_hint ? <span className="text-text-3"> — {d.fix_hint}</span> : null}
             </p>
           ))}
         </div>
       )}
 
-      <div className="flex-1 space-y-4 px-4 py-3">
-        {visible.map((field) => (
-          <FieldRow key={field.name} field={field} node={node} setValue={setValue}
-                    refresh={refresh} />
-        ))}
+      <div className="flex-1 px-4 py-3">
+        <div className="space-y-4">
+          {visible.map((field) => (
+            <FieldRow
+              key={field.name}
+              field={field}
+              value={effectiveConfig[field.name]}
+              setValue={setValue}
+              refresh={refresh}
+            />
+          ))}
+        </div>
         {advanced.length > 0 && (
-          <div>
+          <div className="mt-4 border-t border-border pt-3">
             <button
               type="button"
-              className="text-xs font-medium text-zinc-400 hover:text-zinc-100"
+              aria-expanded={showAdvanced}
+              className="flex items-center gap-1 rounded text-xs font-medium text-text-2 hover:text-text-1 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent"
               onClick={() => setShowAdvanced((v) => !v)}
             >
-              {showAdvanced ? "▾" : "▸"} Advanced ({advanced.length})
+              {showAdvanced ? (
+                <ChevronDown size={14} strokeWidth={1.75} aria-hidden />
+              ) : (
+                <ChevronRight size={14} strokeWidth={1.75} aria-hidden />
+              )}
+              Advanced · {advanced.length}
             </button>
             {showAdvanced && (
-              <div className="mt-3 space-y-4 border-l border-surface-800 pl-3">
+              <div className="mt-3 space-y-4 border-l border-border pl-3">
                 {advanced.map((field) => (
-                  <FieldRow key={field.name} field={field} node={node} setValue={setValue}
-                            refresh={refresh} />
+                  <FieldRow
+                    key={field.name}
+                    field={field}
+                    value={effectiveConfig[field.name]}
+                    setValue={setValue}
+                    refresh={refresh}
+                  />
                 ))}
               </div>
             )}
@@ -130,25 +210,23 @@ export function ConfigPanel() {
 
 function FieldRow({
   field,
-  node,
+  value,
   setValue,
   refresh,
 }: {
   field: FieldDescriptor;
-  node: { data: { config: Record<string, unknown> } };
+  value: unknown;
   setValue: (field: FieldDescriptor, value: unknown) => void;
   refresh: (changedField: string, value: unknown) => void;
 }) {
   const Widget = widgetFor(field);
-  const value = node.data.config[field.name] ?? field.default;
   return (
     <label className="block">
-      <span className="mb-1 flex items-center gap-1 text-xs font-medium text-zinc-300">
+      <span className="mb-1 flex items-center gap-1 text-xs font-medium text-text-2">
         {field.display_name}
-        {field.required && <span className="text-red-400">*</span>}
-        {field.info && (
-          <span className="cursor-help text-zinc-600" title={field.info}>
-            ⓘ
+        {field.required && (
+          <span className="text-danger" aria-label="required">
+            *
           </span>
         )}
       </span>
@@ -158,6 +236,9 @@ function FieldRow({
         onChange={(v) => setValue(field, v)}
         onRefresh={() => refresh(field.name, value)}
       />
+      {field.info ? (
+        <span className="mt-1 block text-[11px] leading-relaxed text-text-3">{field.info}</span>
+      ) : null}
     </label>
   );
 }

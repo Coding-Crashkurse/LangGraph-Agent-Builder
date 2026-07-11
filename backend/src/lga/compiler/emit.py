@@ -1,8 +1,13 @@
-"""P5 emit: IR → LangGraph StateGraph (SPEC §5.3-P5)."""
+"""P5 emit: IR → LangGraph StateGraph (SPEC §5.3-P5).
+
+Interprets the shared graph plan (``lga.compiler.plan``); component ``build()``
+failures become E015 diagnostics instead of escaping the pipeline (§5.4).
+"""
 
 from __future__ import annotations
 
 import asyncio
+import inspect
 import time
 from collections.abc import Callable, Hashable
 from typing import Any, cast
@@ -10,16 +15,25 @@ from typing import Any, cast
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, START, StateGraph
 
-from lga.compiler.ir import FlowIR, NodeIR
-from lga.schema.diagnostics import RuntimeError_, RuntimeErrorCode
+from lga.compiler import plan as plan_pass
+from lga.compiler.ir import FlowIR
+
+# re-exported for backwards compatibility (they lived here before plan.py)
+from lga.compiler.plan import is_router_like, pure_tool_providers
+from lga.schema.diagnostics import Diagnostic, DiagnosticCode, RuntimeError_, RuntimeErrorCode
 from lga.schema.state import FlowState
-from lga.sdk.component import BuildContext, NodeFn
+from lga.sdk.component import BuildContext, Component, NodeFn
+from lga.sdk.outputs import Output
 from lga.sdk.ports import PortFamily
-from lga.sdk.runtime import _stream_write, current_node_id
+from lga.sdk.runtime import current_node_id, stream_write
 
-
-def is_router_like(node: NodeIR) -> bool:
-    return any(o.port.family == PortFamily.ROUTE for o in node.outputs.values())
+__all__ = [
+    "emit",
+    "is_router_like",
+    "make_node_wrapper",
+    "pure_tool_providers",
+    "wrap_component",
+]
 
 
 def _preview(value: Any, limit: int = 200) -> Any:
@@ -30,26 +44,46 @@ def _preview(value: Any, limit: int = 200) -> Any:
     return s if len(s) <= limit else s[: limit - 1] + "…"
 
 
-def make_node_wrapper(node: NodeIR, fn: NodeFn, ctx: BuildContext) -> NodeFn:
-    node_id = node.id
-    output_names = set(node.outputs.keys())
-    route_labels = {name for name, o in node.outputs.items() if o.port.family == PortFamily.ROUTE}
+def make_node_wrapper(
+    node_id: str,
+    outputs: dict[str, Output],
+    fn: NodeFn,
+    ctx: BuildContext,
+    instance: Component | None = None,
+) -> NodeFn:
+    output_names = set(outputs.keys())
+    route_labels = {name for name, o in outputs.items() if o.port.family == PortFamily.ROUTE}
     router_like = bool(route_labels)
+    # Output.method dispatch (SPEC §4.5): outputs naming a method are computed
+    # by that bound method (multi-output components, Langflow parity). Bound
+    # eagerly so a missing method fails at compile (E015), not mid-run.
+    method_fns: dict[str, Callable[..., Any]] = {}
+    if instance is not None:
+        for name, out in outputs.items():
+            if out.method:
+                method_fns[name] = getattr(instance, out.method)
 
     from langgraph.errors import GraphBubbleUp, GraphInterrupt
 
     async def wrapped(state: dict[str, Any], config: RunnableConfig) -> dict[str, Any]:
         token = current_node_id.set(node_id)
         started = time.perf_counter()
-        _stream_write({"event": "node_started", "node_id": node_id, "data": {}})
+        stream_write({"event": "node_started", "node_id": node_id, "data": {}})
         try:
             result = await fn(state, config) or {}
+            for name, method_fn in method_fns.items():
+                if name in result:
+                    continue  # the NodeFn already produced this channel
+                value = method_fn(state, config)
+                if inspect.isawaitable(value):
+                    value = await value
+                result[name] = value
         except (GraphInterrupt, GraphBubbleUp):
             raise  # interrupt/control-flow — LangGraph owns these
         except (RuntimeError_, asyncio.CancelledError):
             raise
         except Exception as exc:
-            _stream_write(
+            stream_write(
                 {
                     "event": "node_error",
                     "node_id": node_id,
@@ -83,7 +117,7 @@ def make_node_wrapper(node: NodeIR, fn: NodeFn, ctx: BuildContext) -> NodeFn:
             delta["data"] = result["data"]
         if ports_delta:
             delta["ports"] = ports_delta
-        _stream_write(
+        stream_write(
             {
                 "event": "node_finished",
                 "node_id": node_id,
@@ -99,81 +133,69 @@ def make_node_wrapper(node: NodeIR, fn: NodeFn, ctx: BuildContext) -> NodeFn:
     return wrapped
 
 
-def pure_tool_providers(ir: FlowIR) -> set[str]:
-    """Nodes whose only role is contributing tools — never graph nodes."""
-    out: set[str] = set()
-    for node in ir.nodes.values():
-        edges_out = ir.out_edges(node.id)
-        edges_in = ir.in_edges(node.id)
-        if (
-            edges_out
-            and all(e.kind == "tool" for e in edges_out)
-            and all(e.kind == "tool" for e in edges_in)
-        ):
-            out.add(node.id)
-    return out
-
-
-def wrap_component(component_cls: Any, ctx: BuildContext) -> NodeFn:
+def wrap_component(component_cls: type[Component], ctx: BuildContext) -> NodeFn:
     """Public wrapper builder — used by exported standalone flow.py files."""
-    from types import SimpleNamespace
-
+    instance = component_cls()
     outputs = {o.name: o for o in component_cls.outputs_for_config(ctx.config)}
-    shim = SimpleNamespace(id=ctx.node_id, outputs=outputs)
-    fn = component_cls().build(ctx)
-    return make_node_wrapper(shim, fn, ctx)  # type: ignore[arg-type]
+    fn = instance.build(ctx)
+    return make_node_wrapper(ctx.node_id, outputs, fn, ctx, instance=instance)
 
 
-def emit(ir: FlowIR, contexts: dict[str, BuildContext]) -> StateGraph[FlowState]:
+def emit(
+    ir: FlowIR, contexts: dict[str, BuildContext]
+) -> tuple[StateGraph[FlowState] | None, list[Diagnostic]]:
+    """Interpret the graph plan against a StateGraph.
+
+    ``build()`` may raise (third-party components validating config combos) —
+    each failure becomes an E015 ERROR diagnostic ('all diagnostics, no
+    exceptions', §5.3/§5.4) and no builder is returned.
+    """
     graph: StateGraph[FlowState] = StateGraph(FlowState)
-    providers = pure_tool_providers(ir)
+    diagnostics: list[Diagnostic] = []
+    ops = plan_pass.graph_plan(ir)
 
-    for node in ir.nodes.values():
-        if node.id in providers:
+    for op in ops:
+        if not isinstance(op, plan_pass.AddNode):
             continue
-        instance = node.component()
-        fn = instance.build(contexts[node.id])
-        graph.add_node(node.id, make_node_wrapper(node, fn, contexts[node.id]))
-
-    if "start" in ir.nodes:
-        graph.add_edge(START, "start")
-
-    # plain control edges from data edges, dedup per node pair
-    seen_pairs: set[tuple[str, str]] = set()
-    routers: dict[str, dict[str, str]] = {}
-    for e in ir.edges:
-        if e.kind == "router":
-            routers.setdefault(e.spec.source.node, {})[e.spec.source.output] = e.spec.target.node
+        node = ir.nodes[op.node_id]
+        try:
+            instance = node.component()
+            fn = instance.build(contexts[node.id])
+            wrapper = make_node_wrapper(node.id, node.outputs, fn, contexts[node.id], instance)
+        except Exception as exc:
+            diagnostics.append(
+                Diagnostic.make(
+                    DiagnosticCode.E015,
+                    f"component {node.component.component_id} build() failed: {exc}",
+                    node_id=node.id,
+                    fix_hint="Fix the node's configuration or the component's build().",
+                )
+            )
             continue
-        if e.kind != "data":
-            continue
-        pair = (e.spec.source.node, e.spec.target.node)
-        if pair in seen_pairs:
-            continue
-        seen_pairs.add(pair)
-        src = ir.nodes.get(pair[0])
-        if src is not None and is_router_like(src):
-            continue  # router-like nodes leave only via conditional edges
-        graph.add_edge(pair[0], pair[1])
+        graph.add_node(node.id, wrapper)
+    if diagnostics:
+        return None, diagnostics
 
-    for node_id, table in routers.items():
+    for op in ops:
+        match op:
+            case plan_pass.AddStartEdge(target=target):
+                graph.add_edge(START, target)
+            case plan_pass.AddEdge(source=source, target=target):
+                graph.add_edge(source, target)
+            case plan_pass.AddConditionalEdges(node_id=node_id, table=table):
 
-        def make_reader(nid: str) -> Callable[[dict[str, Any]], str]:
-            def route_reader(state: dict[str, Any]) -> str:
-                return cast(str, state.get("route", {}).get(nid, ""))
+                def make_reader(nid: str) -> Callable[[dict[str, Any]], str]:
+                    def route_reader(state: dict[str, Any]) -> str:
+                        return cast(str, state.get("route", {}).get(nid, ""))
 
-            return route_reader
+                    return route_reader
 
-        graph.add_conditional_edges(
-            node_id, make_reader(node_id), cast("dict[Hashable, str]", dict(table))
-        )
+                graph.add_conditional_edges(
+                    node_id, make_reader(node_id), cast("dict[Hashable, str]", dict(table))
+                )
+            case plan_pass.Finish(node_id=node_id):
+                graph.add_edge(node_id, END)
+            case _:
+                pass
 
-    # terminal nodes and dead-end branches finish the graph
-    for node in ir.nodes.values():
-        if node.id in providers:
-            continue
-        has_control_out = any(e.kind in ("data", "router") for e in ir.out_edges(node.id))
-        if not has_control_out:
-            graph.add_edge(node.id, END)
-
-    return graph
+    return graph, diagnostics

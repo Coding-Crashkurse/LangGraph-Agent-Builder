@@ -9,6 +9,8 @@ from urllib.parse import parse_qs, urlparse
 
 import httpx
 
+from tests.conftest import hello_spec
+
 if TYPE_CHECKING:
     from lga.app import AppServices
 
@@ -45,6 +47,21 @@ async def test_variable_invalid_kind_is_422(client: httpx.AsyncClient) -> None:
         "/api/v1/variables", json={"name": "x", "value": "y", "kind": "bogus"}
     )
     assert response.status_code == 422  # pydantic pattern rejects
+
+
+async def test_variables_report_in_use_by(client: httpx.AsyncClient) -> None:
+    """SPEC §10.3: variable reads include in_use_by — the flows referencing them."""
+    await client.post(
+        "/api/v1/variables", json={"name": "region", "value": "eu", "kind": "generic"}
+    )
+    await client.post("/api/v1/variables", json={"name": "unused", "value": "x", "kind": "generic"})
+    spec = hello_spec("uses-var")
+    spec["nodes"][1]["config"]["style"] = {"$var": "region"}
+    assert (await client.post("/api/v1/flows", json={"spec": spec})).status_code == 201
+
+    by_name = {v["name"]: v for v in (await client.get("/api/v1/variables")).json()}
+    assert by_name["region"]["in_use_by"] == ["uses-var"]
+    assert by_name["unused"]["in_use_by"] == []
 
 
 # ------------------------------------------------------------------ api keys
@@ -105,6 +122,22 @@ async def test_download_unknown_file_is_404(client: httpx.AsyncClient) -> None:
     assert response.json()["detail"] == "file not found"
 
 
+async def test_download_without_token_is_rejected(client: httpx.AsyncClient) -> None:
+    """Regression (SPEC §9.6): an absent or empty token must NEVER bypass the
+    per-file token gate — the id alone is not a credential."""
+    upload = await client.post(
+        "/api/v1/files", files={"file": ("s.txt", b"secret bytes", "text/plain")}
+    )
+    assert upload.status_code == 201
+    file_id = upload.json()["file_id"]
+
+    no_token = await client.get(f"/api/v1/files/{file_id}")
+    assert no_token.status_code == 404
+
+    empty_token = await client.get(f"/api/v1/files/{file_id}?token=")
+    assert empty_token.status_code == 404
+
+
 async def test_file_too_large_is_413(client: httpx.AsyncClient, svc: AppServices) -> None:
     svc.settings.max_file_size_mb = 0  # any non-empty upload now exceeds the limit
     response = await client.post(
@@ -161,13 +194,21 @@ async def test_health_reports_ok(client: httpx.AsyncClient) -> None:
     assert body["db"] is True
     assert body["checkpointer"] is True
     assert "local" in body["vector_backends"]
+    # SPEC §9.8: health covers vector store connections too
+    assert body["vectorstores"].get("local") is True
 
 
 async def test_health_unprefixed_route(client: httpx.AsyncClient) -> None:
-    # misc_router is also mounted without the /api/v1 prefix for load balancers.
+    # the health router is also mounted without the /api/v1 prefix for load balancers.
     response = await client.get("/health")
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
+
+
+async def test_version_and_config_not_exposed_at_root(client: httpx.AsyncClient) -> None:
+    """Only /health rides the unprefixed mount — /version and /config stay under /api/v1."""
+    assert (await client.get("/version")).status_code == 404
+    assert (await client.get("/config")).status_code == 404
 
 
 async def test_version_reports_packages(client: httpx.AsyncClient) -> None:
@@ -187,3 +228,14 @@ async def test_config_masks_secret_key(client: httpx.AsyncClient) -> None:
     assert data["secret_key"] in {"***", ""}
     assert not data["secret_key"].startswith("lga")
     assert data["env"] == "test"
+
+
+async def test_config_is_an_allowlist_without_dsn(client: httpx.AsyncClient) -> None:
+    """SPEC §10.5: the DSN (with password) and paths never leave the server —
+    /config returns only the fields the Studio UI needs."""
+    data = (await client.get("/api/v1/config")).json()
+    assert "database_url" not in data
+    assert "home" not in data
+    assert "files_dir" not in data
+    # the fields the frontend actually reads are present
+    assert set(data) >= {"env", "host_url", "auto_saving", "auto_saving_interval_ms"}

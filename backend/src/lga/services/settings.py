@@ -54,6 +54,8 @@ class Settings(BaseSettings):
 
     # misc
     webhook_auth: bool = True
+    # LGA_CANCEL_ON_DISCONNECT — cancel a run when its SSE client disconnects (§6.1)
+    cancel_on_disconnect: bool = False
     checkpoint_ttl_days: int = 30
     files_dir: Path | None = None
     track_apikey_usage: bool = True

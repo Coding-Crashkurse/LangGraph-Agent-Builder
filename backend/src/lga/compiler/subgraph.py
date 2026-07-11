@@ -7,7 +7,7 @@ node contexts, so no re-resolve/re-validate is needed.
 
 from __future__ import annotations
 
-from lga.compiler import CompiledFlow, CompileReport
+from lga.compiler import CompiledFlow, build_report
 from lga.compiler import emit as emit_pass
 from lga.compiler.ir import FlowIR
 
@@ -37,13 +37,21 @@ def induce_subgraph(compiled: CompiledFlow, until_node: str) -> CompiledFlow:
     pruned.edges = [
         e for e in ir.edges if e.spec.source.node in keep and e.spec.target.node in keep
     ]
-    builder = emit_pass.emit(pruned, compiled.node_contexts)
+    builder, diagnostics = emit_pass.emit(pruned, compiled.node_contexts)
+    fingerprint = f"{compiled.fingerprint}:until:{until_node}"
+    # parent diagnostics scoped to the induced subgraph (flow-level ones kept)
+    kept_edges = {e.id for e in pruned.edges}
+    diagnostics = [
+        d
+        for d in compiled.diagnostics
+        if (d.node_id is None and d.edge_id is None) or d.node_id in keep or d.edge_id in kept_edges
+    ] + diagnostics
     return CompiledFlow(
         spec=compiled.spec,
-        diagnostics=[],
-        report=compiled.report or CompileReport(),
+        diagnostics=diagnostics,
+        report=build_report(pruned, compiled.node_contexts, fingerprint),
         builder=builder,
         ir=pruned,
         node_contexts=compiled.node_contexts,
-        fingerprint=f"{compiled.fingerprint}:until:{until_node}",
+        fingerprint=fingerprint,
     )

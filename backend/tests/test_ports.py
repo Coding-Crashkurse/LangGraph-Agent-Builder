@@ -116,3 +116,29 @@ def test_families_complete() -> None:
 def test_custom_port_cross_family_incompatible() -> None:
     custom = PortSpec(schema_ref="x:Y", json_schema={"type": "object"}, family=PortFamily.EMBEDDING)
     assert not check_compatibility(custom, JSON).compatible
+
+
+def test_compatibility_results_are_cached() -> None:
+    """SPEC §4.3 'cache results': repeated checks return the cached Compat."""
+    a = PortSpec(schema_ref="x:CacheA", json_schema={"type": "string"}, family=PortFamily.DATA)
+    b = PortSpec(schema_ref="x:CacheB", json_schema={"type": "string"}, family=PortFamily.DATA)
+    first = check_compatibility(a, b)
+    assert check_compatibility(a, b) is first  # same cached object
+    # equal specs from different instances hit the same cache entry
+    a2 = PortSpec(schema_ref="x:CacheA", json_schema={"type": "string"}, family=PortFamily.DATA)
+    assert check_compatibility(a2, b) is first
+
+
+def test_port_fingerprint_ignores_display_name_but_not_shape() -> None:
+    plain = PortSpec(schema_ref="x:F", json_schema={"type": "string"}, family=PortFamily.DATA)
+    named = PortSpec(
+        schema_ref="x:F",
+        json_schema={"type": "string"},
+        family=PortFamily.DATA,
+        display_name="Fancy",
+    )
+    listed = PortSpec(
+        schema_ref="x:F", json_schema={"type": "string"}, family=PortFamily.DATA, is_list=True
+    )
+    assert plain.fingerprint == named.fingerprint
+    assert plain.fingerprint != listed.fingerprint

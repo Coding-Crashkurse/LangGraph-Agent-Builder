@@ -47,6 +47,9 @@ Thumbs.db
 backend/src/lga/_static/
 
 # ---------------------------------------------------------------- Internal working docs
-# Kept local, out of the published repo (SPEC.md remains the authoritative spec).
+# Kept local, OUT of the published repo. SPEC.md stays the authoritative spec for
+# local development but is deliberately not shipped to the public GitHub repo.
+/SPEC.md
 /SPEC2.md
 /REFACTOR.md
+/CLAUDE.md

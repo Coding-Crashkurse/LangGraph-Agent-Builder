@@ -3,12 +3,21 @@
  * fallback + console warn (forward compat). */
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  Eye,
+  EyeOff,
+  Globe,
+  KeyRound,
+  Plus,
+  RefreshCw,
+  X,
+} from "lucide-react";
 import { useState, type CSSProperties, type FC } from "react";
 
 import { api } from "@/api/client";
 import type { FieldDescriptor } from "@/api/types";
-import { Input } from "@/components/ui/input";
-import { Select, Switch, Tabs } from "@/components/ui/controls";
+import { Input, Textarea } from "@/components/ui/input";
+import { Select, Slider, Switch, Tabs } from "@/components/ui/controls";
 import { toast } from "@/components/ui/toast";
 import { cn } from "@/lib/utils";
 
@@ -31,6 +40,13 @@ function refOf(value: unknown): { kind: RefKind; name: string } | null {
   return null;
 }
 
+const RefIcon: FC<{ kind: RefKind; size?: number }> = ({ kind, size = 12 }) =>
+  kind === "$secret" ? (
+    <KeyRound size={size} strokeWidth={1.75} aria-hidden />
+  ) : (
+    <Globe size={size} strokeWidth={1.75} aria-hidden />
+  );
+
 /** Chip + dropdown that binds a field to a stored global variable/credential.
  * Values never touch the FlowSpec — only the reference does (SPEC §10.3). */
 const VarPicker: FC<{
@@ -50,15 +66,16 @@ const VarPicker: FC<{
 
   if (current) {
     return (
-      <span className="inline-flex items-center gap-1 rounded border border-emerald-800 bg-emerald-950/60 px-1.5 py-0.5 text-[10px] text-emerald-300">
-        {kind === "$secret" ? "🔑" : "🌐"} {current.kind}: {current.name}
+      <span className="inline-flex items-center gap-1 rounded border border-success/50 bg-success/10 px-1.5 py-0.5 text-[11px] text-success">
+        <RefIcon kind={kind} /> {current.kind}: {current.name}
         <button
           type="button"
-          className="ml-1 text-emerald-500 hover:text-red-400"
+          className="ml-1 rounded text-success hover:text-danger focus-visible:outline-2 focus-visible:outline-accent"
           title="Remove reference"
+          aria-label="Remove reference"
           onClick={() => onChange(null)}
         >
-          ✕
+          <X size={12} strokeWidth={1.75} aria-hidden />
         </button>
       </span>
     );
@@ -74,14 +91,14 @@ const VarPicker: FC<{
             : "Use a global variable"
         }
         onClick={() => setOpen((o) => !o)}
-        className="rounded border border-surface-700 px-1.5 py-0.5 text-[10px] text-zinc-400 hover:border-emerald-700 hover:text-emerald-300"
+        className="inline-flex items-center gap-1 whitespace-nowrap rounded border border-border px-1.5 py-1 text-[11px] text-text-2 hover:border-success/60 hover:text-success focus-visible:outline-2 focus-visible:outline-accent"
       >
-        {kind === "$secret" ? "🔑 use credential" : "🌐 $var"}
+        <RefIcon kind={kind} /> {kind === "$secret" ? "use credential" : "$var"}
       </button>
       {open && (
-        <div className="absolute right-0 z-50 mt-1 w-56 rounded-md border border-surface-700 bg-surface-950 p-1.5 shadow-xl">
+        <div className="absolute right-0 z-50 mt-1 w-56 rounded-md border border-border bg-canvas p-1.5 shadow-xl">
           {candidates.length === 0 && !creating && (
-            <p className="px-1 py-0.5 text-[10px] text-zinc-500">
+            <p className="px-1 py-0.5 text-[11px] text-text-3">
               no {wantKind}s stored yet
             </p>
           )}
@@ -89,35 +106,35 @@ const VarPicker: FC<{
             <button
               key={variable.name}
               type="button"
-              className="block w-full rounded px-1.5 py-1 text-left text-[11px] text-zinc-200 hover:bg-surface-800"
+              className="flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-left text-[11px] text-text-1 hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-accent"
               onClick={() => {
                 onChange({ [kind]: variable.name });
                 setOpen(false);
               }}
             >
-              {kind === "$secret" ? "🔑" : "🌐"} {variable.name}
+              <RefIcon kind={kind} /> {variable.name}
             </button>
           ))}
-          <div className="mt-1 border-t border-surface-800 pt-1">
+          <div className="mt-1 border-t border-border pt-1">
             {creating ? (
               <div className="space-y-1 p-0.5">
                 <Input
                   autoFocus
-                  className="bg-surface-800 placeholder:text-zinc-500"
+                  className="bg-surface-2 placeholder:text-text-3"
                   placeholder="NAME (e.g. OPENAI_API_KEY)"
                   value={newName}
                   onChange={(e) => setNewName(e.target.value)}
                 />
                 <Input
                   type={kind === "$secret" ? "password" : "text"}
-                  className="bg-surface-800 placeholder:text-zinc-500"
+                  className="bg-surface-2 placeholder:text-text-3"
                   placeholder="value (stored server-side)"
                   value={newValue}
                   onChange={(e) => setNewValue(e.target.value)}
                 />
                 <button
                   type="button"
-                  className="w-full rounded bg-accent-600 px-1.5 py-1 text-[11px] font-medium text-white hover:bg-accent-500 disabled:opacity-40"
+                  className="w-full rounded bg-accent px-1.5 py-1 text-[11px] font-medium text-white hover:brightness-110 focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-40"
                   disabled={!newName || !newValue}
                   onClick={async () => {
                     try {
@@ -144,10 +161,10 @@ const VarPicker: FC<{
             ) : (
               <button
                 type="button"
-                className="block w-full rounded px-1.5 py-1 text-left text-[11px] text-accent-400 hover:bg-surface-800"
+                className="flex w-full items-center gap-1 rounded px-1.5 py-1 text-left text-[11px] text-accent hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-accent"
                 onClick={() => setCreating(true)}
               >
-                ＋ new {wantKind}…
+                <Plus size={12} strokeWidth={1.75} aria-hidden /> new {wantKind}…
               </button>
             )}
           </div>
@@ -187,8 +204,8 @@ const Multiline: FC<WidgetProps> = ({ field, value, onChange }) => {
   return (
     <div className="space-y-1">
       {!ref && (
-        <textarea
-          className="min-h-[72px] w-full rounded-md border border-surface-700 bg-surface-900 px-2 py-1.5 font-mono text-xs text-zinc-100 focus:border-accent-500 focus:outline-none"
+        <Textarea
+          className="min-h-[72px]"
           value={String(value ?? "")}
           placeholder={field.placeholder}
           onChange={(e) => onChange(e.target.value)}
@@ -211,6 +228,7 @@ const NumberWidget: FC<WidgetProps & { integer?: boolean }> = ({
 }) => (
   <Input
     type="number"
+    className="tabular-nums"
     value={value === null || value === undefined ? "" : String(value)}
     min={field.min as number | undefined}
     max={field.max as number | undefined}
@@ -227,27 +245,22 @@ const Bool: FC<WidgetProps> = ({ value, onChange }) => (
   <Switch checked={Boolean(value)} onCheckedChange={onChange} />
 );
 
-const Slider: FC<WidgetProps> = ({ field, value, onChange }) => {
+const SliderWidget: FC<WidgetProps> = ({ field, value, onChange }) => {
   const minLabel = field.min_label as string | undefined;
   const maxLabel = field.max_label as string | undefined;
   return (
     <div className="space-y-0.5">
-      <div className="flex items-center gap-2">
-        <input
-          type="range"
-          className="w-full accent-accent-500"
-          min={field.min as number}
-          max={field.max as number}
-          step={field.step as number}
-          value={Number(value ?? field.min ?? 0)}
-          onChange={(e) => onChange(parseFloat(e.target.value))}
-        />
-        <span className="w-10 text-right font-mono text-xs tabular-nums text-text-2">
-          {String(value ?? "")}
-        </span>
-      </div>
+      {/* Slider primitive renders its own tabular value readout */}
+      <Slider
+        aria-label={field.display_name || field.name}
+        min={(field.min as number | null | undefined) ?? 0}
+        max={(field.max as number | null | undefined) ?? 100}
+        step={(field.step as number | null | undefined) ?? 1}
+        value={Number(value ?? field.min ?? 0)}
+        onChange={onChange}
+      />
       {minLabel || maxLabel ? (
-        <div className="flex justify-between text-[10px] text-text-3">
+        <div className="flex justify-between text-[11px] text-text-3">
           <span>{minLabel}</span>
           <span>{maxLabel}</span>
         </div>
@@ -306,15 +319,16 @@ const Multiselect: FC<WidgetProps> = ({ field, value, onChange, onRefresh }) => 
           {selected.map((item) => (
             <span
               key={item}
-              className="inline-flex items-center gap-1 rounded bg-surface-700 px-1.5 py-0.5 text-xs text-zinc-200"
+              className="inline-flex items-center gap-1 rounded bg-surface-3 px-1.5 py-0.5 text-xs text-text-1"
             >
               {item}
               <button
                 type="button"
-                className="text-zinc-500 hover:text-red-400"
+                aria-label={`Remove ${item}`}
+                className="rounded text-text-3 hover:text-danger focus-visible:outline-2 focus-visible:outline-accent"
                 onClick={() => onChange(selected.filter((x) => x !== item))}
               >
-                ×
+                <X size={11} strokeWidth={1.75} aria-hidden />
               </button>
             </span>
           ))}
@@ -344,15 +358,16 @@ const Multiselect: FC<WidgetProps> = ({ field, value, onChange, onRefresh }) => 
         <button
           type="button"
           title="Add value"
-          className="rounded border border-surface-700 px-2 text-sm text-zinc-400 hover:border-accent-600 hover:text-accent-300"
+          aria-label="Add value"
+          className="rounded border border-border px-2 text-text-2 hover:border-accent hover:text-accent focus-visible:outline-2 focus-visible:outline-accent"
           onMouseDown={(e) => e.preventDefault()} // keep focus so onBlur doesn't double-fire
           onClick={() => add(draft)}
         >
-          ＋
+          <Plus size={13} strokeWidth={1.75} aria-hidden />
         </button>
         {field.options_source ? <RefreshButton onRefresh={onRefresh} /> : null}
       </div>
-      <p className="text-[10px] text-zinc-500">
+      <p className="text-[11px] text-text-3">
         {selected.length === 0
           ? "Accepts multiple values — add one per label."
           : `${selected.length} value${selected.length === 1 ? "" : "s"}`}
@@ -369,23 +384,58 @@ const TabWidget: FC<WidgetProps> = ({ field, value, onChange }) => (
   />
 );
 
+/** Icon-only reveal toggle shared by the secret widgets (lucide Eye/EyeOff). */
+const RevealToggle: FC<{ reveal: boolean; onToggle: () => void; className?: string }> = ({
+  reveal,
+  onToggle,
+  className,
+}) => (
+  <button
+    type="button"
+    aria-label={reveal ? "Hide value" : "Reveal value"}
+    aria-pressed={reveal}
+    title={reveal ? "Hide value" : "Reveal value"}
+    className={cn(
+      "rounded p-0.5 text-text-3 hover:text-text-1",
+      "focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent",
+      className,
+    )}
+    onClick={onToggle}
+  >
+    {reveal ? (
+      <EyeOff size={14} strokeWidth={1.75} aria-hidden />
+    ) : (
+      <Eye size={14} strokeWidth={1.75} aria-hidden />
+    )}
+  </button>
+);
+
 const Secret: FC<WidgetProps> = ({ value, onChange }) => {
   const ref = refOf(value);
+  const [reveal, setReveal] = useState(false);
   return (
     <div className="space-y-1">
       <div className="flex items-center gap-1.5">
         {!ref && (
-          <Input
-            type="password"
-            value={String(value ?? "")}
-            placeholder="secret value (better: use a stored credential →)"
-            onChange={(e) => onChange(e.target.value)}
-          />
+          <div className="relative min-w-0 flex-1">
+            <Input
+              type={reveal ? "text" : "password"}
+              className="pr-8"
+              value={String(value ?? "")}
+              placeholder="secret value (better: use a stored credential →)"
+              onChange={(e) => onChange(e.target.value)}
+            />
+            <RevealToggle
+              reveal={reveal}
+              onToggle={() => setReveal((r) => !r)}
+              className="absolute right-1.5 top-1/2 -translate-y-1/2"
+            />
+          </div>
         )}
         <VarPicker kind="$secret" value={value} onChange={onChange} />
       </div>
       {!ref && (
-        <p className="text-[10px] text-zinc-500">
+        <p className="text-[11px] text-text-3">
           Pasted values land in the FlowSpec — stored credentials stay encrypted
           on the server and only the reference is saved.
         </p>
@@ -406,25 +456,23 @@ const MultilineSecret: FC<WidgetProps> = ({ field, value, onChange }) => {
     <div className="space-y-1">
       {!ref && (
         <div className="relative">
-          <textarea
-            className="min-h-[72px] w-full rounded-md border border-surface-700 bg-surface-900 px-2 py-1.5 font-mono text-xs text-zinc-100 focus:border-accent-500 focus:outline-none"
+          <Textarea
+            className="min-h-[72px] pr-8"
             style={reveal ? undefined : MASK}
             value={String(value ?? "")}
             placeholder={field.placeholder || "multi-line secret — better: use a stored credential →"}
             onChange={(e) => onChange(e.target.value)}
           />
-          <button
-            type="button"
-            className="absolute right-1.5 top-1.5 text-[10px] text-zinc-500 hover:text-zinc-200"
-            onClick={() => setReveal((r) => !r)}
-          >
-            {reveal ? "hide" : "show"}
-          </button>
+          <RevealToggle
+            reveal={reveal}
+            onToggle={() => setReveal((r) => !r)}
+            className="absolute right-1.5 top-1.5"
+          />
         </div>
       )}
       <VarPicker kind="$secret" value={value} onChange={onChange} />
       {!ref && (
-        <p className="text-[10px] text-zinc-500">
+        <p className="text-[11px] text-text-3">
           Pasted values land in the FlowSpec — stored credentials stay encrypted
           server-side and only the reference is saved.
         </p>
@@ -440,11 +488,8 @@ const JsonWidget: FC<WidgetProps> = ({ value, onChange }) => {
   const [bad, setBad] = useState(false);
   return (
     <div>
-      <textarea
-        className={cn(
-          "min-h-[80px] w-full rounded-md border bg-surface-900 px-2 py-1.5 font-mono text-xs text-zinc-100 focus:outline-none",
-          bad ? "border-red-600" : "border-surface-700 focus:border-accent-500",
-        )}
+      <Textarea
+        className={cn("min-h-[80px]", bad && "border-danger")}
         value={text}
         onChange={(e) => {
           setText(e.target.value);
@@ -461,7 +506,7 @@ const JsonWidget: FC<WidgetProps> = ({ value, onChange }) => {
           }
         }}
       />
-      {bad && <p className="text-[10px] text-red-400">invalid JSON (not applied)</p>}
+      {bad && <p className="text-[11px] text-danger">invalid JSON (not applied)</p>}
     </div>
   );
 };
@@ -475,24 +520,25 @@ const DictWidget: FC<WidgetProps> = ({ value, onChange }) => {
   return (
     <div className="space-y-1">
       {entries.map(([k, v], index) => (
-        <div key={index} className="flex gap-1">
+        <div key={index} className="flex items-center gap-1">
           <Input value={k} onChange={(e) => set(index, e.target.value, String(v))} />
           <Input value={String(v ?? "")} onChange={(e) => set(index, k, e.target.value)} />
           <button
             type="button"
-            className="px-1 text-zinc-500 hover:text-red-400"
+            aria-label="Remove entry"
+            className="rounded px-1 text-text-3 hover:text-danger focus-visible:outline-2 focus-visible:outline-accent"
             onClick={() => onChange(Object.fromEntries(entries.filter((_, i) => i !== index)))}
           >
-            ×
+            <X size={13} strokeWidth={1.75} aria-hidden />
           </button>
         </div>
       ))}
       <button
         type="button"
-        className="text-xs text-accent-400 hover:text-accent-300"
+        className="inline-flex items-center gap-1 rounded text-xs text-accent hover:brightness-125 focus-visible:outline-2 focus-visible:outline-accent"
         onClick={() => onChange({ ...(value as object), "": "" })}
       >
-        + entry
+        <Plus size={12} strokeWidth={1.75} aria-hidden /> entry
       </button>
     </div>
   );
@@ -504,7 +550,7 @@ const TableWidget: FC<WidgetProps> = ({ field, value, onChange }) => {
   return (
     <div className="space-y-1">
       <div
-        className="grid gap-1 text-[10px] uppercase tracking-wide text-zinc-500"
+        className="grid gap-1 text-[11px] uppercase tracking-wide text-text-3"
         style={{ gridTemplateColumns: `repeat(${columns.length}, 1fr) 20px` }}
       >
         {columns.map((c) => (
@@ -515,7 +561,7 @@ const TableWidget: FC<WidgetProps> = ({ field, value, onChange }) => {
       {rows.map((row, rowIndex) => (
         <div
           key={rowIndex}
-          className="grid gap-1"
+          className="grid items-center gap-1"
           style={{ gridTemplateColumns: `repeat(${columns.length}, 1fr) 20px` }}
         >
           {columns.map((c) => (
@@ -533,19 +579,20 @@ const TableWidget: FC<WidgetProps> = ({ field, value, onChange }) => {
           ))}
           <button
             type="button"
-            className="text-zinc-500 hover:text-red-400"
+            aria-label="Remove row"
+            className="rounded text-text-3 hover:text-danger focus-visible:outline-2 focus-visible:outline-accent"
             onClick={() => onChange(rows.filter((_, i) => i !== rowIndex))}
           >
-            ×
+            <X size={13} strokeWidth={1.75} aria-hidden />
           </button>
         </div>
       ))}
       <button
         type="button"
-        className="text-xs text-accent-400 hover:text-accent-300"
+        className="inline-flex items-center gap-1 rounded text-xs text-accent hover:brightness-125 focus-visible:outline-2 focus-visible:outline-accent"
         onClick={() => onChange([...rows, Object.fromEntries(columns.map((c) => [c.name, ""]))])}
       >
-        + row
+        <Plus size={12} strokeWidth={1.75} aria-hidden /> row
       </button>
     </div>
   );
@@ -554,7 +601,7 @@ const TableWidget: FC<WidgetProps> = ({ field, value, onChange }) => {
 const PromptWidget: FC<WidgetProps> = (props) => (
   <div className="space-y-1">
     <Multiline {...props} />
-    <p className="text-[10px] text-zinc-500">
+    <p className="text-[11px] text-text-3">
       {"{variables}"} become input ports on the node.
     </p>
   </div>
@@ -610,7 +657,7 @@ const ModelWidget: FC<WidgetProps> = ({ field, value, onChange }) => {
           separate Language Model node just to set it. Blank = provider default. */}
       <Input
         type="number"
-        className="w-16"
+        className="w-16 tabular-nums"
         min={0}
         max={2}
         step={0.1}
@@ -702,20 +749,77 @@ const VectorStoreWidget: FC<WidgetProps> = ({ field, value, onChange }) => {
   );
 };
 
-const McpWidget: FC<WidgetProps> = ({ value, onChange }) => (
-  <JsonWidget
-    field={undefined as never}
-    value={value}
-    onChange={onChange}
-  />
-);
+/** McpInput (§8.4): value {server: string, tools?: string[]} — picks from the
+ * globally managed MCP servers (Settings → MCP Servers). Raw connection JSON
+ * remains available behind an "advanced" toggle and is the automatic fallback
+ * while no managed servers exist. */
+const McpWidget: FC<WidgetProps> = ({ field, value, onChange }) => {
+  const servers = useQuery({ queryKey: ["mcp-servers"], queryFn: api.mcpServers.list });
+  const [rawJson, setRawJson] = useState(false);
+  const current =
+    typeof value === "object" && value !== null
+      ? (value as { server?: string; tools?: string[] })
+      : {};
+
+  if (servers.isLoading) {
+    return <div className="h-8.5 w-full animate-pulse rounded-md bg-surface-2" aria-hidden />;
+  }
+
+  const list = servers.data ?? [];
+  const noServers = list.length === 0;
+  const showJson = rawJson || noServers;
+
+  return (
+    <div className="space-y-1">
+      {showJson ? (
+        <JsonWidget field={field} value={value} onChange={onChange} />
+      ) : (
+        <Select
+          aria-label="Managed MCP server"
+          value={current.server ?? ""}
+          onChange={(e) =>
+            onChange(e.target.value ? { ...current, server: e.target.value } : null)
+          }
+        >
+          <option value="">managed server…</option>
+          {list.map((s) => (
+            <option key={s.id} value={s.name}>
+              {s.name} ({s.transport})
+            </option>
+          ))}
+        </Select>
+      )}
+      {noServers ? (
+        <p className="text-[11px] text-text-3">
+          No managed servers yet —{" "}
+          <a
+            href="/settings"
+            className="rounded text-accent underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-accent"
+          >
+            add one in Settings → MCP Servers
+          </a>
+          , or paste connection JSON above.
+        </p>
+      ) : (
+        <button
+          type="button"
+          aria-pressed={rawJson}
+          className="rounded text-[11px] text-text-3 hover:text-text-1 focus-visible:outline-2 focus-visible:outline-accent"
+          onClick={() => setRawJson((r) => !r)}
+        >
+          {showJson ? "← pick a managed server" : "advanced: raw connection JSON"}
+        </button>
+      )}
+    </div>
+  );
+};
 
 const LinkWidget: FC<WidgetProps> = ({ value }) => (
   <a
     href={String(value ?? "#")}
     target="_blank"
     rel="noreferrer"
-    className="text-xs text-accent-400 underline"
+    className="rounded text-xs text-accent underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-accent"
   >
     {String(value ?? "")}
   </a>
@@ -727,7 +831,7 @@ const FileWidget: FC<WidgetProps> = ({ field, value, onChange }) => (
       type="file"
       multiple={Boolean(field.multiple)}
       accept={(field.file_types as string[] | undefined)?.join(",") || undefined}
-      className="text-xs text-zinc-400"
+      className="rounded text-xs text-text-2 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent"
       onChange={async (e) => {
         const files = [...(e.target.files ?? [])];
         const ids: string[] = [];
@@ -736,11 +840,12 @@ const FileWidget: FC<WidgetProps> = ({ field, value, onChange }) => (
           form.append("file", file);
           const response = await fetch("/api/v1/files", { method: "POST", body: form });
           if (response.ok) ids.push((await response.json()).file_id);
+          else toast.error(`upload failed: ${file.name}`);
         }
         onChange(field.multiple ? ids : ids[0]);
       }}
     />
-    {value ? <p className="break-all text-[10px] text-zinc-500">{JSON.stringify(value)}</p> : null}
+    {value ? <p className="break-all text-[11px] text-text-3">{JSON.stringify(value)}</p> : null}
   </div>
 );
 
@@ -749,17 +854,26 @@ function RefreshButton({ onRefresh }: { onRefresh?: () => void }) {
     <button
       type="button"
       title="refresh options from server"
-      className="rounded border border-surface-700 px-2 text-xs text-zinc-400 hover:text-zinc-100"
+      aria-label="Refresh options from server"
+      className="rounded border border-border px-2 text-text-2 hover:text-text-1 focus-visible:outline-2 focus-visible:outline-accent"
       onClick={onRefresh}
     >
-      ↻
+      <RefreshCw size={13} strokeWidth={1.75} aria-hidden />
     </button>
   );
 }
 
 const JsonFallback: FC<WidgetProps> = (props) => {
   console.warn(`FieldWidgetRegistry: unknown field type ${props.field?.type}; JSON fallback`);
-  return <JsonWidget {...props} />;
+  return (
+    <div className="space-y-1">
+      <JsonWidget {...props} />
+      <p className="text-[11px] text-text-3">
+        unknown field type <span className="font-mono">{props.field?.type}</span> — editing
+        raw JSON
+      </p>
+    </div>
+  );
 };
 
 export const FieldWidgetRegistry: Record<string, FC<WidgetProps>> = {
@@ -768,7 +882,7 @@ export const FieldWidgetRegistry: Record<string, FC<WidgetProps>> = {
   IntInput: (p) => <NumberWidget {...p} integer />,
   FloatInput: (p) => <NumberWidget {...p} />,
   BoolInput: Bool,
-  SliderInput: Slider,
+  SliderInput: SliderWidget,
   DropdownInput: Dropdown,
   MultiselectInput: Multiselect,
   TabInput: TabWidget,

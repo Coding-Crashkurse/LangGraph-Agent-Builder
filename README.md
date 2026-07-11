@@ -9,16 +9,15 @@
 ![A2A](https://img.shields.io/badge/A2A-protocol%200.3.x-8A2BE2.svg)
 ![MCP](https://img.shields.io/badge/MCP-streamable--http-0aa.svg)
 
-Langflow-class UX, LangGraph-class engine (see `SPEC.md`, the authoritative
-specification). Flows are composed on a typed react-flow canvas, **compiled**
+Langflow-class UX, LangGraph-class engine. Flows are composed on a typed react-flow canvas, **compiled**
 to real LangGraph `StateGraph`s (all errors at validate time, never mid-run),
 and every published flow is served as a spec-compliant **A2A agent** and/or
 **MCP tool** — including human-in-the-loop interrupts that surface as A2A
 `input-required` round trips.
 
 ```bash
-uv tool install lga        # or: pip install lga
-lga run                    # zero config: SQLite under ~/.lga, browser opens
+uv tool install langgraph-agent-builder   # or: pip install langgraph-agent-builder
+lga run                                    # zero config: SQLite under ~/.lga, browser opens
 ```
 
 ## Highlights
@@ -45,8 +44,7 @@ lga run                    # zero config: SQLite under ~/.lga, browser opens
 
 | Path | What |
 |---|---|
-| `SPEC.md` | the authoritative product/architecture spec |
-| `backend/` | the `lga` package (SDK, compiler, runtime, A2A, MCP, Studio API, CLI) |
+| `backend/` | the `langgraph-agent-builder` package — imported as `lga` (SDK, compiler, runtime, A2A, MCP, Studio API, CLI) |
 | `frontend/` | React Studio (bundled into the wheel at build time) |
 | `examples/` | numbered, runnable examples incl. A2A HITL client, multi-agent, MCP both ways |
 

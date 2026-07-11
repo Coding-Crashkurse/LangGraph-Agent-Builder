@@ -1,13 +1,17 @@
 """Unit tests for the Language Model component (lga.llm.language_model).
 
 The node emits the provider *config dict* on the MODEL port (never a client),
-merging the widget model value with temperature/api_key overrides.
+merging the widget model value with temperature/api_key overrides. The api_key
+travels as an opaque ``{"$port_secret": token}`` ref — port payloads are
+checkpointed, so plaintext credentials must never appear there (SPEC §10.5).
 """
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
+from lga.components.llm._models import resolve_model
 from lga.components.llm.language_model import LanguageModel
 from lga.sdk.ports import Message
 from lga.sdk.testing import ComponentTestHarness
@@ -27,17 +31,17 @@ async def test_string_shorthand_splits_provider_and_model() -> None:
     }
 
 
-async def test_dict_value_carries_api_key_and_zero_temperature() -> None:
+async def test_dict_value_carries_api_key_ref_and_zero_temperature() -> None:
     # temperature 0.0 is falsy but not None → it must still be emitted.
     result = await _run(
-        {"model": {"provider": "fake", "model": "m"}, "temperature": 0.0, "api_key": "sk-secret"}
+        {"model": {"provider": "fake", "model": "m"}, "temperature": 0.0, "api_key": "sk-secret9"}
     )
-    assert result["model"] == {
-        "provider": "fake",
-        "model": "m",
-        "temperature": 0.0,
-        "api_key": "sk-secret",
-    }
+    assert result["model"]["provider"] == "fake"
+    assert result["model"]["model"] == "m"
+    assert result["model"]["temperature"] == 0.0
+    # the port payload carries an opaque ref, never the plaintext key
+    assert set(result["model"]["api_key"].keys()) == {"$port_secret"}
+    assert "sk-secret9" not in json.dumps(result["model"])
 
 
 async def test_empty_config_yields_empty_model_dict() -> None:
@@ -46,9 +50,13 @@ async def test_empty_config_yields_empty_model_dict() -> None:
     assert result == {"model": {}}
 
 
-async def test_api_key_coerced_to_str() -> None:
-    result = await _run({"model": {"provider": "openai"}, "api_key": 12345})
-    assert result["model"]["api_key"] == "12345"
+async def test_api_key_ref_resolves_for_downstream_consumers() -> None:
+    # A downstream Agent calls resolve_model on the port payload; the stash
+    # resolves the ref back to the (str-coerced) key inside this process.
+    result = await _run({"model": {"provider": "openai", "model": "gpt-4o"}, "api_key": 12345})
+    model = resolve_model(result["model"])
+    key = getattr(model, "openai_api_key")  # noqa: B009
+    assert key.get_secret_value() == "12345"
 
 
 async def test_handle_only_when_no_input_wired() -> None:

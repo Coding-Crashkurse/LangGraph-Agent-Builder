@@ -164,30 +164,32 @@ async def test_firehose_sees_events_across_runs() -> None:
 
 
 # --------------------------------------------------------------- backpressure
-async def test_full_subscriber_queue_drops_without_raising() -> None:
+async def test_full_subscriber_queue_drops_oldest_without_raising() -> None:
     bus = EventBus(buffer_size=1)
     slow: asyncio.Queue[RunEvent | None] = asyncio.Queue(1)
     slow.put_nowait(_event("r1", msg="stale"))  # queue now at capacity
     bus._subscribers["r1"].add(slow)
 
     published = bus.publish(_event("r1", msg="fresh"))
-    # publish returns normally; the overflow event was silently dropped.
+    # publish returns normally; the oldest event was evicted, not the tail
+    # (the consumer replays the seq gap via Last-Event-ID).
     assert published.seq == 1
     assert slow.qsize() == 1
     remaining = slow.get_nowait()
     assert remaining is not None
-    assert remaining.data["msg"] == "stale"
+    assert remaining.data["msg"] == "fresh"
 
 
-async def test_close_run_on_full_queue_suppresses_queuefull() -> None:
+async def test_close_run_on_full_queue_delivers_sentinel() -> None:
     bus = EventBus(buffer_size=1)
     slow: asyncio.Queue[RunEvent | None] = asyncio.Queue(1)
     slow.put_nowait(_event("r1"))
     bus._subscribers["r1"].add(slow)
     bus.set_seq_floor("r1", 5)
 
-    bus.close_run("r1")  # sentinel would overflow → suppressed, no raise
+    bus.close_run("r1")  # sentinel evicts the stale event instead of vanishing
     assert "r1" not in bus._seq
+    assert slow.get_nowait() is None
 
 
 # --------------------------------------------------------------- persistence

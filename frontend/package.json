@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "lint": "eslint .",
+    "lint": "eslint . && pnpm lint:tokens",
+    "lint:tokens": "node scripts/check-tokens.mjs",
     "test": "vitest run",
     "gen:api": "openapi-typescript openapi.json -o src/api/schema.gen.ts"
   },
@@ -21,7 +22,9 @@
     "openapi-fetch": "^0.17.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "react-markdown": "^10.1.0",
     "react-router-dom": "^6.28.0",
+    "remark-gfm": "^4.0.1",
     "tailwind-merge": "^2.5.5",
     "zustand": "^5.0.2"
   },

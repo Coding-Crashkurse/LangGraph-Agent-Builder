@@ -54,6 +54,29 @@ async def test_list_runs_filtered_by_flow_id(client: httpx.AsyncClient) -> None:
     assert all(r["flow_id"] == flow_id for r in runs)
 
 
+async def test_failed_run_persists_and_surfaces_node_id(client: httpx.AsyncClient) -> None:
+    """SPEC §5.6: a failed run records the failing node; the API returns it."""
+    spec = hello_spec("boomflow")
+    spec["nodes"][1] = {
+        "id": "fake",
+        "component_id": "lga.testing.failing_node",
+        "component_version": "1.0.0",
+        "config": {"error_message": "boom"},
+        "position": {"x": 300, "y": 0},
+    }
+    await create_and_publish(client, spec)
+    resp = await client.post("/api/v1/flows/boomflow/run", json={"input_text": "hi"})
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["status"] == "failed"
+    assert body["error_code"] == "RT103"
+    assert body["node_id"] == "fake"  # RunResult carries the failing node
+
+    detail = await client.get(f"/api/v1/runs/{body['run_id']}")
+    assert detail.status_code == 200
+    assert detail.json()["node_id"] == "fake"  # persisted on the run row
+
+
 async def test_run_unknown_flow_is_404(client: httpx.AsyncClient) -> None:
     resp = await client.post("/api/v1/flows/nope/run", json={"input_text": "hi"})
     assert resp.status_code == 404
@@ -287,6 +310,20 @@ async def test_update_thread_state(client: httpx.AsyncClient) -> None:
     assert resp.status_code == 200
     payload: dict[str, Any] = resp.json()
     assert payload["values"]["data"]["marker"] == "edited"  # merged into the data channel
+
+
+async def test_thread_listing_pagination_and_shape(client: httpx.AsyncClient) -> None:
+    await create_and_publish(client, hello_spec("thrp"))
+    for session in ("sess-p1", "sess-p2"):
+        await client.post(
+            "/api/v1/flows/thrp/run", json={"input_text": "hi", "session_id": session}
+        )
+    threads = (await client.get("/api/v1/threads", params={"limit": 1})).json()
+    assert len(threads) == 1
+    assert {"thread_id", "flow_slug", "runs", "last_run_at", "last_status"} <= set(threads[0])
+    rest = (await client.get("/api/v1/threads", params={"limit": 1, "offset": 1})).json()
+    assert len(rest) == 1
+    assert rest[0]["thread_id"] != threads[0]["thread_id"]
 
 
 async def test_thread_state_unknown_thread_is_404(client: httpx.AsyncClient) -> None:

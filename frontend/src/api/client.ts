@@ -103,10 +103,12 @@ export const api = {
           body: body as never,
         }),
       ),
-    versions: async (id: string) =>
-      unwrap<VersionInfo[]>(
-        await raw.GET("/api/v1/flows/{id_or_slug}/versions", {
-          params: { path: { id_or_slug: id } },
+    /** Export the stored draft as flow.json / standalone flow.py (§11.6). */
+    export: async (id: string, format: "json" | "python") =>
+      unwrap<string>(
+        await raw.GET("/api/v1/flows/{id_or_slug}/export", {
+          params: { path: { id_or_slug: id }, query: { format } },
+          parseAs: "text",
         }),
       ),
     run: async (
@@ -177,13 +179,6 @@ export const api = {
           params: { path: { thread_id: threadId } },
         }),
       ),
-    updateState: async (threadId: string, values: Record<string, unknown>) =>
-      unwrap<Record<string, unknown>>(
-        await raw.POST("/api/v1/threads/{thread_id}/state", {
-          params: { path: { thread_id: threadId } },
-          body: { values } as never,
-        }),
-      ),
     delete: async (threadId: string) =>
       unwrap<void>(
         await raw.DELETE("/api/v1/threads/{thread_id}", {
@@ -223,12 +218,5 @@ export const api = {
       unwrap<void>(
         await raw.DELETE("/api/v1/mcp-servers/{name}", { params: { path: { name } } }),
       ),
-  },
-
-  misc: {
-    version: async () =>
-      unwrap<Record<string, string>>(await raw.GET("/api/v1/version")),
-    mcpConfig: async () =>
-      unwrap<Record<string, unknown>>(await raw.GET("/api/v1/mcp/config")),
   },
 };

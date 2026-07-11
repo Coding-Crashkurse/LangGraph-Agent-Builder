@@ -1,6 +1,15 @@
 /** Flow list: create / import / open / delete + run history glance. */
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  AlertTriangle,
+  Plus,
+  RotateCw,
+  Settings as SettingsIcon,
+  Trash2,
+  Upload,
+  Workflow,
+} from "lucide-react";
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
@@ -17,6 +26,20 @@ function slugify(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "flow";
 }
 
+function timeAgo(iso: string): string {
+  const seconds = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
+  if (seconds < 60) return "just now";
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+  return `${Math.floor(seconds / 86400)}d ago`;
+}
+
+interface Template {
+  id: string;
+  name: string;
+  description: string;
+}
+
 export function FlowsPage() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -28,7 +51,7 @@ export function FlowsPage() {
   const runs = useQuery({ queryKey: ["runs"], queryFn: () => api.runs.list() });
   const templates = useQuery({
     queryKey: ["templates"],
-    queryFn: async (): Promise<{ id: string; name: string; description: string }[]> => {
+    queryFn: async (): Promise<Template[]> => {
       const r = await fetch("/api/v1/templates");
       return r.ok ? r.json() : [];
     },
@@ -88,103 +111,165 @@ export function FlowsPage() {
     }
   };
 
+  const flowList = flows.data ?? [];
+  const templateList = templates.data ?? [];
+
   return (
-    <div className="min-h-screen bg-surface-950 px-8 py-6 text-zinc-100">
+    <div className="min-h-screen bg-canvas px-8 py-6 text-text-1">
       <header className="mb-6 flex items-center gap-3">
         <h1 className="text-lg font-bold">lga</h1>
-        <span className="text-xs text-zinc-500">
+        <span className="text-xs text-text-3">
           flows compile to LangGraph · publish = A2A agent + MCP tool
         </span>
         <div className="ml-auto flex items-center gap-2">
-          <Link to="/settings" className="text-sm text-zinc-400 hover:text-zinc-100">
+          <Link
+            to="/settings"
+            className="inline-flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm text-text-2 hover:bg-surface-2 hover:text-text-1 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent"
+          >
+            <SettingsIcon size={14} strokeWidth={1.75} aria-hidden />
             Settings
           </Link>
-          <label className="cursor-pointer text-sm text-zinc-400 hover:text-zinc-100">
+          <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-md px-2 py-1.5 text-sm text-text-2 hover:bg-surface-2 hover:text-text-1 focus-within:outline-2 focus-within:outline-offset-1 focus-within:outline-accent">
+            <Upload size={14} strokeWidth={1.75} aria-hidden />
             Import
             <input
               type="file"
               accept=".json"
-              className="hidden"
+              className="sr-only"
               onChange={(e) => e.target.files?.[0] && importFlow(e.target.files[0])}
             />
           </label>
-          <Button onClick={() => setCreateOpen(true)}>New flow</Button>
+          <Button onClick={() => setCreateOpen(true)}>
+            <Plus size={14} strokeWidth={1.75} aria-hidden />
+            New flow
+          </Button>
         </div>
       </header>
 
-      {(templates.data ?? []).length > 0 && (
+      {flowList.length > 0 && templateList.length > 0 && (
         <div className="mb-6">
-          <h2 className="mb-2 text-xs font-semibold uppercase tracking-widest text-zinc-500">
+          <h2 className="mb-2 text-[11px] font-semibold uppercase tracking-widest text-text-3">
             Start from a template
           </h2>
           <div className="flex flex-wrap gap-2">
-            {(templates.data ?? []).map((t) => (
-              <button
+            {templateList.map((t) => (
+              <TemplateCard
                 key={t.id}
-                type="button"
+                template={t}
                 disabled={fromTemplate.isPending}
-                onClick={() => fromTemplate.mutate(t.id)}
-                title={t.description}
-                className="gf-card px-3 py-2 text-left hover:border-accent-700"
-              >
-                <span className="block text-sm font-medium text-zinc-100">{t.name}</span>
-                <span className="line-clamp-1 block max-w-[220px] text-[11px] text-zinc-500">
-                  {t.description}
-                </span>
-              </button>
+                onPick={() => fromTemplate.mutate(t.id)}
+              />
             ))}
           </div>
         </div>
       )}
 
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-        {(flows.data ?? []).map((flow) => (
-          <div
-            key={flow.id}
-            className="group rounded-lg border border-surface-800 bg-surface-900 p-4 hover:border-accent-700"
-          >
-            <div className="flex items-center gap-2">
-              <Link
-                to={`/flows/${flow.id}`}
-                className="text-sm font-semibold text-zinc-100 hover:text-accent-300"
-              >
-                {flow.name}
-              </Link>
-              {flow.published_version ? (
-                <Badge tone="green">v{flow.published_version}</Badge>
-              ) : (
-                <Badge tone="muted">draft</Badge>
-              )}
-              {flow.spec.flow.a2a?.enabled && <Badge tone="violet">A2A</Badge>}
-              {flow.spec.flow.mcp?.enabled && <Badge tone="sky">MCP</Badge>}
-              <button
-                className="ml-auto text-xs text-zinc-600 opacity-0 hover:text-red-400 group-hover:opacity-100"
-                onClick={() => setDeleteTarget({ id: flow.id, name: flow.name })}
-              >
-                delete
-              </button>
+      {flows.isLoading ? (
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="rounded-xl border border-border bg-surface-1 p-4">
+              <div className="h-4 w-2/5 animate-pulse rounded bg-surface-2" />
+              <div className="mt-3 h-3 w-4/5 animate-pulse rounded bg-surface-2" />
+              <div className="mt-3 h-3 w-1/3 animate-pulse rounded bg-surface-2" />
             </div>
-            <p className="mt-1 line-clamp-2 text-xs text-zinc-500">
-              {flow.description || "no description"}
-            </p>
-            <p className="mt-2 font-mono text-[10px] text-zinc-600">
-              /{flow.slug} · {flow.spec.nodes.length} nodes
-            </p>
-          </div>
-        ))}
-        {flows.data?.length === 0 && (
-          <p className="text-sm text-zinc-500">No flows yet — create or import one.</p>
-        )}
-      </div>
+          ))}
+        </div>
+      ) : flows.isError ? (
+        <div className="max-w-xl rounded-lg border border-border border-l-2 border-l-danger bg-surface-1 p-4">
+          <p className="flex items-center gap-2 text-sm text-danger">
+            <AlertTriangle size={15} strokeWidth={1.75} aria-hidden />
+            Could not load flows
+          </p>
+          <p className="mt-1 text-xs text-text-3">{(flows.error as Error).message}</p>
+          <Button variant="secondary" size="sm" className="mt-3" onClick={() => flows.refetch()}>
+            <RotateCw size={13} strokeWidth={1.75} aria-hidden />
+            Retry
+          </Button>
+        </div>
+      ) : flowList.length === 0 ? (
+        <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-border px-6 py-16 text-center">
+          <Workflow size={24} strokeWidth={1.75} className="text-text-3" aria-hidden />
+          <p className="text-[13px] text-text-2">No flows yet</p>
+          <p className="text-xs text-text-3">
+            Build a graph on the canvas, then publish it as an A2A agent or MCP tool.
+          </p>
+          <Button className="mt-2" onClick={() => setCreateOpen(true)}>
+            <Plus size={14} strokeWidth={1.75} aria-hidden />
+            New flow
+          </Button>
+          {templateList.length > 0 && (
+            <>
+              <p className="mt-6 text-[11px] font-semibold uppercase tracking-widest text-text-3">
+                or start from a template
+              </p>
+              <div className="mt-1 flex flex-wrap justify-center gap-2">
+                {templateList.map((t) => (
+                  <TemplateCard
+                    key={t.id}
+                    template={t}
+                    disabled={fromTemplate.isPending}
+                    onPick={() => fromTemplate.mutate(t.id)}
+                  />
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {flowList.map((flow) => (
+            <div key={flow.id} className="gf-card group p-4">
+              <div className="flex items-center gap-2">
+                <Link
+                  to={`/flows/${flow.id}`}
+                  className="truncate rounded text-sm font-semibold text-text-1 hover:text-accent focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent"
+                >
+                  {flow.name}
+                </Link>
+                {flow.spec.flow.a2a?.enabled && <Badge tone="accent">A2A</Badge>}
+                {flow.spec.flow.mcp?.enabled && <Badge tone="toolset">MCP</Badge>}
+                <button
+                  type="button"
+                  aria-label={`Delete flow ${flow.name}`}
+                  className="ml-auto rounded p-1 text-text-3 opacity-0 hover:text-danger focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-accent group-focus-within:opacity-100 group-hover:opacity-100"
+                  onClick={() => setDeleteTarget({ id: flow.id, name: flow.name })}
+                >
+                  <Trash2 size={14} strokeWidth={1.75} aria-hidden />
+                </button>
+              </div>
+              <p className="mt-1 line-clamp-2 text-xs text-text-3">
+                {flow.description || "no description"}
+              </p>
+              <div className="mt-3 flex flex-wrap items-center gap-1.5">
+                <span className="font-mono text-[11px] text-text-3">/{flow.slug}</span>
+                {flow.published_version ? (
+                  <Badge tone="success">v{flow.published_version}</Badge>
+                ) : (
+                  <Badge tone="muted">draft</Badge>
+                )}
+                <span className="rounded-md bg-surface-2 px-1.5 py-0.5 text-[10.5px] tabular-nums text-text-3">
+                  {flow.spec.nodes.length} nodes
+                </span>
+                <span
+                  className="rounded-md bg-surface-2 px-1.5 py-0.5 text-[10.5px] tabular-nums text-text-3"
+                  title={new Date(flow.updated_at).toLocaleString()}
+                >
+                  updated {timeAgo(flow.updated_at)}
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       <div className="mb-2 mt-8 flex items-center">
-        <h2 className="text-xs font-semibold uppercase tracking-widest text-zinc-500">
+        <h2 className="text-[11px] font-semibold uppercase tracking-widest text-text-3">
           Recent runs
         </h2>
         {(runs.data ?? []).length > 0 && (
           <button
             type="button"
-            className="ml-auto text-[11px] text-zinc-600 hover:text-red-400"
+            className="ml-auto rounded text-[11px] text-text-3 hover:text-danger focus-visible:outline-2 focus-visible:outline-accent"
             onClick={() => clearRuns.mutate()}
             title="Delete all finished traces (running ones stay)"
           >
@@ -192,35 +277,50 @@ export function FlowsPage() {
           </button>
         )}
       </div>
-      <div className="overflow-hidden rounded-lg border border-surface-800">
+      <div className="overflow-hidden rounded-lg border border-border">
         <table className="w-full text-left text-xs">
-          <thead className="bg-surface-900 text-zinc-500">
-            <tr>
-              <th className="px-3 py-2">run</th>
-              <th className="px-3 py-2">flow</th>
-              <th className="px-3 py-2">mode</th>
-              <th className="px-3 py-2">status</th>
-              <th className="px-3 py-2">result</th>
-              <th className="px-3 py-2">started</th>
+          <thead className="bg-surface-1">
+            <tr className="text-[11px] uppercase tracking-wide text-text-3">
+              <th className="px-3 py-2 font-medium">run</th>
+              <th className="px-3 py-2 font-medium">flow</th>
+              <th className="px-3 py-2 font-medium">mode</th>
+              <th className="px-3 py-2 font-medium">status</th>
+              <th className="px-3 py-2 font-medium">result</th>
+              <th className="px-3 py-2 font-medium">started</th>
               <th className="w-8 px-2 py-2" />
             </tr>
           </thead>
           <tbody>
+            {runs.isLoading &&
+              [0, 1, 2].map((i) => (
+                <tr key={i} className="border-t border-border">
+                  <td colSpan={7} className="px-3 py-2">
+                    <div className="h-3.5 w-full animate-pulse rounded bg-surface-2" />
+                  </td>
+                </tr>
+              ))}
+            {!runs.isLoading && (runs.data ?? []).length === 0 && (
+              <tr className="border-t border-border">
+                <td colSpan={7} className="px-3 py-4 text-center text-xs text-text-3">
+                  No runs yet — open a flow and try it in the playground.
+                </td>
+              </tr>
+            )}
             {(runs.data ?? []).slice(0, 25).map((run) => (
               <tr
                 key={run.run_id}
-                className="group border-t border-surface-800 text-zinc-300"
+                className="group border-t border-border text-text-2 hover:bg-surface-2"
               >
-                <td className="px-3 py-1.5 font-mono text-[10px]">{run.run_id.slice(0, 12)}…</td>
+                <td className="px-3 py-1.5 font-mono text-[10.5px]">{run.run_id.slice(0, 12)}…</td>
                 <td className="px-3 py-1.5">{run.flow_slug}</td>
                 <td className="px-3 py-1.5">{run.mode}</td>
                 <td className="px-3 py-1.5">
                   <StatusChip status={run.status} />
                 </td>
-                <td className="max-w-[280px] truncate px-3 py-1.5 text-zinc-500">
+                <td className="max-w-[280px] truncate px-3 py-1.5 text-text-3">
                   {run.error_message ?? run.result_preview}
                 </td>
-                <td className="px-3 py-1.5 text-zinc-500">
+                <td className="px-3 py-1.5 tabular-nums text-text-3">
                   {new Date(run.started_at).toLocaleTimeString()}
                 </td>
                 <td className="px-2 py-1.5 text-right">
@@ -228,10 +328,11 @@ export function FlowsPage() {
                     <button
                       type="button"
                       title="Delete this trace"
-                      className="text-zinc-700 opacity-0 hover:text-red-400 group-hover:opacity-100"
+                      aria-label="Delete this trace"
+                      className="rounded p-0.5 text-text-3 opacity-0 hover:text-danger focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-accent group-hover:opacity-100"
                       onClick={() => deleteRun.mutate(run.run_id)}
                     >
-                      ✕
+                      <Trash2 size={13} strokeWidth={1.75} aria-hidden />
                     </button>
                   )}
                 </td>
@@ -247,10 +348,10 @@ export function FlowsPage() {
         title="Delete flow"
       >
         <div className="space-y-4">
-          <p className="text-sm text-zinc-300">
-            Delete <span className="font-semibold text-zinc-100">{deleteTarget?.name}</span>?
+          <p className="text-sm text-text-2">
+            Delete <span className="font-semibold text-text-1">{deleteTarget?.name}</span>?
           </p>
-          <p className="text-xs text-zinc-500">
+          <p className="text-xs text-text-3">
             This removes the draft, all published versions and unmounts its A2A/MCP
             endpoints. Runs and task history stay in the dashboard.
           </p>
@@ -259,12 +360,13 @@ export function FlowsPage() {
               Cancel
             </Button>
             <Button
-              variant="destructive"
+              variant="danger"
               onClick={() => {
                 if (deleteTarget) deleteFlow.mutate(deleteTarget.id);
                 setDeleteTarget(null);
               }}
             >
+              <Trash2 size={14} strokeWidth={1.75} aria-hidden />
               Delete flow
             </Button>
           </div>
@@ -273,19 +375,29 @@ export function FlowsPage() {
 
       <Dialog open={createOpen} onClose={() => setCreateOpen(false)} title="New flow">
         <div className="space-y-3">
-          <Input
-            value={name}
-            placeholder="Flow name"
-            onChange={(e) => setName(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && name.trim() && createFlow.mutate()}
-          />
-          <p className="text-xs text-zinc-500">slug: /{slugify(name || "flow")}</p>
+          <label className="block">
+            <span className="mb-1 block text-xs font-medium text-text-2">Name</span>
+            <Input
+              autoFocus
+              value={name}
+              placeholder="e.g. Support triage"
+              onChange={(e) => setName(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && name.trim() && createFlow.mutate()}
+            />
+          </label>
+          <p className="text-[11px] text-text-3">
+            slug: <span className="font-mono text-text-2">/{slugify(name || "flow")}</span> — the
+            A2A/MCP mount path once published
+          </p>
           <div className="flex justify-end gap-2">
             <Button variant="ghost" onClick={() => setCreateOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={() => createFlow.mutate()} disabled={!name.trim()}>
-              Create
+            <Button
+              onClick={() => createFlow.mutate()}
+              disabled={!name.trim() || createFlow.isPending}
+            >
+              {createFlow.isPending ? "Creating…" : "Create"}
             </Button>
           </div>
         </div>
@@ -294,17 +406,44 @@ export function FlowsPage() {
   );
 }
 
+function TemplateCard({
+  template,
+  disabled,
+  onPick,
+}: {
+  template: Template;
+  disabled: boolean;
+  onPick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onPick}
+      title={template.description}
+      className="gf-card px-3 py-2 text-left hover:border-accent focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-45"
+    >
+      <span className="block text-sm font-medium text-text-1">{template.name}</span>
+      <span className="line-clamp-1 block max-w-[220px] text-[11px] text-text-3">
+        {template.description}
+      </span>
+    </button>
+  );
+}
+
 export function StatusChip({ status }: { status: string }) {
   const tones: Record<string, string> = {
-    completed: "bg-emerald-900/60 text-emerald-300",
-    running: "bg-sky-900/60 text-sky-300",
-    pending: "bg-zinc-800 text-zinc-400",
-    input_required: "bg-amber-900/60 text-amber-300",
-    failed: "bg-red-900/60 text-red-300",
-    cancelled: "bg-zinc-800 text-zinc-500",
+    completed: "bg-success/15 text-success",
+    running: "bg-port-toolset/15 text-port-toolset",
+    pending: "bg-surface-2 text-text-2",
+    input_required: "bg-warning/15 text-warning",
+    failed: "bg-danger/15 text-danger",
+    cancelled: "bg-surface-2 text-text-3",
   };
   return (
-    <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${tones[status] ?? ""}`}>
+    <span
+      className={`rounded-full px-2 py-0.5 text-[10.5px] font-medium tabular-nums ${tones[status] ?? ""}`}
+    >
       {status}
     </span>
   );

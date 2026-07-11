@@ -5,9 +5,10 @@ Ports are Pydantic schemas; edge validation is structural, not bucket-based.
 
 from __future__ import annotations
 
-import functools
+import json
 from collections.abc import Awaitable, Callable, Iterable
 from enum import StrEnum
+from functools import cached_property
 from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -38,6 +39,14 @@ class PortSpec(BaseModel):
     display_name: str | None = None
 
     model_config = ConfigDict(frozen=True)
+
+    @cached_property
+    def fingerprint(self) -> str:
+        """Hashable identity for compatibility caching — the frozen model itself
+        is unhashable because ``json_schema`` is a dict. display_name is
+        deliberately excluded (it never affects compatibility)."""
+        schema = json.dumps(self.json_schema, sort_keys=True, default=str)
+        return f"{self.schema_ref}|{self.family.value}|{int(self.is_list)}|{schema}"
 
 
 # --------------------------------------------------------------------------- payloads
@@ -269,8 +278,7 @@ def _structural_subset(source: dict[str, Any], target: dict[str, Any]) -> bool:
     return True
 
 
-@functools.lru_cache(maxsize=4096)
-def _check_cached(source: PortSpec, target: PortSpec) -> Compat:
+def _check(source: PortSpec, target: PortSpec) -> Compat:
     from lga.sdk.ports import coerce
 
     # 1. ANY matches everything, with W201
@@ -333,10 +341,19 @@ def _check_cached(source: PortSpec, target: PortSpec) -> Compat:
     )
 
 
+_compat_cache: dict[tuple[str, str], Compat] = {}
+_COMPAT_CACHE_MAX = 4096
+
+
 def check_compatibility(source: PortSpec, target: PortSpec) -> Compat:
-    """Edge validation algorithm (SPEC §4.3), coercions included. Cached —
-    PortSpec is frozen/hashable."""
-    try:
-        return _check_cached(source, target)
-    except TypeError:  # unhashable json_schema dict → uncached path
-        return _check_cached.__wrapped__(source, target)
+    """Edge validation algorithm (SPEC §4.3), coercions included. Results are
+    cached per (source, target) ``PortSpec.fingerprint`` pair."""
+    key = (source.fingerprint, target.fingerprint)
+    hit = _compat_cache.get(key)
+    if hit is not None:
+        return hit
+    result = _check(source, target)
+    if len(_compat_cache) >= _COMPAT_CACHE_MAX:
+        _compat_cache.clear()
+    _compat_cache[key] = result
+    return result

@@ -1,6 +1,6 @@
 [project]
-name = "lga"
-version = "0.1.0"
+name = "langgraph-agent-builder"
+version = "0.0.1"
 description = "LangGraph-native visual agent builder: flows compiled to StateGraphs, served as A2A agents and MCP tools."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -54,14 +54,14 @@ postgres = [
     "langgraph-checkpoint-postgres>=2.0",
 ]
 pgvector = [
-    "lga[postgres]",
+    "langgraph-agent-builder[postgres]",
     "pgvector>=0.3",
     "pypdf>=5.0",
 ]
 qdrant = ["qdrant-client>=1.12"]
 weaviate = ["weaviate-client>=4.9"]
 chroma = ["chromadb>=0.5"]
-all = ["lga[openai,anthropic,ollama,postgres,pgvector,qdrant,weaviate,chroma]"]
+all = ["langgraph-agent-builder[openai,anthropic,ollama,postgres,pgvector,qdrant,weaviate,chroma]"]
 
 [project.scripts]
 lga = "lga.cli.main:app"

@@ -1,4 +1,4 @@
-"""Calculator (safe AST) + HTTP Request tools (SPEC Â§12.5)."""
+"""Calculator (safe AST) + HTTP Request tools (SPEC §12.5)."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from collections.abc import Callable
 from typing import Any
 
 from lga.sdk import BuildContext, Component, Output, fields, ports
-from lga.sdk.component import NodeFn
+from lga.sdk.component import NodeConfig, NodeFn
 
 _OPS: dict[type[ast.AST], Callable[..., float]] = {
     ast.Add: operator.add,
@@ -24,7 +24,7 @@ _OPS: dict[type[ast.AST], Callable[..., float]] = {
 
 
 def safe_eval(expression: str) -> float:
-    """Arithmetic-only AST evaluation â€” no names, no calls, no eval (SPEC Â§10.5)."""
+    """Arithmetic-only AST evaluation — no names, no calls, no eval (SPEC §10.5)."""
 
     def _eval(node: ast.AST) -> float:
         match node:
@@ -45,7 +45,7 @@ def safe_eval(expression: str) -> float:
 class Calculator(Component):
     component_id = "lga.tools.calculator"
     display_name = "Calculator"
-    description = "Evaluate an arithmetic expression (safe AST â€” demo tool)."
+    description = "Evaluate an arithmetic expression (safe AST — demo tool)."
     icon = "calculator"
     category = "tools"
     tool_mode_supported = True
@@ -74,6 +74,10 @@ class Calculator(Component):
             return {"text": str(int(result) if float(result).is_integer() else result)}
 
         return node
+
+
+_REDIRECT_CODES = {301, 302, 303, 307, 308}
+_MAX_REDIRECTS = 5
 
 
 class HttpRequest(Component):
@@ -112,21 +116,35 @@ class HttpRequest(Component):
             from lga.a2a.push import SsrfError, validate_webhook_url
             from lga.services.settings import Settings
 
+            guard_settings = settings or Settings()
             url = str(ctx.get_input(state, "url") or ctx.get_field("url") or "")
             try:
-                validate_webhook_url(url, settings or Settings())
+                validate_webhook_url(url, guard_settings)
             except SsrfError as exc:
                 return {"text": f"blocked: {exc}", "json": {"error": str(exc)}}
             method = str(ctx.get_field("method") or "GET").upper()
+            body = ctx.get_field("body") if method == "POST" else None
+            headers = dict(ctx.get_field("headers") or {})
+            # Redirects are followed manually so EVERY hop passes the SSRF
+            # guard — follow_redirects=True would let a public URL 302 into
+            # 169.254.169.254 or the local Studio API.
             async with httpx.AsyncClient(
-                timeout=float(ctx.get_field("timeout_s") or 15.0), follow_redirects=True
+                timeout=float(ctx.get_field("timeout_s") or 15.0), follow_redirects=False
             ) as client:
-                response = await client.request(
-                    method,
-                    url,
-                    json=ctx.get_field("body") if method == "POST" else None,
-                    headers=dict(ctx.get_field("headers") or {}),
-                )
+                for _ in range(_MAX_REDIRECTS + 1):
+                    response = await client.request(method, url, json=body, headers=headers)
+                    if response.status_code not in _REDIRECT_CODES:
+                        break
+                    location = response.headers.get("location", "")
+                    if not location:
+                        break
+                    url = str(httpx.URL(url).join(location))
+                    try:
+                        validate_webhook_url(url, guard_settings)
+                    except SsrfError as exc:
+                        return {"text": f"blocked: {exc}", "json": {"error": str(exc)}}
+                    if response.status_code == 303 or method == "POST":
+                        method, body = "GET", None  # matches browser/httpx semantics
             text = response.text[:20000]
             try:
                 payload = response.json()
@@ -154,6 +172,7 @@ class WebSearch(Component):
             display_name="Provider",
             options=["tavily", "serpapi", "searxng"],
             default="tavily",
+            real_time_refresh=True,  # toggles the api_key required flag
         ),
         fields.QueryInput(name="query", display_name="Query", required=True),
         fields.IntInput(name="max_results", display_name="Max Results", default=5, min=1, max=20),
@@ -168,8 +187,21 @@ class WebSearch(Component):
             info="Base URL when provider = searxng.",
             advanced=True,
         ),
+        fields.FloatInput(
+            name="timeout_s", display_name="Timeout (s)", default=20.0, advanced=True
+        ),
     ]
     outputs = [Output(name="table", display_name="Results", port=ports.TABLE)]
+
+    @classmethod
+    def descriptor(cls, config: NodeConfig | None = None) -> dict[str, Any]:
+        """api_key is required for the hosted providers (on_field_change refresh)."""
+        desc = super().descriptor(config)
+        provider = str((config or {}).get("provider") or "tavily")
+        for f in desc["fields"]:
+            if f["name"] == "api_key":
+                f["required"] = provider in ("tavily", "serpapi")
+        return desc
 
     def build(self, ctx: BuildContext) -> NodeFn:
         settings = ctx.settings
@@ -181,55 +213,73 @@ class WebSearch(Component):
             query = str(ctx.get_input(state, "query") or ctx.get_field("query") or "")
             k = int(ctx.get_field("max_results") or 5)
             api_key = str(ctx.get_field("api_key") or "")
+            if provider in ("tavily", "serpapi") and not api_key:
+                return {"table": [{"error": f"api_key is required for provider {provider!r}"}]}
             rows: list[dict[str, Any]] = []
-            async with httpx.AsyncClient(timeout=20.0) as client:
-                if provider == "tavily":
-                    resp = await client.post(
-                        "https://api.tavily.com/search",
-                        json={"api_key": api_key, "query": query, "max_results": k},
-                    )
-                    for r in resp.json().get("results", [])[:k]:
-                        rows.append(
-                            {
-                                "title": r.get("title"),
-                                "url": r.get("url"),
-                                "content": r.get("content"),
-                            }
+            try:
+                async with httpx.AsyncClient(
+                    timeout=float(ctx.get_field("timeout_s") or 20.0)
+                ) as client:
+                    if provider == "tavily":
+                        resp = await client.post(
+                            "https://api.tavily.com/search",
+                            json={"api_key": api_key, "query": query, "max_results": k},
                         )
-                elif provider == "serpapi":
-                    resp = await client.get(
-                        "https://serpapi.com/search",
-                        params={"q": query, "api_key": api_key, "num": k},
-                    )
-                    for r in resp.json().get("organic_results", [])[:k]:
-                        rows.append(
-                            {
-                                "title": r.get("title"),
-                                "url": r.get("link"),
-                                "content": r.get("snippet"),
-                            }
+                        resp.raise_for_status()
+                        for r in resp.json().get("results", [])[:k]:
+                            rows.append(
+                                {
+                                    "title": r.get("title"),
+                                    "url": r.get("url"),
+                                    "content": r.get("content"),
+                                }
+                            )
+                    elif provider == "serpapi":
+                        resp = await client.get(
+                            "https://serpapi.com/search",
+                            params={"q": query, "api_key": api_key, "num": k},
                         )
-                elif provider == "searxng":
-                    from lga.a2a.push import SsrfError, validate_webhook_url
-                    from lga.services.settings import Settings
+                        resp.raise_for_status()
+                        for r in resp.json().get("organic_results", [])[:k]:
+                            rows.append(
+                                {
+                                    "title": r.get("title"),
+                                    "url": r.get("link"),
+                                    "content": r.get("snippet"),
+                                }
+                            )
+                    elif provider == "searxng":
+                        from lga.a2a.push import SsrfError, validate_webhook_url
+                        from lga.services.settings import Settings
 
-                    base = str(ctx.get_field("searxng_url") or "")
-                    try:
-                        validate_webhook_url(base, settings or Settings())
-                    except SsrfError as exc:
-                        return {"table": [{"error": str(exc)}]}
-                    resp = await client.get(
-                        base.rstrip("/") + "/search",
-                        params={"q": query, "format": "json"},
-                    )
-                    for r in resp.json().get("results", [])[:k]:
-                        rows.append(
-                            {
-                                "title": r.get("title"),
-                                "url": r.get("url"),
-                                "content": r.get("content"),
-                            }
+                        base = str(ctx.get_field("searxng_url") or "")
+                        try:
+                            validate_webhook_url(base, settings or Settings())
+                        except SsrfError as exc:
+                            return {"table": [{"error": str(exc)}]}
+                        resp = await client.get(
+                            base.rstrip("/") + "/search",
+                            params={"q": query, "format": "json"},
                         )
+                        resp.raise_for_status()
+                        for r in resp.json().get("results", [])[:k]:
+                            rows.append(
+                                {
+                                    "title": r.get("title"),
+                                    "url": r.get("url"),
+                                    "content": r.get("content"),
+                                }
+                            )
+            except httpx.HTTPStatusError as exc:
+                return {
+                    "table": [
+                        {"error": f"{provider} search failed: HTTP {exc.response.status_code}"}
+                    ]
+                }
+            except httpx.HTTPError as exc:
+                return {"table": [{"error": f"{provider} search failed: {exc}"}]}
+            except ValueError:
+                return {"table": [{"error": f"{provider} returned a non-JSON response"}]}
             return {"table": rows}
 
         return node

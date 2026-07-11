@@ -1,33 +1,10 @@
 @import "./theme.css";
 @import "@xyflow/react/dist/style.css";
 
-/* lga design system (SPEC §11.1–11.4, Appendix C). theme.css owns all colour
-   tokens; the legacy surface / accent / cat names below are compatibility
-   aliases remapped onto the new graphite palette so existing utilities adopt
-   the v2 look without a mass rename. New code should use the theme.css tokens. */
-
-@theme {
-  /* legacy chrome aliases → graphite palette */
-  --color-surface-950: #0e1116;
-  --color-surface-900: #151a21;
-  --color-surface-850: #171d25;
-  --color-surface-800: #1c232d;
-  --color-surface-700: #232c38;
-  --color-line: #2a334077;
-
-  /* legacy accent aliases → single violet accent */
-  --color-accent-300: #b3a9fa;
-  --color-accent-400: #8b7cf7;
-  --color-accent-500: #8b7cf7;
-  --color-accent-600: #7264d6;
-
-  /* category colours (align to port families) */
-  --color-cat-llm: #a78bfa;
-  --color-cat-rag: #34d399;
-  --color-cat-flow: #fbbf24;
-  --color-cat-tools: #38bdf8;
-  --color-cat-io: #fb923c;
-}
+/* lga design system (SPEC §11.1–11.4, Appendix C). theme.css owns ALL colour
+   tokens — no other file may define colours, and components use only the
+   theme.css utilities (text-1/2/3, surface-1/2/3, border, canvas, accent,
+   success/warning/danger, port-*). `pnpm lint:tokens` enforces this. */
 
 html,
 body,
@@ -41,12 +18,11 @@ body {
   font-feature-settings: "tnum";
 }
 
-/* Canvas texture: 24px dot grid, dots fade below 60% zoom (§11.1). No glow. */
-.react-flow__pane,
-.gf-canvas {
+/* Canvas texture (§11.1): the react-flow <Background> in BuilderPage is the
+   single 24px dot grid — no CSS grid here (it would not pan/zoom with the
+   viewport and doubled the lattice). */
+.react-flow__pane {
   background-color: var(--color-canvas);
-  background-image: radial-gradient(var(--color-border) 1px, transparent 1px);
-  background-size: 24px 24px;
 }
 
 /* ---- shared surfaces & motion ------------------------------------------- */
@@ -128,20 +104,67 @@ body {
 .react-flow__controls-button svg {
   fill: currentColor;
 }
-.react-flow__edge.selected .react-flow__edge-path {
-  stroke: var(--color-accent);
-}
 .react-flow__handle {
   @apply h-3 w-3 rounded-full;
   border: 2px solid var(--color-surface-1);
   background: var(--color-text-3);
 }
-.react-flow__handle.connectionindicator:hover {
-  background: var(--color-accent);
+/* §11.4 [MUST]: visible focus ring on handles (they are tabbable) */
+.react-flow__handle:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
 }
 .react-flow__minimap {
   @apply rounded-lg border border-border;
   background: var(--color-surface-1) !important;
+}
+
+/* ---- edges (§11.3): stroke color = source family, set inline ------------- */
+.gf-edge {
+  stroke-width: 1.75;
+  stroke-opacity: 0.7;
+  transition:
+    stroke-width var(--duration-micro) var(--ease-standard),
+    stroke-opacity var(--duration-micro) var(--ease-standard);
+}
+.gf-edge-tool {
+  stroke-dasharray: 6 4;
+}
+.react-flow__edge:hover .gf-edge,
+.react-flow__edge.selected .gf-edge {
+  stroke-width: 2.5;
+  stroke-opacity: 1;
+}
+.gf-edge-dot {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--duration-micro) var(--ease-standard);
+}
+.react-flow__edge:hover .gf-edge-dot,
+.react-flow__edge.selected .gf-edge-dot {
+  opacity: 1;
+}
+/* §11.4 signature moment: slow dash-flow on the active path during a run */
+@keyframes gf-edge-flow {
+  to {
+    stroke-dashoffset: -8;
+  }
+}
+.gf-edge.gf-edge-live {
+  stroke-dasharray: 2 6;
+  stroke-opacity: 1;
+  animation: gf-edge-flow 900ms linear infinite;
+}
+
+/* ---- node chrome (§11.2) ------------------------------------------------- */
+.gf-node-shadow {
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 0.4),
+    0 8px 24px rgb(0 0 0 / 0.28);
+}
+/* selected node: --accent-muted header tint (accent @ 14% over surface-2) */
+.gf-header-selected {
+  background: color-mix(in srgb, var(--color-accent) 14%, var(--color-surface-2));
 }
 
 /* ---- node run states (§11.2) -------------------------------------------- */
@@ -200,5 +223,14 @@ body {
   .gf-animate-in,
   .gf-zoom-in {
     animation: none;
+  }
+  /* §11.4: live edges become a static full-opacity highlight */
+  .gf-edge.gf-edge-live {
+    animation: none;
+    stroke-dasharray: none;
+    stroke-opacity: 1;
+  }
+  .gf-edge.gf-edge-live.gf-edge-tool {
+    stroke-dasharray: 6 4; /* tool edges keep their dashed identity */
   }
 }

@@ -120,18 +120,18 @@ def test_resolve_openai_without_base_url(monkeypatch: pytest.MonkeyPatch) -> Non
 def test_resolve_model_openai_missing_extra_raises(monkeypatch: pytest.MonkeyPatch) -> None:
     # Shadow the optional dependency so its import raises ImportError.
     monkeypatch.setitem(sys.modules, "langchain_openai", None)
-    with pytest.raises(ProviderNotInstalledError, match=r"lga\[openai\]"):
+    with pytest.raises(ProviderNotInstalledError, match=r"langgraph-agent-builder\[openai\]"):
         resolve_model({"provider": "openai", "model": "gpt-4o-mini"})
 
 
 def test_resolve_model_anthropic_not_installed_raises() -> None:
     # langchain_anthropic is genuinely absent on this box.
-    with pytest.raises(ProviderNotInstalledError, match=r"lga\[anthropic\]"):
+    with pytest.raises(ProviderNotInstalledError, match=r"langgraph-agent-builder\[anthropic\]"):
         resolve_model({"provider": "anthropic", "model": "claude-3"})
 
 
 def test_resolve_model_ollama_not_installed_raises() -> None:
-    with pytest.raises(ProviderNotInstalledError, match=r"lga\[ollama\]"):
+    with pytest.raises(ProviderNotInstalledError, match=r"langgraph-agent-builder\[ollama\]"):
         resolve_model({"provider": "ollama", "model": "llama3", "base_url": "http://x"})
 
 
@@ -141,6 +141,24 @@ def test_provider_not_installed_error_is_runtime_error() -> None:
     err = ProviderNotInstalledError("openai", "openai")
     assert isinstance(err, LgaRuntimeError)
     assert "not installed" in str(err)
+
+
+# --------------------------------------------------------------- port secrets
+def test_stash_port_secret_round_trip() -> None:
+    from lga.components.llm._models import stash_port_secret
+
+    ref = stash_port_secret("flow:node:api_key", "sk-not-a-real-key")
+    assert ref == {"$port_secret": "flow:node:api_key"}
+    model = resolve_model({"provider": "openai", "model": "gpt-4o", "api_key": ref})
+    key = getattr(model, "openai_api_key")  # noqa: B009
+    assert key.get_secret_value() == "sk-not-a-real-key"
+
+
+def test_unknown_port_secret_ref_raises_clear_error() -> None:
+    from lga.errors import LgaRuntimeError
+
+    with pytest.raises(LgaRuntimeError, match="not available in this process"):
+        resolve_model({"provider": "fake", "api_key": {"$port_secret": "gone:after:restart"}})
 
 
 # --------------------------------------------------------------- embeddings
@@ -165,7 +183,7 @@ def test_resolve_embeddings_unknown_provider_raises() -> None:
 
 def test_resolve_openai_embeddings_missing_extra_raises(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setitem(sys.modules, "langchain_openai", None)
-    with pytest.raises(ProviderNotInstalledError, match=r"lga\[openai\]"):
+    with pytest.raises(ProviderNotInstalledError, match=r"langgraph-agent-builder\[openai\]"):
         resolve_embeddings({"provider": "openai", "model": "text-embedding-3-small"})
 
 
@@ -183,5 +201,5 @@ def test_resolve_openai_embeddings_default_model(monkeypatch: pytest.MonkeyPatch
 
 
 def test_resolve_ollama_embeddings_not_installed_raises() -> None:
-    with pytest.raises(ProviderNotInstalledError, match=r"lga\[ollama\]"):
+    with pytest.raises(ProviderNotInstalledError, match=r"langgraph-agent-builder\[ollama\]"):
         resolve_embeddings({"provider": "ollama", "model": "nomic-embed"})

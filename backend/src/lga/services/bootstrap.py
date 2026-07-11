@@ -1,5 +1,5 @@
 """Boot-time provisioning (SPEC §18.1): load flows from disk, starter flows,
-dev hot-reload of component dirs."""
+dev hot-reload of component dirs, background retention sweepers."""
 
 from __future__ import annotations
 
@@ -9,11 +9,16 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from lga.schema.flowspec import FlowSpecError, parse_flowspec
+from lga.services.errors import FlowLockedError
 
 if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
+
     from lga.app import AppServices
 
 logger = logging.getLogger("lga.bootstrap")
+
+SWEEP_INTERVAL_S = 3600
 
 STARTER_FLOWS: list[dict[str, Any]] = [
     {
@@ -130,6 +135,51 @@ STARTER_FLOWS: list[dict[str, Any]] = [
 ]
 
 
+async def provision(svc: AppServices) -> None:
+    """Boot provisioning (SPEC §18.1) — runs before the protocol mounts so
+    published imports are served from the first request."""
+    await svc.vectorstores.provision()  # default `local` + LGA_VECTORSTORE_* (§8b.3)
+    await seed_starter_flows(svc)
+    await load_flows_from_path(svc)
+    await svc.remount()
+
+
+async def periodic(interval_s: float, fn: Callable[[], Awaitable[None]], *, name: str) -> None:
+    """Run ``fn`` every ``interval_s``; failures are logged, never swallowed
+    silently — a broken sweeper otherwise lets the DB grow unbounded."""
+    while True:
+        await asyncio.sleep(interval_s)
+        try:
+            await fn()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("background task %r failed", name)
+
+
+async def sweep_retention(svc: AppServices) -> None:
+    """One retention pass: run-event TTL (§6.2) + idle checkpoint TTL (§6.3)."""
+    removed = await svc.runs.sweep_expired()
+    if removed:
+        logger.info("swept %d expired run events", removed)
+    checkpointer = await svc.checkpointers.get()
+    gone = await svc.runs.sweep_checkpoints(checkpointer, svc.settings.checkpoint_ttl_days)
+    if gone:
+        logger.info("swept %d idle checkpoint threads", gone)
+
+
+def start_background_tasks(svc: AppServices) -> None:
+    """Retention sweeper always; component-dir watcher in dev (§18.2)."""
+    loop = asyncio.get_running_loop()
+
+    async def sweep() -> None:
+        await sweep_retention(svc)
+
+    svc.tasks.append(loop.create_task(periodic(SWEEP_INTERVAL_S, sweep, name="retention-sweep")))
+    if svc.settings.env == "dev" and svc.settings.component_dirs():
+        svc.tasks.append(loop.create_task(watch_component_dirs(svc)))
+
+
 async def seed_starter_flows(svc: AppServices) -> int:
     """Seed bundled templates into an EMPTY database (LGA_CREATE_STARTER_FLOWS)."""
     if not svc.settings.create_starter_flows:
@@ -169,7 +219,11 @@ async def load_flows_from_path(svc: AppServices) -> int:
             if not svc.settings.load_flows_overwrite:
                 logger.info("flow %s exists — skipped (%s)", spec.flow.slug, file.name)
                 continue
-            flow = await svc.flows.update(existing.id, spec)
+            try:
+                flow = await svc.flows.update(existing.id, spec)
+            except FlowLockedError:
+                logger.warning("flow %s is locked — skipped (%s)", spec.flow.slug, file.name)
+                continue
         else:
             flow = await svc.flows.create(spec)
         loaded += 1
@@ -212,7 +266,7 @@ async def watch_component_dirs(svc: AppServices) -> None:
             continue
         try:
             for directory in dirs:
-                svc.registry._scan_dir(directory)
+                svc.registry.scan_dir(directory)
             from lga.compiler import clear_compile_cache
 
             clear_compile_cache()

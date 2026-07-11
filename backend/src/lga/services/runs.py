@@ -47,6 +47,14 @@ class RunService:
             )
             await session.commit()
 
+    def session(self) -> AsyncSession:
+        """Open a new session on the shared app-DB sessionmaker.
+
+        Public seam for collaborators (e.g. the orchestrator) that need ad-hoc
+        queries on the same database without reaching into ``_sessions``.
+        """
+        return self._sessions()
+
     async def update_status(
         self,
         run_id: str,
@@ -55,6 +63,7 @@ class RunService:
         error_code: str | None = None,
         error_message: str | None = None,
         result_preview: str | None = None,
+        node_id: str | None = None,
         **_: Any,
     ) -> None:
         async with self._sessions() as session:
@@ -66,6 +75,8 @@ class RunService:
                 row.error_code = error_code
             if error_message:
                 row.error_message = error_message[:2000]
+            if node_id:
+                row.node_id = node_id  # failing node (SPEC §5.6)
             if result_preview is not None:
                 row.result_preview = result_preview
             if status in TERMINAL_STATUSES:
@@ -76,31 +87,84 @@ class RunService:
         async with self._sessions() as session:
             return await session.get(RunRow, run_id)
 
-    async def list(self, flow_id: str | None = None, limit: int = 100) -> list[RunRow]:
+    async def list(
+        self, flow_id: str | None = None, limit: int = 100, offset: int = 0
+    ) -> list[RunRow]:
         async with self._sessions() as session:
-            stmt = select(RunRow).order_by(RunRow.started_at.desc()).limit(limit)
+            stmt = select(RunRow).order_by(RunRow.started_at.desc()).limit(limit).offset(offset)
             if flow_id:
                 stmt = stmt.where(RunRow.flow_id == flow_id)
             return list((await session.execute(stmt)).scalars().all())
 
-    async def list_threads(self, flow_slug: str | None = None) -> builtins.list[dict[str, Any]]:
-        runs = await self.list(limit=1000)
-        threads: dict[str, dict[str, Any]] = {}
-        for run in runs:
-            if flow_slug and run.flow_slug != flow_slug:
-                continue
-            t = threads.setdefault(
-                run.thread_id,
-                {
-                    "thread_id": run.thread_id,
-                    "flow_slug": run.flow_slug,
-                    "runs": 0,
-                    "last_run_at": run.started_at.isoformat(),
-                    "last_status": run.status,
-                },
+    async def get_by_thread(self, thread_id: str) -> RunRow | None:
+        """Most recent run on a thread (runs.thread_id is indexed)."""
+        async with self._sessions() as session:
+            return (
+                (
+                    await session.execute(
+                        select(RunRow)
+                        .where(RunRow.thread_id == thread_id)
+                        .order_by(RunRow.started_at.desc())
+                        .limit(1)
+                    )
+                )
+                .scalars()
+                .first()
             )
-            t["runs"] += 1
-        return list(threads.values())
+
+    async def list_threads(
+        self, flow_slug: str | None = None, limit: int = 100, offset: int = 0
+    ) -> builtins.list[dict[str, Any]]:
+        """Threads aggregated in SQL (SPEC §6.3), newest activity first.
+
+        One window query: rank runs per thread (newest = 1) and count the
+        partition, so last_run_at/last_status come from the latest run without
+        loading every run row into Python.
+        """
+        rank = (
+            func.row_number()
+            .over(partition_by=RunRow.thread_id, order_by=RunRow.started_at.desc())
+            .label("rank")
+        )
+        run_count = func.count().over(partition_by=RunRow.thread_id).label("run_count")
+        inner = select(
+            RunRow.thread_id, RunRow.flow_slug, RunRow.status, RunRow.started_at, rank, run_count
+        )
+        if flow_slug:
+            inner = inner.where(RunRow.flow_slug == flow_slug)
+        ranked = inner.subquery()
+        stmt = (
+            select(ranked)
+            .where(ranked.c.rank == 1)
+            .order_by(ranked.c.started_at.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        async with self._sessions() as session:
+            rows = (await session.execute(stmt)).all()
+        return [
+            {
+                "thread_id": row.thread_id,
+                "flow_slug": row.flow_slug,
+                "runs": row.run_count,
+                "last_run_at": row.started_at.isoformat(),
+                "last_status": row.status,
+            }
+            for row in rows
+        ]
+
+    async def mark_cancelled_if_active(self, run_id: str) -> bool:
+        """Fallback cancel for a run with no live executor task (e.g. after a
+        restart): flips an active row to cancelled/RT104 (SPEC §6.1)."""
+        async with self._sessions() as session:
+            row = await session.get(RunRow, run_id)
+            if row is None or row.status not in ("pending", "running", "input_required"):
+                return False
+            row.status = "cancelled"
+            row.error_code = "RT104"
+            row.finished_at = datetime.now(UTC)
+            await session.commit()
+            return True
 
     # ---------------------------------------------------------------- events
     async def persist_event(self, event: RunEvent) -> None:
