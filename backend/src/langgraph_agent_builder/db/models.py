@@ -202,3 +202,65 @@ class VectorStoreConnectionRow(Base):
     updated_at: Mapped[datetime] = mapped_column(
         sa.DateTime(timezone=True), default=utcnow, onupdate=utcnow
     )
+
+
+# --------------------------------------------------------------------------- resources (§Resources)
+# Long-lived, panel-managed configuration referenced by a FlowSpec *by name* via
+# {"$resource": "<name>"} — never by credentials, so flows stay portable. Each
+# ``config`` may hold ``$secret``/``$var`` refs; the fourth resource type,
+# ``mcp_server``, reuses :class:`McpServerRow` (no dedicated table here).
+
+
+class ModelProviderRow(Base):
+    """Named model provider (``model_provider`` resource).
+
+    ``config`` holds ``{provider, base_url?, api_key: {"$secret": name}, models: [...]}``
+    — centralizes what ``components/llm/_models.py`` reads inline per node.
+    """
+
+    __tablename__ = "model_providers"
+
+    id: Mapped[str] = mapped_column(sa.String(36), primary_key=True, default=new_id)
+    name: Mapped[str] = mapped_column(sa.String(120), unique=True, index=True)
+    config: Mapped[dict[str, Any]] = mapped_column(JSONVariant, default=dict)
+    created_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+
+class KnowledgeBaseRow(Base):
+    """Named knowledge base (``knowledge_base`` resource).
+
+    References a vector store connection by name; ``config`` holds
+    ``{vectorstore: "<connection>", embedding: {provider, model}, collection}``.
+    """
+
+    __tablename__ = "knowledge_bases"
+
+    id: Mapped[str] = mapped_column(sa.String(36), primary_key=True, default=new_id)
+    name: Mapped[str] = mapped_column(sa.String(120), unique=True, index=True)
+    config: Mapped[dict[str, Any]] = mapped_column(JSONVariant, default=dict)
+    created_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+
+class A2AAgentRow(Base):
+    """Named remote A2A agent (``a2a_agent`` resource).
+
+    ``config`` holds ``{url, auth: {"$secret": name}?}`` plus a cached ``card``
+    (an ``a2a.types.AgentCard`` dump) and ``fetched_at`` — the cached card feeds
+    the compile-cache version token so a re-fetch invalidates stale compiles.
+    """
+
+    __tablename__ = "a2a_agents"
+
+    id: Mapped[str] = mapped_column(sa.String(36), primary_key=True, default=new_id)
+    name: Mapped[str] = mapped_column(sa.String(120), unique=True, index=True)
+    config: Mapped[dict[str, Any]] = mapped_column(JSONVariant, default=dict)
+    created_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )

@@ -3,6 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
+  Boxes,
   Plus,
   RotateCw,
   Settings as SettingsIcon,
@@ -122,6 +123,13 @@ export function FlowsPage() {
           flows compile to LangGraph · publish = A2A agent + MCP tool
         </span>
         <div className="ml-auto flex items-center gap-2">
+          <Link
+            to="/resources"
+            className="inline-flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm text-text-2 hover:bg-surface-2 hover:text-text-1 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent"
+          >
+            <Boxes size={14} strokeWidth={1.75} aria-hidden />
+            Resources
+          </Link>
           <Link
             to="/settings"
             className="inline-flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm text-text-2 hover:bg-surface-2 hover:text-text-1 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent"

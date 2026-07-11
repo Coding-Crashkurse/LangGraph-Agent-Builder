@@ -14,6 +14,8 @@ import type {
   McpServerInfo,
   OutputDescriptor,
   PortSpec,
+  ResourceInfo,
+  ResourceTestResult,
   RunInfo,
   RunResult,
   ThreadInfo,
@@ -219,4 +221,48 @@ export const api = {
         await raw.DELETE("/api/v1/mcp-servers/{name}", { params: { path: { name } } }),
       ),
   },
+
+  // Resources layer — long-lived, flow-referenced config. Not yet in the
+  // generated OpenAPI schema, so these use plain fetch (cf. api.variables once
+  // the backend endpoints ship; regen with `pnpm gen:api` and swap to `raw`).
+  resources: {
+    list: async (type: string) =>
+      resourceFetch<ResourceInfo[]>(`/api/v1/resources/${type}`),
+    create: async (type: string, body: { name: string; config: Record<string, unknown> }) =>
+      resourceFetch<ResourceInfo>(`/api/v1/resources/${type}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      }),
+    remove: async (type: string, name: string) =>
+      resourceFetch<void>(`/api/v1/resources/${type}/${encodeURIComponent(name)}`, {
+        method: "DELETE",
+      }),
+    test: async (type: string, name: string) =>
+      resourceFetch<ResourceTestResult>(
+        `/api/v1/resources/${type}/${encodeURIComponent(name)}/test`,
+        { method: "POST" },
+      ),
+  },
 };
+
+/** Thin fetch wrapper for endpoints not yet in schema.gen.ts. Mirrors `unwrap`'s
+ * error surface (throws ApiError with the server's detail) and tolerates empty
+ * 204 bodies. */
+async function resourceFetch<T>(url: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(url, init);
+  const text = await response.text();
+  if (!response.ok) {
+    let message = response.statusText;
+    try {
+      const parsed = JSON.parse(text) as { detail?: unknown };
+      if (typeof parsed.detail === "string") message = parsed.detail;
+      else if (parsed.detail) message = JSON.stringify(parsed.detail);
+      else if (text) message = text;
+    } catch {
+      if (text) message = text;
+    }
+    throw new ApiError(response.status, message);
+  }
+  return (text ? JSON.parse(text) : undefined) as T;
+}

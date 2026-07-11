@@ -125,6 +125,23 @@ class VectorStoreHandle(BaseModel):
     collection: str | None = None
 
 
+class ResourceHandle(BaseModel):
+    """Runtime handle for a referenced Resource (the Resources layer).
+
+    Resources are long-lived, panel-managed config referenced by a FlowSpec via
+    ``{"$resource": "<name>"}`` (+ optional extra keys such as ``model`` or
+    ``collection``, carried in ``payload``). The handle stays serializable and
+    credential-free — it names the resource and its type; the concrete config is
+    resolved lazily at runtime via ``get_services().resources`` (headless
+    fallback: locator returns None). ``resource_type`` is one of
+    ``model_provider`` | ``knowledge_base`` | ``mcp_server`` | ``a2a_agent``.
+    """
+
+    name: str
+    resource_type: str
+    payload: dict[str, Any] = Field(default_factory=dict)
+
+
 class ToolDef(BaseModel):
     """Entry of a Toolset: name/description/args schema + a callable reference.
 

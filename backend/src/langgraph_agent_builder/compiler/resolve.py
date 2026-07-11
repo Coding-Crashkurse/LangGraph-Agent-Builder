@@ -13,8 +13,17 @@ from langgraph_agent_builder.compiler.ir import EdgeIR, FlowIR, NodeIR
 from langgraph_agent_builder.schema.diagnostics import Diagnostic, DiagnosticCode
 from langgraph_agent_builder.schema.flowspec import FlowSpec
 from langgraph_agent_builder.sdk.component import SecretRef
-from langgraph_agent_builder.sdk.fields import Field, SecretInput
+from langgraph_agent_builder.sdk.fields import Field, ResourceRefInput, SecretInput
 from langgraph_agent_builder.sdk.registry import ComponentRegistry
+
+# Resource lookup values are ``"<resource_type>#<version-token>"`` — the type
+# drives the E017 check, the version token (a config hash) makes the compile
+# cache invalidate when a referenced resource's config changes (snapshot_digest).
+_RESOURCE_SEP = "#"
+
+
+def _resource_type(token: str) -> str:
+    return token.split(_RESOURCE_SEP, 1)[0]
 
 
 class VariablesProvider(Protocol):
@@ -69,10 +78,12 @@ def _resolve_refs(
     node_id: str,
     field: str,
     vectorstore_names: set[str] | None = None,
+    resources: dict[str, str] | None = None,
     field_def: Field | None = None,
 ) -> Any:
     """Recursively replace {"$var": name} / {"$secret": name} /
-    {"$vectorstore": name} refs with concrete values / handles.
+    {"$vectorstore": name} / {"$resource": name} refs with concrete values /
+    handles.
 
     Credential-leak guard (E014, SPEC §5.4/§10.5): a {"$secret": name} ref —
     at ANY nesting depth — may only live in a Secret field, so a resolved
@@ -97,6 +108,43 @@ def _resolve_refs(
                 )
                 return None
             return VectorStoreHandle(connection=name, collection=value.get("collection"))
+        if "$resource" in value:
+            from langgraph_agent_builder.sdk.ports import ResourceHandle
+
+            name = str(value["$resource"])
+            stored_type: str | None = None
+            if resources is not None:
+                if name not in resources:
+                    diagnostics.append(
+                        Diagnostic.make(
+                            DiagnosticCode.E016,
+                            f"resource {name!r} does not exist",
+                            node_id=node_id,
+                            field=field,
+                            fix_hint="Create it under Settings → Resources or set "
+                            f"LAB_RESOURCE_{name.upper().replace('-', '_')}.",
+                        )
+                    )
+                    return None
+                stored_type = _resource_type(resources[name])
+            expected = field_def.resource_type if isinstance(field_def, ResourceRefInput) else None
+            if expected is not None and stored_type is not None and stored_type != expected:
+                diagnostics.append(
+                    Diagnostic.make(
+                        DiagnosticCode.E017,
+                        f"resource {name!r} is a {stored_type!r}, "
+                        f"but field {field!r} expects a {expected!r}",
+                        node_id=node_id,
+                        field=field,
+                        fix_hint=f"Reference a {expected!r} resource here, "
+                        "or change the resource's type.",
+                    )
+                )
+                return None
+            payload = {k: v for k, v in value.items() if k != "$resource"}
+            return ResourceHandle(
+                name=name, resource_type=stored_type or expected or "", payload=payload
+            )
         if set(value.keys()) == {"$var"}:
             name = str(value["$var"])
             if not variables.has_var(name):
@@ -147,13 +195,15 @@ def _resolve_refs(
             return SecretRef(secret_value)
         return {
             k: _resolve_refs(
-                v, variables, diagnostics, node_id, field, vectorstore_names, field_def
+                v, variables, diagnostics, node_id, field, vectorstore_names, resources, field_def
             )
             for k, v in value.items()
         }
     if isinstance(value, list):
         return [
-            _resolve_refs(v, variables, diagnostics, node_id, field, vectorstore_names, field_def)
+            _resolve_refs(
+                v, variables, diagnostics, node_id, field, vectorstore_names, resources, field_def
+            )
             for v in value
         ]
     return value
@@ -168,13 +218,17 @@ def snapshot_digest(
     variables: VariablesProvider,
     tweaks: dict[str, dict[str, Any]] | None = None,
     vectorstore_names: set[str] | None = None,
+    resources: dict[str, str] | None = None,
 ) -> str:
     """Digest of everything P2 injects beyond the FlowSpec bytes: resolved
-    values of referenced $var/$secret refs, $vectorstore existence, and tweaks.
+    values of referenced $var/$secret refs, $vectorstore existence, $resource
+    version tokens, and tweaks.
 
     Folded into the compile-cache key so a rotated secret, an edited global
-    variable, or per-run tweaks/header vars (§9.4) can never be served from a
-    stale cached compile."""
+    variable, an edited resource's config, or per-run tweaks/header vars (§9.4)
+    can never be served from a stale cached compile. Unlike $vectorstore (which
+    hashes bare existence), a $resource ref folds the resource's version token
+    (a config hash), so editing a referenced resource re-compiles the flow."""
     h = hashlib.sha256()
 
     def visit(value: Any) -> None:
@@ -183,6 +237,11 @@ def snapshot_digest(
                 name = str(value["$vectorstore"])
                 known = "?" if vectorstore_names is None else str(name in vectorstore_names)
                 h.update(f"vs:{name}={known};".encode())
+                return
+            if "$resource" in value:
+                name = str(value["$resource"])
+                token = "?" if resources is None else resources.get(name, "<missing>")
+                h.update(f"res:{name}={token};".encode())
                 return
             if set(value.keys()) == {"$var"}:
                 name = str(value["$var"])
@@ -220,6 +279,7 @@ def resolve(
     variables: VariablesProvider,
     tweaks: dict[str, dict[str, Any]] | None = None,
     vectorstore_names: set[str] | None = None,
+    resources: dict[str, str] | None = None,
 ) -> tuple[FlowIR, list[Diagnostic]]:
     diagnostics: list[Diagnostic] = []
     ir = FlowIR(spec=spec)
@@ -277,9 +337,10 @@ def resolve(
                 continue
             config[fname] = fvalue
 
-        # $var/$secret/$vectorstore refs → concrete values (E012/E013 when
-        # missing); _resolve_refs enforces the E014 credential-leak guard at
-        # any nesting depth, keyed off the owning field's class.
+        # $var/$secret/$vectorstore/$resource refs → concrete values
+        # (E012/E013/E016/E017 when missing/mismatched); _resolve_refs enforces
+        # the E014 credential-leak guard at any nesting depth, keyed off the
+        # owning field's class.
         field_map = cls.field_map()
         for fname in list(config.keys()):
             config[fname] = _resolve_refs(
@@ -289,6 +350,7 @@ def resolve(
                 node.id,
                 fname,
                 vectorstore_names,
+                resources,
                 field_map.get(fname),
             )
 
@@ -306,10 +368,10 @@ def resolve(
                 )
             if _is_empty(value):
                 continue  # required-ness checked in P3 (port may satisfy it)
-            from langgraph_agent_builder.sdk.ports import VectorStoreHandle
+            from langgraph_agent_builder.sdk.ports import ResourceHandle, VectorStoreHandle
 
             schema = f.json_schema()
-            if schema and not isinstance(value, (SecretRef, VectorStoreHandle)):
+            if schema and not isinstance(value, (SecretRef, VectorStoreHandle, ResourceHandle)):
                 try:
                     jsonschema.validate(value, schema)
                 except jsonschema.ValidationError as exc:

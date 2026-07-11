@@ -814,6 +814,94 @@ const McpWidget: FC<WidgetProps> = ({ field, value, onChange }) => {
   );
 };
 
+interface ResourceRow {
+  name: string;
+  config?: { models?: string[]; [key: string]: unknown };
+  [key: string]: unknown;
+}
+
+/** ResourceRefInput: binds a field to a long-lived Resource (Studio → Resources)
+ * by name. Value shape {"$resource": name}; for `model_provider` an optional
+ * `model` from the provider's config.models rides alongside → {"$resource",
+ * model}. Only the reference is written into the FlowSpec, never the config. */
+const ResourceRefWidget: FC<WidgetProps> = ({ field, value, onChange }) => {
+  const resourceType = String(field.resource_type ?? "");
+  const current =
+    typeof value === "object" && value !== null
+      ? (value as { $resource?: string; model?: string })
+      : {};
+  const resources = useQuery({
+    queryKey: ["resources", resourceType],
+    queryFn: async (): Promise<ResourceRow[]> => {
+      const response = await fetch(`/api/v1/resources/${resourceType}`);
+      return response.ok ? response.json() : [];
+    },
+    enabled: Boolean(resourceType),
+  });
+
+  if (resources.isLoading) {
+    return <div className="h-8.5 w-full animate-pulse rounded-md bg-surface-2" aria-hidden />;
+  }
+
+  const list = resources.data ?? [];
+  const selected = list.find((r) => r.name === current.$resource);
+  const models = (selected?.config?.models as string[] | undefined) ?? [];
+  const isModelProvider = resourceType === "model_provider";
+
+  return (
+    <div className="space-y-1">
+      <Select
+        aria-label={field.display_name || field.name}
+        value={current.$resource ?? ""}
+        onChange={(e) =>
+          onChange(e.target.value ? { $resource: e.target.value } : null)
+        }
+      >
+        <option value="">resource…</option>
+        {list.map((r) => (
+          <option key={r.name} value={r.name}>
+            {r.name}
+          </option>
+        ))}
+      </Select>
+
+      {isModelProvider && current.$resource && models.length > 0 && (
+        <Select
+          aria-label="Model"
+          value={current.model ?? ""}
+          onChange={(e) =>
+            onChange(
+              e.target.value
+                ? { $resource: current.$resource, model: e.target.value }
+                : { $resource: current.$resource },
+            )
+          }
+        >
+          <option value="">model…</option>
+          {models.map((m) => (
+            <option key={m} value={m}>
+              {m}
+            </option>
+          ))}
+        </Select>
+      )}
+
+      {list.length === 0 && (
+        <p className="text-[11px] text-text-3">
+          No {resourceType.replace(/_/g, " ") || "resource"}s yet —{" "}
+          <a
+            href="/resources"
+            className="rounded text-accent underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-accent"
+          >
+            Manage in Resources
+          </a>
+          .
+        </p>
+      )}
+    </div>
+  );
+};
+
 const LinkWidget: FC<WidgetProps> = ({ value }) => (
   <a
     href={String(value ?? "#")}
@@ -900,6 +988,7 @@ export const FieldWidgetRegistry: Record<string, FC<WidgetProps>> = {
   QueryInput: Str,
   LinkInput: LinkWidget,
   McpInput: McpWidget,
+  ResourceRefInput: ResourceRefWidget,
   // HandleField / ToolsInput are port-only: no widget (handled by the panel)
 };
 

@@ -299,6 +299,62 @@ export interface ThreadInfo {
   last_status: string;
 }
 
+// ------------------------------------------------------------------ resources layer
+/** Long-lived, flow-referenced configuration. Flows point at these by name via
+ * a {"$resource": name} binding (model_provider additionally carries an optional
+ * `model`). Secrets are masked inside `config` on read. */
+export type ResourceType =
+  | "model_provider"
+  | "knowledge_base"
+  | "mcp_server"
+  | "a2a_agent";
+
+export interface ResourceInfo {
+  name: string;
+  config: Record<string, unknown>;
+  updated_at: string;
+  ok?: boolean;
+  error?: string | null;
+  // per-type extras (cached card, models, …) may ride on the row
+  [key: string]: unknown;
+}
+
+/** provider ∈ openai | anthropic | ollama | custom. */
+export interface ModelProviderConfig {
+  provider?: string;
+  base_url?: string;
+  api_key?: unknown; // {"$secret": name} ref (masked on read)
+  models?: string[];
+  [key: string]: unknown;
+}
+
+export interface KnowledgeBaseConfig {
+  vectorstore?: string;
+  collection?: string;
+  embedding?: { provider?: string; model?: string };
+  [key: string]: unknown;
+}
+
+export interface A2AAgentConfig {
+  url?: string;
+  auth?: unknown; // optional {"$secret": name}
+  card?: Record<string, unknown>; // cached Agent Card
+  [key: string]: unknown;
+}
+
+/** Result of POST /resources/{type}/{name}/test (health / card-fetch / auth). */
+export interface ResourceTestResult {
+  ok: boolean;
+  error?: string;
+  detail?: unknown;
+}
+
+/** A flow field bound to a resource: {"$resource": name} (+ model for providers). */
+export interface ResourceRef {
+  $resource: string;
+  model?: string;
+}
+
 // Port family colours resolve to the Appendix C theme tokens — the token file
 // is the single source of colour (SPEC §11.1/§11.5).
 export const PORT_FAMILY_COLORS: Record<PortFamily, string> = {

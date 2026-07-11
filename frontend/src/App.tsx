@@ -14,6 +14,9 @@ const BuilderPage = lazy(() =>
 const SettingsPage = lazy(() =>
   import("./settings/SettingsPage").then((m) => ({ default: m.SettingsPage })),
 );
+const ResourcesPage = lazy(() =>
+  import("./resources/ResourcesPage").then((m) => ({ default: m.ResourcesPage })),
+);
 
 /** Skeleton shown while a lazy route chunk loads (never a bare "loading…"). */
 function RouteFallback() {
@@ -88,6 +91,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<FlowsPage />} />
           <Route path="/flows/:flowId" element={<BuilderPage />} />
+          <Route path="/resources" element={<ResourcesPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

@@ -139,6 +139,7 @@ async def provision(svc: AppServices) -> None:
     """Boot provisioning (SPEC §18.1) — runs before the protocol mounts so
     published imports are served from the first request."""
     await svc.vectorstores.provision()  # default `local` + LAB_VECTORSTORE_* (§8b.3)
+    await svc.resources.provision()  # LAB_RESOURCE_* descriptors (Resources layer)
     await seed_starter_flows(svc)
     await load_flows_from_path(svc)
     await svc.remount()

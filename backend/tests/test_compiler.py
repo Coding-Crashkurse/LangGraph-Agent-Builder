@@ -190,6 +190,76 @@ def test_e014_allows_secret_in_secret_field() -> None:
     assert DiagnosticCode.E014 not in [d.code for d in compiled.diagnostics]
 
 
+# ------------------------------------------------------------------ $resource (Resources layer)
+class _ResourceConsumer(Component):
+    component_id = "test.compiler.resource_consumer"
+    display_name = "Resource Consumer"
+    category = "testing"
+    inputs = [
+        fields.StrInput(name="input", as_port=TEXT),
+        fields.ResourceRefInput(name="provider", resource_type="model_provider"),
+    ]
+    outputs = [Output(name="message", port=TEXT)]
+
+    def build(self, ctx: BuildContext) -> NodeFn:
+        async def node(state: dict[str, Any], config: Any) -> dict[str, Any]:
+            return {"message": ""}
+
+        return node
+
+
+def _resource_spec(slug: str, value: Any) -> dict[str, Any]:
+    spec = hello_spec(slug)
+    spec["nodes"][1]["component_id"] = _ResourceConsumer.component_id
+    spec["nodes"][1]["config"] = {"provider": value}
+    return spec
+
+
+def test_e016_unknown_resource() -> None:
+    registry = _registry_with(_ResourceConsumer)
+    compiled = compile_flow(
+        _resource_spec("res-e016", {"$resource": "ghost"}),
+        registry=registry,
+        resources={},
+        use_cache=False,
+    )
+    diag = next(d for d in compiled.diagnostics if d.code == DiagnosticCode.E016)
+    assert diag.node_id == "fake"
+    assert diag.field == "provider"
+    assert "ghost" in diag.message
+
+
+def test_e017_resource_type_mismatch() -> None:
+    registry = _registry_with(_ResourceConsumer)
+    compiled = compile_flow(
+        _resource_spec("res-e017", {"$resource": "kb1"}),
+        registry=registry,
+        resources={"kb1": "knowledge_base#deadbeef"},
+        use_cache=False,
+    )
+    diag = next(d for d in compiled.diagnostics if d.code == DiagnosticCode.E017)
+    assert "knowledge_base" in diag.message
+    assert "model_provider" in diag.message
+
+
+def test_resource_ref_resolves_to_handle() -> None:
+    from langgraph_agent_builder.sdk.ports import ResourceHandle
+
+    registry = _registry_with(_ResourceConsumer)
+    compiled = compile_flow(
+        _resource_spec("res-ok", {"$resource": "gpt", "model": "gpt-4o"}),
+        registry=registry,
+        resources={"gpt": "model_provider#deadbeef"},
+        use_cache=False,
+    )
+    assert compiled.ok, codes(compiled)
+    handle = compiled.node_contexts["fake"].get_field("provider")
+    assert isinstance(handle, ResourceHandle)
+    assert handle.name == "gpt"
+    assert handle.resource_type == "model_provider"
+    assert handle.payload == {"model": "gpt-4o"}
+
+
 def test_e020_incompatible_edge_names_both_refs() -> None:
     spec = hello_spec()
     # Toolset output → Message input: cross-family, no coercion

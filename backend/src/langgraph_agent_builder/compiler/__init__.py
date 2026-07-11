@@ -151,6 +151,7 @@ def compile_flow(
     constants: dict[str, dict[str, Any]] | None = None,
     settings: Any = None,
     vectorstore_names: set[str] | None = None,
+    resources: dict[str, str] | None = None,
     use_cache: bool = True,
     stop_after: Literal["validate"] | None = None,
 ) -> CompiledFlow:
@@ -175,7 +176,7 @@ def compile_flow(
     cache_key = ""
     if cacheable:
         cache_key = fingerprint + resolve_pass.snapshot_digest(
-            spec, variables, tweaks, vectorstore_names
+            spec, variables, tweaks, vectorstore_names, resources
         )
         cached = _cache.get(cache_key)
         if cached is not None:
@@ -183,7 +184,12 @@ def compile_flow(
 
     # P2 resolve
     ir, d2 = resolve_pass.resolve(
-        spec, registry, variables, tweaks=tweaks, vectorstore_names=vectorstore_names
+        spec,
+        registry,
+        variables,
+        tweaks=tweaks,
+        vectorstore_names=vectorstore_names,
+        resources=resources,
     )
     diagnostics += d2
 

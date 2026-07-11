@@ -333,6 +333,28 @@ class McpInput(Field):
         }
 
 
+class ResourceRefInput(Field):
+    """Picker for a named Resource (the Resources layer).
+
+    Value: ``{"$resource": "<name>"}`` plus optional extra keys (e.g. ``model``
+    for a ``model_provider``, ``collection`` for a ``knowledge_base``) carried
+    through as the handle payload. ``resource_type`` pins which resource kind is
+    accepted (E017 fires on a type mismatch at compile time); ``options_source``
+    names the server callback populating the picker.
+    """
+
+    resource_type: Literal["model_provider", "knowledge_base", "mcp_server", "a2a_agent"]
+    options_source: str | None = None  # server callback populating the resource dropdown
+
+    def json_schema(self) -> dict[str, Any]:
+        # extra keys (model/collection/…) are permitted alongside $resource
+        return {
+            "type": "object",
+            "properties": {"$resource": {"type": "string"}},
+            "required": ["$resource"],
+        }
+
+
 class HandleField(Field):
     """Pure connection input: no widget, handle only."""
 
@@ -380,6 +402,7 @@ _FIELD_CLASSES: list[type[Field]] = [
     ModelInput,
     EmbeddingModelInput,
     VectorStoreInput,
+    ResourceRefInput,
     QueryInput,
     LinkInput,
     McpInput,

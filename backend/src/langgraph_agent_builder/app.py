@@ -32,6 +32,7 @@ if TYPE_CHECKING:
     from langgraph_agent_builder.services.flows import FlowService
     from langgraph_agent_builder.services.mcp_servers import McpServersService
     from langgraph_agent_builder.services.orchestrator import Orchestrator
+    from langgraph_agent_builder.services.resources import ResourcesService
     from langgraph_agent_builder.services.runs import RunService
     from langgraph_agent_builder.services.secrets import SecretsService
     from langgraph_agent_builder.services.vectorstores import VectorStoreService
@@ -55,6 +56,7 @@ class AppServices:
     files: FilesService
     mcp_servers: McpServersService
     vectorstores: VectorStoreService
+    resources: ResourcesService
     orchestrator: Orchestrator
     a2a: A2AManager | None = None
     mcp: McpManager | None = None
@@ -75,6 +77,7 @@ async def build_services(settings: Settings) -> AppServices:
     from langgraph_agent_builder.services.flows import FlowService
     from langgraph_agent_builder.services.mcp_servers import McpServersService
     from langgraph_agent_builder.services.orchestrator import Orchestrator
+    from langgraph_agent_builder.services.resources import ResourcesService
     from langgraph_agent_builder.services.runs import RunService
     from langgraph_agent_builder.services.secrets import SecretsService
     from langgraph_agent_builder.services.vectorstores import VectorStoreService
@@ -97,6 +100,8 @@ async def build_services(settings: Settings) -> AppServices:
         registry.scan_dir(directory)
     secrets = SecretsService(settings, sessions)
     vectorstores = VectorStoreService(settings, sessions, secrets)
+    mcp_servers = McpServersService(sessions)
+    resources = ResourcesService(settings, sessions, secrets, mcp_servers, vectorstores)
     orchestrator = Orchestrator(
         settings=settings,
         registry=registry,
@@ -104,6 +109,7 @@ async def build_services(settings: Settings) -> AppServices:
         runs=runs,
         executor=executor,
         vectorstores=vectorstores,
+        resources=resources,
     )
     services = AppServices(
         settings=settings,
@@ -118,8 +124,9 @@ async def build_services(settings: Settings) -> AppServices:
         secrets=secrets,
         apikeys=ApiKeyService(sessions, track_usage=settings.track_apikey_usage),
         files=FilesService(settings, sessions),
-        mcp_servers=McpServersService(sessions),
+        mcp_servers=mcp_servers,
         vectorstores=vectorstores,
+        resources=resources,
         orchestrator=orchestrator,
     )
     from langgraph_agent_builder.services.locator import set_services
@@ -229,6 +236,7 @@ def create_app(settings: Settings | None = None, *, backend_only: bool = False) 
     from langgraph_agent_builder.api import (
         components,
         flows,
+        resources,
         runs,
         settings_api,
         templates,
@@ -240,6 +248,7 @@ def create_app(settings: Settings | None = None, *, backend_only: bool = False) 
     app.include_router(components.router, prefix="/api/v1")
     app.include_router(runs.router, prefix="/api/v1")
     app.include_router(vectorstores.router, prefix="/api/v1")
+    app.include_router(resources.router, prefix="/api/v1")
     app.include_router(templates.router, prefix="/api/v1")
     app.include_router(settings_api.router, prefix="/api/v1")
     app.include_router(settings_api.misc_router, prefix="/api/v1")

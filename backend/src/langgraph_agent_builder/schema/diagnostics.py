@@ -27,6 +27,8 @@ class DiagnosticCode(StrEnum):
     E013 = "E013"  # Vector store connection referenced by node does not exist
     E014 = "E014"  # Credential ($secret) assigned to a non-credential (non-Secret) field
     E015 = "E015"  # ComponentBuildFailed — build() raised while emitting the graph
+    E016 = "E016"  # Resource referenced by node ({"$resource": name}) does not exist
+    E017 = "E017"  # Resource type mismatch (stored resource_type ≠ field's resource_type)
     # edges
     E020 = "E020"  # Edge type-incompatible
     E021 = "E021"  # Tool edge into non-Tools port / from non-Toolset output
@@ -52,6 +54,7 @@ class DiagnosticCode(StrEnum):
     E904 = "E904"  # EmbeddingDimensionMismatch (collection dim ≠ embedding dim)
     E905 = "E905"  # McpServerUnreachable
     E906 = "E906"  # ModelProviderAuthFailed
+    E907 = "E907"  # A2AAgentCardFetchFailed (resource card re-fetch/validation failed)
     # warnings
     W201 = "W201"  # ANY-typed edge
     W202 = "W202"  # Auto list-wrap coercion inserted

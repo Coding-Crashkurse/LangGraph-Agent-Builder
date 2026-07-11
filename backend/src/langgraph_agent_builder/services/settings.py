@@ -186,6 +186,30 @@ class Settings(BaseSettings):
                 continue
         return out
 
+    def resource_env_definitions(self) -> dict[str, dict[str, Any]]:
+        """Parse ``LAB_RESOURCE_<NAME>`` JSON descriptors (Resources layer).
+
+        Each value is ``{"type": "<resource_type>", "config": {...}}`` (``type``
+        aliases ``resource_type``); the name is the env suffix lower-cased with
+        underscores → hyphens. Malformed JSON is skipped, mirroring
+        :meth:`vectorstore_env_connections`."""
+        import json
+        import os
+
+        prefix = "LAB_RESOURCE_"
+        out: dict[str, dict[str, Any]] = {}
+        for key, value in os.environ.items():
+            if not key.startswith(prefix):
+                continue
+            name = key.removeprefix(prefix).lower().replace("_", "-")
+            try:
+                parsed = json.loads(value)
+            except (ValueError, TypeError):
+                continue
+            if isinstance(parsed, dict):
+                out[name] = parsed
+        return out
+
     def ensure_dirs(self) -> None:
         self.home.mkdir(parents=True, exist_ok=True)
         assert self.files_dir is not None

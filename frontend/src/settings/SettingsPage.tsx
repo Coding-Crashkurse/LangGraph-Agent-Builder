@@ -4,6 +4,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
+  Boxes,
   Database,
   KeyRound,
   Plug,
@@ -62,6 +63,13 @@ export function SettingsPage() {
           Flows
         </Link>
         <h1 className="text-lg font-bold">Settings</h1>
+        <Link
+          to="/resources"
+          className="ml-auto inline-flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm text-text-2 hover:bg-surface-2 hover:text-text-1 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent"
+        >
+          <Boxes size={14} strokeWidth={1.75} aria-hidden />
+          Resources
+        </Link>
       </header>
 
       <div className="flex max-w-5xl gap-8">
@@ -386,7 +394,9 @@ function ApiKeysSection() {
 }
 
 // ------------------------------------------------------------------ MCP Servers (§8.3)
-function McpServersSection() {
+// Exported so the Resources page can reuse the exact same CRUD (shared
+// api.mcpServers storage) instead of duplicating it.
+export function McpServersSection() {
   const queryClient = useQueryClient();
   const servers = useQuery({ queryKey: ["mcp-servers"], queryFn: api.mcpServers.list });
   const [name, setName] = useState("");

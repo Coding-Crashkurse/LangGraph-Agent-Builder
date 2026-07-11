@@ -42,6 +42,7 @@ class Orchestrator:
         runs: RunService,
         executor: Executor,
         vectorstores: Any = None,
+        resources: Any = None,
     ) -> None:
         self.settings = settings
         self.registry = registry
@@ -49,12 +50,19 @@ class Orchestrator:
         self.runs = runs
         self.executor = executor
         self.vectorstores = vectorstores
+        self.resources = resources
 
     # ---------------------------------------------------------------- compile
     async def _vectorstore_names(self) -> set[str] | None:
         if self.vectorstores is None:
             return None
         return {c["name"] for c in await self.vectorstores.list()}
+
+    async def _resources(self) -> dict[str, str] | None:
+        if self.resources is None:
+            return None
+        names: dict[str, str] = await self.resources.names_with_types()
+        return names
 
     async def compiled(
         self,
@@ -85,6 +93,7 @@ class Orchestrator:
             tweaks=tweaks,
             settings=self.settings,
             vectorstore_names=await self._vectorstore_names(),
+            resources=await self._resources(),
             use_cache=not tweaks,
         )
 
