@@ -107,11 +107,13 @@ describe("ConfigPanel", () => {
     expect(def().config.structured_output).toBeNull();
   });
 
-  it("shows flow settings incl. MCP tool fields when nothing is selected", async () => {
+  it("shows flow identity when nothing is selected; the door lives in Publish", () => {
     renderPanel(null);
     expect(screen.getByText("Flow settings")).toBeInTheDocument();
-    await userEvent.click(screen.getByText("MCP tool"));
-    expect(screen.getByText("Tool name")).toBeInTheDocument();
-    expect(useBuilder.getState().meta.expose.kind).toBe("mcp");
+    expect(screen.getByText("Display name")).toBeInTheDocument();
+    expect(screen.getByText("Tags")).toBeInTheDocument();
+    // expose is chosen in the publish dialog, not duplicated here
+    expect(screen.queryByText("Expose as")).not.toBeInTheDocument();
+    expect(screen.getByText(/chosen in the Publish dialog/)).toBeInTheDocument();
   });
 });

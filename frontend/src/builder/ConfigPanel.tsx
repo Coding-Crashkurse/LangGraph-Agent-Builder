@@ -401,51 +401,13 @@ function FlowSettingsForm() {
           }
         />
       </div>
-      <div>
-        <Label hint="How the runtime serves this flow after publish.">Expose as</Label>
-        <div className="flex gap-1.5">
-          {(["a2a", "mcp"] as const).map((kind) => (
-            <button
-              key={kind}
-              type="button"
-              onClick={() => updateMeta({ expose: { ...expose, kind } })}
-              className={cn(
-                "flex-1 rounded-lg border px-2 py-1.5 text-xs font-medium transition-colors",
-                expose.kind === kind
-                  ? "border-accent bg-accent/10 text-accent"
-                  : "border-border bg-surface-2 text-text-2 hover:border-border-strong",
-              )}
-            >
-              {kind === "a2a" ? "A2A agent" : "MCP tool"}
-            </button>
-          ))}
-        </div>
-      </div>
-      {expose.kind === "mcp" && (
-        <>
-          <div>
-            <Label hint="^[a-z][a-z0-9_]*$">Tool name</Label>
-            <Input
-              className="font-mono"
-              value={expose.tool_name ?? ""}
-              placeholder="search_support_kb"
-              onChange={(e) =>
-                updateMeta({ expose: { ...expose, tool_name: e.target.value || null } })
-              }
-            />
-          </div>
-          <div>
-            <Label>Tool description</Label>
-            <Textarea
-              rows={2}
-              value={expose.tool_description ?? ""}
-              onChange={(e) =>
-                updateMeta({ expose: { ...expose, tool_description: e.target.value } })
-              }
-            />
-          </div>
-        </>
-      )}
+      <p className="text-[11px] text-text-3">
+        Currently exposed as{" "}
+        <span className="font-medium text-text-2">
+          {expose.kind === "mcp" ? "MCP tool" : "A2A agent"}
+        </span>{" "}
+        — the door (and its fields) is chosen in the Publish dialog.
+      </p>
     </div>
   );
 }

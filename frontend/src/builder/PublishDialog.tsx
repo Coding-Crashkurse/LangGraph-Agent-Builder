@@ -221,6 +221,23 @@ export function PublishDialog({
               </p>
             )}
           </div>
+          <div>
+            <Label hint={isMcp ? "comma separated" : "comma separated — become the card's skill tags"}>
+              Tags
+            </Label>
+            <Input
+              value={meta.tags.join(", ")}
+              placeholder="support, rag"
+              onChange={(e) =>
+                updateMeta({
+                  tags: e.target.value
+                    .split(",")
+                    .map((t) => t.trim())
+                    .filter(Boolean),
+                })
+              }
+            />
+          </div>
           {isMcp && (
             <>
               <div>
