@@ -33,7 +33,8 @@
           "help": "JSON Schema of the flow input. String properties become text ports; required for flows published as MCP tools.",
           "placeholder": "",
           "resource_kind": null,
-          "advanced": false
+          "advanced": false,
+          "toggleable": false
         }
       }
     },
@@ -73,10 +74,11 @@
         "output_from": {
           "widget": "text",
           "label": "Output From",
-          "help": "node_id.port reference the flow output is read from",
+          "help": "node_id.port the flow output is read from — set automatically when you wire into Input",
           "placeholder": "call_1.text",
           "resource_kind": null,
-          "advanced": false
+          "advanced": false,
+          "toggleable": false
         }
       }
     },
@@ -152,7 +154,8 @@
           "help": "",
           "placeholder": "",
           "resource_kind": "model_provider",
-          "advanced": false
+          "advanced": false,
+          "toggleable": false
         },
         "model": {
           "widget": "text",
@@ -160,7 +163,8 @@
           "help": "",
           "placeholder": "provider default",
           "resource_kind": null,
-          "advanced": false
+          "advanced": false,
+          "toggleable": false
         },
         "prompt": {
           "widget": "prompt",
@@ -168,23 +172,26 @@
           "help": "",
           "placeholder": "",
           "resource_kind": null,
-          "advanced": false
+          "advanced": false,
+          "toggleable": false
         },
         "system_prompt": {
-          "widget": "textarea",
+          "widget": "prompt",
           "label": "System Prompt",
-          "help": "",
+          "help": "Same template rules as the prompt — {vars} become input ports.",
           "placeholder": "",
           "resource_kind": null,
-          "advanced": false
+          "advanced": false,
+          "toggleable": false
         },
         "structured_output": {
           "widget": "schema",
           "label": "Output Schema",
-          "help": "Optional JSON Schema; forces JSON mode and adds a json port.",
+          "help": "JSON Schema; forces JSON mode and adds a json port.",
           "placeholder": "",
           "resource_kind": null,
-          "advanced": true
+          "advanced": false,
+          "toggleable": true
         },
         "stream": {
           "widget": "switch",
@@ -192,7 +199,8 @@
           "help": "",
           "placeholder": "",
           "resource_kind": null,
-          "advanced": false
+          "advanced": false,
+          "toggleable": false
         }
       }
     },
@@ -267,7 +275,8 @@
           "help": "Platform MCP server resource; alternatively set a URL below.",
           "placeholder": "",
           "resource_kind": "mcp_server",
-          "advanced": false
+          "advanced": false,
+          "toggleable": false
         },
         "url": {
           "widget": "text",
@@ -275,7 +284,8 @@
           "help": "Used when no resource is set.",
           "placeholder": "",
           "resource_kind": null,
-          "advanced": true
+          "advanced": true,
+          "toggleable": false
         },
         "tool": {
           "widget": "text",
@@ -283,7 +293,8 @@
           "help": "",
           "placeholder": "",
           "resource_kind": null,
-          "advanced": false
+          "advanced": false,
+          "toggleable": false
         },
         "args": {
           "widget": "dict",
@@ -291,7 +302,8 @@
           "help": "input port name → tool argument name",
           "placeholder": "",
           "resource_kind": null,
-          "advanced": false
+          "advanced": false,
+          "toggleable": false
         }
       }
     },
@@ -370,7 +382,8 @@
           "help": "",
           "placeholder": "",
           "resource_kind": "vector_db",
-          "advanced": false
+          "advanced": false,
+          "toggleable": false
         },
         "collection": {
           "widget": "text",
@@ -378,7 +391,8 @@
           "help": "",
           "placeholder": "",
           "resource_kind": null,
-          "advanced": false
+          "advanced": false,
+          "toggleable": false
         },
         "top_k": {
           "widget": "number",
@@ -386,7 +400,8 @@
           "help": "",
           "placeholder": "",
           "resource_kind": null,
-          "advanced": false
+          "advanced": false,
+          "toggleable": false
         },
         "filter": {
           "widget": "json",
@@ -394,7 +409,8 @@
           "help": "",
           "placeholder": "",
           "resource_kind": null,
-          "advanced": true
+          "advanced": true,
+          "toggleable": false
         }
       }
     }

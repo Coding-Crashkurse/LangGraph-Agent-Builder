@@ -58,6 +58,9 @@ class FieldUI(BaseModel):
     placeholder: str = ""
     resource_kind: ResourceKindFilter | None = None
     advanced: bool = False
+    # Optional object fields rendered behind an on/off switch: off = null,
+    # on = show the editor with a starter value.
+    toggleable: bool = False
 
 
 class NodeTypeInfo(BaseModel):
@@ -119,7 +122,10 @@ NODE_TYPES: list[NodeTypeInfo] = [
             "output_from": FieldUI(
                 widget="text",
                 label="Output From",
-                help="node_id.port reference the flow output is read from",
+                help=(
+                    "node_id.port the flow output is read from — set automatically "
+                    "when you wire into Input"
+                ),
                 placeholder="call_1.text",
             ),
         },
@@ -143,12 +149,16 @@ NODE_TYPES: list[NodeTypeInfo] = [
             ),
             "model": FieldUI(widget="text", label="Model", placeholder="provider default"),
             "prompt": FieldUI(widget="prompt", label="Prompt"),
-            "system_prompt": FieldUI(widget="textarea", label="System Prompt"),
+            "system_prompt": FieldUI(
+                widget="prompt",
+                label="System Prompt",
+                help="Same template rules as the prompt — {vars} become input ports.",
+            ),
             "structured_output": FieldUI(
                 widget="schema",
                 label="Output Schema",
-                help="Optional JSON Schema; forces JSON mode and adds a json port.",
-                advanced=True,
+                help="JSON Schema; forces JSON mode and adds a json port.",
+                toggleable=True,
             ),
             "stream": FieldUI(widget="switch", label="Stream Tokens"),
         },

@@ -80,6 +80,20 @@ describe("ConfigPanel", () => {
     expect(screen.getByText(/Manage in Resources/)).toBeInTheDocument();
   });
 
+  it("structured output is a toggle: on shows the schema editor, off stores null", async () => {
+    renderPanel("call_1");
+    const toggle = screen.getByRole("switch", { name: "Output Schema" });
+    expect(toggle).toHaveAttribute("aria-checked", "false");
+    await userEvent.click(toggle);
+    const def = () => useBuilder.getState().nodes.find((n) => n.id === "call_1")!.data.def;
+    expect(def().config.structured_output).toEqual({ type: "object", properties: {} });
+    await waitFor(() =>
+      expect(screen.getAllByRole("textbox").length).toBeGreaterThan(2),
+    );
+    await userEvent.click(screen.getByRole("switch", { name: "Output Schema" }));
+    expect(def().config.structured_output).toBeNull();
+  });
+
   it("shows flow settings incl. MCP tool fields when nothing is selected", async () => {
     renderPanel(null);
     expect(screen.getByText("Flow settings")).toBeInTheDocument();

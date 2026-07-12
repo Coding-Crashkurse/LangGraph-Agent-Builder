@@ -117,7 +117,8 @@ export const useBuilder = create<BuilderState>((set, get) => ({
 
   onEdgesChange: (changes) => {
     set((state) => {
-      let edges = applyEdgeChanges(changes, state.edges);
+      const prevEdges = state.edges;
+      let edges = applyEdgeChanges(changes, prevEdges);
       const catalog = state.catalog;
       if (catalog) {
         const defs = state.nodes.map((n) => n.data.def);
@@ -128,10 +129,40 @@ export const useBuilder = create<BuilderState>((set, get) => ({
         const gone = danglingEdgeIds(defs, refs, get().infoByType(), catalog);
         edges = edges.filter((e) => !gone.has(e.id));
       }
+      // Keep end.output_from in sync with the wire feeding Input: when the
+      // edge that fed it disappears, fall back to another inbound wire or
+      // clear it. Hand-typed refs that never had a wire are left alone.
+      const feeds = (list: CanvasEdge[], endId: string, ref: string) =>
+        list.some(
+          (e) =>
+            e.target === endId &&
+            (e.targetHandle ?? "") === "input" &&
+            `${e.source}.${e.sourceHandle ?? ""}` === ref,
+        );
+      let nodes = state.nodes;
+      for (const node of state.nodes) {
+        const def = node.data.def;
+        if (def.type !== "end") continue;
+        const ref = typeof def.config.output_from === "string" ? def.config.output_from : "";
+        if (!ref || !feeds(prevEdges, node.id, ref) || feeds(edges, node.id, ref)) continue;
+        const fallback = edges.find(
+          (e) => e.target === node.id && (e.targetHandle ?? "") === "input",
+        );
+        const replacement = fallback
+          ? `${fallback.source}.${fallback.sourceHandle ?? ""}`
+          : "";
+        nodes = nodes.map((n) =>
+          n.id === node.id
+            ? { ...n, data: { def: { ...def, config: { ...def.config, output_from: replacement } } } }
+            : n,
+        );
+      }
+      const synced = nodes !== state.nodes;
       return {
         edges,
-        dirty: state.dirty || changes.length > 0,
-        validated: state.validated && changes.length === 0,
+        nodes,
+        dirty: state.dirty || changes.length > 0 || synced,
+        validated: state.validated && changes.length === 0 && !synced,
       };
     });
   },
@@ -158,6 +189,12 @@ export const useBuilder = create<BuilderState>((set, get) => ({
         validated: false,
       };
     });
+    // Wiring into End IS the declaration of the flow output — reflect the
+    // gesture into config so nobody has to type "node.port" by hand.
+    const target = get().nodes.find((n) => n.id === connection.target);
+    if (target?.data.def.type === "end" && (connection.targetHandle ?? "") === "input") {
+      get().updateNodeConfig(target.id, { output_from: from });
+    }
   },
 
   isValidConnection: (connection) => {

@@ -76,6 +76,8 @@ export interface FieldUI {
   placeholder: string;
   resource_kind: ResourceGroup | null;
   advanced: boolean;
+  /** Optional object field behind an on/off switch (off = null). */
+  toggleable: boolean;
 }
 
 export interface NodeTypeInfo {

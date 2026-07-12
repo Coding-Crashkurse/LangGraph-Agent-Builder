@@ -62,6 +62,35 @@ describe("builder store", () => {
     );
   });
 
+  it("wiring into End sets output_from; removing the wire falls back", () => {
+    useBuilder.getState().onConnect({
+      source: "start_1",
+      sourceHandle: "message",
+      target: "end_1",
+      targetHandle: "input",
+    });
+    let def = useBuilder.getState().nodes.find((n) => n.id === "end_1")!.data.def;
+    expect(def.config.output_from).toBe("start_1.message");
+    // removing that wire falls back to the remaining inbound edge (call_1.text)
+    useBuilder
+      .getState()
+      .onEdgesChange([{ type: "remove", id: "start_1.message->end_1.input" }]);
+    def = useBuilder.getState().nodes.find((n) => n.id === "end_1")!.data.def;
+    expect(def.config.output_from).toBe("call_1.text");
+  });
+
+  it("keeps a hand-typed output_from that never had a wire", () => {
+    useBuilder.getState().onEdgesChange([{ type: "remove", id: "call_1.text->end_1.input" }]);
+    expect(
+      useBuilder.getState().nodes.find((n) => n.id === "end_1")!.data.def.config.output_from,
+    ).toBe(""); // was edge-fed, edge gone, no fallback left
+    useBuilder.getState().updateNodeConfig("end_1", { output_from: "call_1.text" });
+    useBuilder.getState().onEdgesChange([]);
+    expect(
+      useBuilder.getState().nodes.find((n) => n.id === "end_1")!.data.def.config.output_from,
+    ).toBe("call_1.text");
+  });
+
   it("validation state resets on semantic change", () => {
     useBuilder.getState().setValidation({ valid: true, runtime_checked: false, issues: [] });
     expect(useBuilder.getState().validated).toBe(true);

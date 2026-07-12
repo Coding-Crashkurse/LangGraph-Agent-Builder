@@ -262,9 +262,21 @@ function FieldRow({
             onChange={(e) => onChange(e.target.value)}
           />
         ))}
-      {(widget === "schema" || widget === "json") && (
-        <JsonEditor value={value} onCommit={onChange} />
-      )}
+      {(widget === "schema" || widget === "json") &&
+        (ui?.toggleable ? (
+          <div className="flex flex-col gap-1.5">
+            <Switch
+              checked={value != null}
+              onCheckedChange={(on) =>
+                onChange(on ? { type: "object", properties: {} } : null)
+              }
+              label={label}
+            />
+            {value != null && <JsonEditor value={value} onCommit={onChange} />}
+          </div>
+        ) : (
+          <JsonEditor value={value} onCommit={onChange} />
+        ))}
       {widget === "dict" && (
         <DictEditor value={value} onCommit={(next) => onChange(next)} />
       )}
