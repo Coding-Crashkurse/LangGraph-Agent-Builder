@@ -26,6 +26,7 @@ import { Dialog } from "@/components/ui/dialog";
 import { Input, Label, Textarea } from "@/components/ui/input";
 import { cn, copyToClipboard } from "@/lib/utils";
 
+import { TagsInput } from "./TagsInput";
 import { useBuilder } from "./store";
 
 const TOOL_NAME_RE = /^[a-z][a-z0-9_]*$/;
@@ -225,17 +226,10 @@ export function PublishDialog({
             <Label hint={isMcp ? "comma separated" : "comma separated — become the card's skill tags"}>
               Tags
             </Label>
-            <Input
-              value={meta.tags.join(", ")}
+            <TagsInput
+              value={meta.tags}
               placeholder="support, rag"
-              onChange={(e) =>
-                updateMeta({
-                  tags: e.target.value
-                    .split(",")
-                    .map((t) => t.trim())
-                    .filter(Boolean),
-                })
-              }
+              onChange={(tags) => updateMeta({ tags })}
             />
           </div>
           {isMcp && (

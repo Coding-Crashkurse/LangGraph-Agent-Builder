@@ -86,6 +86,15 @@ describe("PublishDialog", () => {
     );
   });
 
+  it("tags input accepts commas while typing", async () => {
+    renderDialog();
+    const tags = screen.getByPlaceholderText("support, rag");
+    await userEvent.clear(tags);
+    await userEvent.type(tags, "demo, rag,");
+    expect(tags).toHaveValue("demo, rag,"); // raw text survives the round-trip
+    expect(useBuilder.getState().meta.tags).toEqual(["demo", "rag"]);
+  });
+
   it("nudges toward a description for the agent card", () => {
     useBuilder.getState().load(definitionFixture(), catalogFixture);
     useBuilder.getState().updateMeta({ description: "", display_name: "" });

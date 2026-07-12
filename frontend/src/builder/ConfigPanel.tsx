@@ -22,6 +22,7 @@ import { Select, Switch } from "@/components/ui/controls";
 import { Input, Label, Textarea } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 
+import { TagsInput } from "./TagsInput";
 import type { FlowMeta } from "./convert";
 import { issueNodeId, useBuilder } from "./store";
 
@@ -389,17 +390,7 @@ function FlowSettingsForm() {
       </div>
       <div>
         <Label hint="comma separated">Tags</Label>
-        <Input
-          value={meta.tags.join(", ")}
-          onChange={(e) =>
-            updateMeta({
-              tags: e.target.value
-                .split(",")
-                .map((t) => t.trim())
-                .filter(Boolean),
-            })
-          }
-        />
+        <TagsInput value={meta.tags} onChange={(tags) => updateMeta({ tags })} />
       </div>
       <p className="text-[11px] text-text-3">
         Currently exposed as{" "}
