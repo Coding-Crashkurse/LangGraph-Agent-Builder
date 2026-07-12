@@ -1,0 +1,54 @@
+# mcp_tool node: call one tool on an MCP server resource, summarize the result.
+schema_version: 1
+name: tool-caller
+display_name: "Tool Caller"
+description: "Calls a weather tool and phrases the answer"
+tags: [demo, tools]
+expose:
+  kind: a2a
+nodes:
+  - id: start_1
+    type: start
+    version: 1
+    config:
+      input_schema:
+        type: object
+        properties:
+          city:
+            type: string
+        required: [city]
+  - id: weather_1
+    type: mcp_tool
+    version: 1
+    config:
+      resource: weather-tools
+      url: null
+      tool: get_weather
+      args:
+        city: city
+  - id: phrase_1
+    type: llm_call
+    version: 1
+    config:
+      resource: default-llm
+      model: ""
+      prompt: "Weather data: {weather}\n\nWrite one friendly sentence about the weather in {city}."
+      system_prompt: ""
+      structured_output: null
+      stream: true
+  - id: end_1
+    type: end
+    version: 1
+    config:
+      output_from: phrase_1.text
+edges:
+  - { from: start_1.city, to: weather_1.city }
+  - { from: start_1.city, to: phrase_1.city }
+  - { from: weather_1.result, to: phrase_1.weather }
+  - { from: phrase_1.text, to: end_1.input }
+layout:
+  nodes:
+    start_1: { x: 80, y: 300 }
+    weather_1: { x: 340, y: 180 }
+    phrase_1: { x: 600, y: 300 }
+    end_1: { x: 860, y: 300 }

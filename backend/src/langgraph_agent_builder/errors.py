@@ -1,34 +1,33 @@
-"""Domain error hierarchy (REFACTOR.md §5).
-
-Every error the ``lab`` domain raises *on purpose* derives from `LabError`, so a
-caller can ``except LabError`` to catch any expected domain failure while a
-genuine programming bug (an ``AttributeError``, ``KeyError``, …) still
-propagates untouched.
-
-Re-rooting is deliberately *additive*: the category bases mix `LabError` with
-the builtin the call sites and tests already rely on (`ValueError` for invalid
-input, `RuntimeError` for an illegal operation/state), so existing
-``except ValueError`` / ``except RuntimeError`` handlers and ``isinstance``
-checks keep working unchanged — the exceptions simply also become `LabError`.
-
-Adapters (LLM providers, vector backends, A2A/MCP transports) translate vendor
-exceptions into these domain errors at the boundary so the core never has to
-know a vendor SDK's exception types (REFACTOR.md §3, §5).
-"""
+"""Domain errors translated to HTTP responses by the app-level handlers."""
 
 from __future__ import annotations
 
-
-class LabError(Exception):
-    """Root of every error the lab domain raises deliberately."""
+from agentplane_core import ValidationIssue
 
 
-class LabValueError(LabError, ValueError):
-    """Invalid input/value at a domain boundary — also a builtin ``ValueError``."""
+class NotFoundError(Exception):
+    """Requested entity does not exist."""
 
 
-class LabRuntimeError(LabError, RuntimeError):
-    """Illegal operation or state at runtime — also a builtin ``RuntimeError``."""
+class ConflictError(Exception):
+    """Write conflicts with existing state (e.g. duplicate flow name)."""
 
 
-__all__ = ["LabError", "LabRuntimeError", "LabValueError"]
+class InvalidDefinitionError(Exception):
+    """A definition failed to parse; carries structured issues when available."""
+
+    def __init__(self, message: str, issues: list[ValidationIssue] | None = None) -> None:
+        super().__init__(message)
+        self.issues = issues or []
+
+
+class RuntimeUnavailableError(Exception):
+    """The agentplane runtime is not configured or not reachable."""
+
+
+class RuntimeRejectedError(Exception):
+    """The runtime rejected an operation with validation issues (authoritative)."""
+
+    def __init__(self, message: str, issues: list[ValidationIssue]) -> None:
+        super().__init__(message)
+        self.issues = issues

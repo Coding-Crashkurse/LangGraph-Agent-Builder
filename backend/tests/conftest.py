@@ -1,319 +1,139 @@
-"""Shared fixtures: tiered settings (SQLite always, Postgres when reachable),
-in-process app with lifespan, ASGI http client, canonical flow specs."""
+"""Test fixtures: in-memory app with ASGI client; runtime API always mocked.
+
+Backend unit tests never touch the network — the agentplane runtime API is
+mocked via respx (CLAUDE.md testing rules).
+"""
 
 from __future__ import annotations
 
-import asyncio
-import socket
-import sys
-import uuid
-from typing import TYPE_CHECKING, Any, cast
+from collections.abc import AsyncIterator, Callable
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
+from pathlib import Path
+from typing import Any
 
-import httpx
 import pytest
+from asgi_lifespan import LifespanManager
+from httpx import ASGITransport, AsyncClient
 
-if TYPE_CHECKING:
-    from collections.abc import AsyncIterator
-    from pathlib import Path
+from langgraph_agent_builder.app import create_app
+from langgraph_agent_builder.services.settings import Settings
 
-    from fastapi import FastAPI
+RUNTIME_URL = "http://runtime.test"
 
-    from langgraph_agent_builder.app import AppServices
-    from langgraph_agent_builder.services.settings import Settings
-
-if sys.platform == "win32":
-    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-
-POSTGRES_HOST, POSTGRES_PORT = "localhost", 55432
-POSTGRES_ADMIN_URL = "postgresql+asyncpg://lab:lab@localhost:55432/lab"
+REPO_ROOT = Path(__file__).resolve().parents[2]
+EXAMPLES_DIR = REPO_ROOT / "examples"
+SCHEMA_PATH = REPO_ROOT / "schemas" / "flow-definition.schema.json"
 
 
-def _postgres_available() -> bool:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        sock.settimeout(0.3)
-        return sock.connect_ex((POSTGRES_HOST, POSTGRES_PORT)) == 0
-
-
-PG_AVAILABLE = _postgres_available()
-TIERS = ["sqlite", "postgres"] if PG_AVAILABLE else ["sqlite"]
-
-
-async def _ensure_pg_database(name: str) -> str:
-    from sqlalchemy import text
-    from sqlalchemy.ext.asyncio import create_async_engine
-
-    engine = create_async_engine(POSTGRES_ADMIN_URL, isolation_level="AUTOCOMMIT")
-    async with engine.connect() as conn:
-        exists = await conn.execute(
-            text("SELECT 1 FROM pg_database WHERE datname = :n"), {"n": name}
-        )
-        if exists.scalar() is None:
-            await conn.execute(text(f'CREATE DATABASE "{name}"'))
-    await engine.dispose()
-    return f"postgresql+asyncpg://lab:lab@localhost:55432/{name}"
-
-
-@pytest.fixture(params=TIERS)
-async def settings(request: pytest.FixtureRequest, tmp_path: Path) -> Settings:
-    """Fresh Settings per test; postgres tier gets its own throwaway database."""
-    from langgraph_agent_builder.services.settings import Settings
-
-    kwargs: dict[str, Any] = {
-        "home": tmp_path / "lab-home",
+def make_settings(tmp_path: Path, **overrides: Any) -> Settings:
+    values: dict[str, Any] = {
         "env": "test",
-        "create_starter_flows": False,  # keep test DBs empty (see test_langflow_parity)
+        "home": tmp_path,
+        "database_url": f"sqlite+aiosqlite:///{(tmp_path / 'test.db').as_posix()}",
+        **overrides,
     }
-    if request.param == "postgres":
-        db = f"lga_test_{uuid.uuid4().hex[:10]}"
-        kwargs["database_url"] = await _ensure_pg_database(db)
-    settings = Settings(**kwargs)
-    settings.ensure_dirs()
-    return settings
+    return Settings(**values)
+
+
+ClientFactory = Callable[..., AbstractAsyncContextManager[AsyncClient]]
 
 
 @pytest.fixture
-async def sqlite_settings(tmp_path: Path) -> Settings:
-    from langgraph_agent_builder.services.settings import Settings
+def make_client(tmp_path: Path) -> ClientFactory:
+    """Factory: spin up the app (with lifespan) and yield an ASGI client."""
 
-    settings = Settings(home=tmp_path / "lab-home", env="test", create_starter_flows=False)
-    settings.ensure_dirs()
-    return settings
+    @asynccontextmanager
+    async def factory(**settings_overrides: Any) -> AsyncIterator[AsyncClient]:
+        settings = make_settings(tmp_path, **settings_overrides)
+        app = create_app(settings, backend_only=True)
+        async with (
+            LifespanManager(app),
+            AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client,
+        ):
+            yield client
 
-
-@pytest.fixture
-async def app(settings: Settings) -> AsyncIterator[FastAPI]:
-    """Full FastAPI app with lifespan running (backend-only).
-
-    The lifespan is driven by ONE dedicated task: pytest-asyncio tears fixtures
-    down in a different task, which anyio cancel scopes (MCP session manager)
-    reject.
-    """
-    from langgraph_agent_builder.app import create_app
-    from langgraph_agent_builder.db.migrate import upgrade_async
-
-    await upgrade_async(settings)
-    application = create_app(settings, backend_only=True)
-    application.state.auto_migrate = False
-
-    started: asyncio.Event = asyncio.Event()
-    stop: asyncio.Event = asyncio.Event()
-    failure: list[BaseException] = []
-
-    async def runner() -> None:
-        try:
-            async with application.router.lifespan_context(application):
-                started.set()
-                await stop.wait()
-        except BaseException as exc:  # surface startup errors to the test
-            failure.append(exc)
-            started.set()
-            raise
-
-    task = asyncio.get_running_loop().create_task(runner())
-    await started.wait()
-    if failure:
-        raise failure[0]
-    try:
-        yield application
-    finally:
-        stop.set()
-        try:
-            await asyncio.wait_for(task, timeout=15)
-        except (TimeoutError, asyncio.CancelledError):
-            task.cancel()
+    return factory
 
 
 @pytest.fixture
-async def client(app: FastAPI) -> AsyncIterator[httpx.AsyncClient]:
-    transport = httpx.ASGITransport(app=app)
-    async with httpx.AsyncClient(
-        transport=transport, base_url="http://test", timeout=60.0
-    ) as http_client:
-        yield http_client
+async def client(make_client: ClientFactory) -> AsyncIterator[AsyncClient]:
+    """Default client: no runtime configured, auth_mode=none."""
+    async with make_client() as c:
+        yield c
 
 
 @pytest.fixture
-def svc(app: FastAPI) -> AppServices:
-    return cast("AppServices", app.state.svc)
+async def runtime_client(make_client: ClientFactory) -> AsyncIterator[AsyncClient]:
+    """Client with a (mocked) runtime configured and a static forwarded token."""
+    async with make_client(runtime_url=RUNTIME_URL, runtime_token="dev-token") as c:
+        yield c
 
 
-# --------------------------------------------------------------------- specs
-def hello_spec(slug: str = "hello", **flow_extra: Any) -> dict[str, Any]:
-    return {
-        "schema_version": "1",
-        "flow": {
-            "name": slug,
-            "slug": slug,
-            "description": "test flow",
-            "a2a": {"enabled": True, "description": "Scripted greeting.", "examples": ["hi"]},
-            **flow_extra,
-        },
+def definition(**overrides: Any) -> dict[str, Any]:
+    """A small valid FlowDefinition (start → llm_call → end)."""
+    base: dict[str, Any] = {
+        "schema_version": 1,
+        "name": "hello-agent",
+        "display_name": "Hello Agent",
+        "description": "test flow",
+        "tags": ["demo"],
+        "expose": {"kind": "a2a"},
         "nodes": [
             {
-                "id": "start",
-                "component_id": "lab.io.start",
-                "component_version": "1.0.0",
-                "config": {},
-                "position": {"x": 0, "y": 0},
+                "id": "start_1",
+                "type": "start",
+                "version": 1,
+                "config": {
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {"message": {"type": "string"}},
+                        "required": ["message"],
+                    }
+                },
             },
             {
-                "id": "fake",
-                "component_id": "lab.testing.fake_llm",
-                "component_version": "1.0.0",
-                "config": {"replies": ["Hello from LAB!"]},
-                "position": {"x": 300, "y": 0},
+                "id": "call_1",
+                "type": "llm_call",
+                "version": 1,
+                "config": {"resource": "default-llm", "prompt": "{message}"},
             },
             {
-                "id": "end",
-                "component_id": "lab.io.end",
-                "component_version": "1.0.0",
-                "config": {},
-                "position": {"x": 600, "y": 0},
+                "id": "end_1",
+                "type": "end",
+                "version": 1,
+                "config": {"output_from": "call_1.text"},
             },
         ],
         "edges": [
-            {
-                "id": "e1",
-                "kind": "data",
-                "source": {"node": "start", "output": "message"},
-                "target": {"node": "fake", "input": "input"},
-            },
-            {
-                "id": "e2",
-                "kind": "data",
-                "source": {"node": "fake", "output": "message"},
-                "target": {"node": "end", "input": "result"},
-            },
+            {"from": "start_1.message", "to": "call_1.message"},
+            {"from": "call_1.text", "to": "end_1.input"},
         ],
+        "layout": {"nodes": {"start_1": {"x": 0, "y": 0}}},
     }
+    base.update(overrides)
+    return base
 
 
-def approval_spec(slug: str = "hitl") -> dict[str, Any]:
-    return {
-        "schema_version": "1",
-        "flow": {
-            "name": slug,
-            "slug": slug,
-            "description": "hitl flow",
-            "a2a": {
-                "enabled": True,
-                "description": "Approval flow.",
-                "examples": ["please approve"],
-            },
-        },
-        "nodes": [
-            {
-                "id": "start",
-                "component_id": "lab.io.start",
-                "component_version": "1.0.0",
-                "config": {},
-                "position": {"x": 0, "y": 0},
-            },
-            {
-                "id": "fake",
-                "component_id": "lab.testing.fake_llm",
-                "component_version": "1.0.0",
-                "config": {"replies": ["draft answer", "revised answer"]},
-                "position": {"x": 200, "y": 0},
-            },
-            {
-                "id": "review",
-                "component_id": "lab.flow.human_approval",
-                "component_version": "1.0.0",
-                "config": {"prompt": "Release this answer?"},
-                "position": {"x": 400, "y": 0},
-            },
-            {
-                "id": "end",
-                "component_id": "lab.io.end",
-                "component_version": "1.0.0",
-                "config": {},
-                "position": {"x": 600, "y": 0},
-            },
-        ],
-        "edges": [
-            {
-                "id": "e1",
-                "kind": "data",
-                "source": {"node": "start", "output": "message"},
-                "target": {"node": "fake", "input": "input"},
-            },
-            {
-                "id": "e2",
-                "kind": "data",
-                "source": {"node": "fake", "output": "message"},
-                "target": {"node": "review", "input": "input"},
-            },
-            {
-                "id": "e3",
-                "kind": "router",
-                "source": {"node": "review", "output": "approve"},
-                "target": {"node": "end", "input": "result"},
-            },
-            {
-                "id": "e4",
-                "kind": "router",
-                "source": {"node": "review", "output": "reject"},
-                "target": {"node": "fake", "input": "input"},
-            },
-        ],
+def definition_info(name: str = "hello-agent", **overrides: Any) -> dict[str, Any]:
+    """A DefinitionInfo payload as the runtime would return it."""
+    payload: dict[str, Any] = {
+        "name": name,
+        "display_name": "",
+        "description": "",
+        "tags": [],
+        "expose_kind": "a2a",
+        "status": "draft",
+        "latest_version": None,
+        "deployed_version": None,
+        "endpoint_url": None,
+        "owner": "tester",
+        "created_at": "2026-07-12T10:00:00Z",
+        "updated_at": "2026-07-12T10:00:00Z",
+        "definition": None,
     }
+    payload.update(overrides)
+    return payload
 
 
-def slow_spec(slug: str = "slow", seconds: float = 10.0) -> dict[str, Any]:
-    return {
-        "schema_version": "1",
-        "flow": {
-            "name": slug,
-            "slug": slug,
-            "description": "slow flow",
-            "a2a": {"enabled": True, "description": "Sleeps.", "examples": ["zzz"]},
-        },
-        "nodes": [
-            {
-                "id": "start",
-                "component_id": "lab.io.start",
-                "component_version": "1.0.0",
-                "config": {},
-                "position": {"x": 0, "y": 0},
-            },
-            {
-                "id": "slow",
-                "component_id": "lab.testing.slow_node",
-                "component_version": "1.0.0",
-                "config": {"seconds": seconds},
-                "position": {"x": 300, "y": 0},
-            },
-            {
-                "id": "end",
-                "component_id": "lab.io.end",
-                "component_version": "1.0.0",
-                "config": {},
-                "position": {"x": 600, "y": 0},
-            },
-        ],
-        "edges": [
-            {
-                "id": "e1",
-                "kind": "data",
-                "source": {"node": "start", "output": "message"},
-                "target": {"node": "slow", "input": "input"},
-            },
-            {
-                "id": "e2",
-                "kind": "data",
-                "source": {"node": "slow", "output": "message"},
-                "target": {"node": "end", "input": "result"},
-            },
-        ],
-    }
-
-
-async def create_and_publish(client: httpx.AsyncClient, spec: dict[str, Any]) -> str:
-    response = await client.post("/api/v1/flows", json={"spec": spec})
-    assert response.status_code == 201, response.text
-    flow_id = response.json()["id"]
-    response = await client.post(f"/api/v1/flows/{flow_id}/publish", json={"version": "minor"})
-    assert response.status_code == 200, response.text
-    assert response.json()["published"], response.text
-    return cast("str", flow_id)
+def read_example(name: str) -> str:
+    return (EXAMPLES_DIR / name).read_text(encoding="utf-8")

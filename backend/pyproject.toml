@@ -1,7 +1,7 @@
 [project]
 name = "langgraph-agent-builder"
-version = "0.0.1"
-description = "LangGraph-native visual agent builder: flows compiled to StateGraphs, served as A2A agents and MCP tools."
+version = "0.1.0"
+description = "Design-time low-code flow builder for the agentplane platform: edit, validate, publish FlowDefinitions."
 readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "MIT" }
@@ -9,66 +9,26 @@ dependencies = [
     # web
     "fastapi>=0.115",
     "uvicorn[standard]>=0.32",
-    "sse-starlette>=2.1",
-    "python-multipart>=0.0.18",
     "httpx>=0.27",
-    # orchestration
-    "langgraph>=1.0",
-    "langgraph-checkpoint-sqlite>=2.0",
-    "langchain-core>=0.3",
-    # protocols — a2a-sdk on the 1.x line (protocol v1.0); migrated from 0.3 in
-    # REFACTOR P1 (route factories, protobuf types, google.rpc errors). SPEC §7 v1.0.
-    "a2a-sdk[http-server]>=1.1,<2",
-    "mcp>=1.9",
-    "langchain-mcp-adapters>=0.1",
-    # persistence
+    # platform contract — pinned deliberately (CLAUDE.md invariant 7); upgrades
+    # are their own PR gated by the contract tests.
+    "agentplane-core==0.1.0",
+    "agentplane-sdk==0.1.0",
+    # persistence (builder-local drafts only)
     "sqlalchemy[asyncio]>=2.0",
     "aiosqlite>=0.20",
     "greenlet>=3.0",
-    "alembic>=1.13",
-    # config / cli
+    # config / auth / cli
     "pydantic>=2.9",
     "pydantic-settings>=2.5",
+    "pyjwt[crypto]>=2.9",
     "typer>=0.12",
-    "rich>=13.7",
-    "python-dotenv>=1.0",
-    # misc
-    "python-ulid>=2.7",
-    "jsonschema>=4.21",
-    "jinja2>=3.1",
-    "jsonpath-ng>=1.6",
-    "cryptography>=42.0",
-    "watchfiles>=0.24",
-    # local vector store — pure wheel, no server (SPEC §8b.2)
-    "sqlite-vec>=0.1.3",
+    # canonical YAML import/export
+    "pyyaml>=6.0",
 ]
-
-[project.optional-dependencies]
-openai = ["langchain-openai>=0.2"]
-anthropic = ["langchain-anthropic>=0.2"]
-ollama = ["langchain-ollama>=0.2"]
-postgres = [
-    "asyncpg>=0.30",
-    "psycopg[binary]>=3.2",
-    "psycopg-pool>=3.2",
-    "langgraph-checkpoint-postgres>=2.0",
-]
-pgvector = [
-    "langgraph-agent-builder[postgres]",
-    "pgvector>=0.3",
-    "pypdf>=5.0",
-]
-qdrant = ["qdrant-client>=1.12"]
-weaviate = ["weaviate-client>=4.9"]
-chroma = ["chromadb>=0.5"]
-all = ["langgraph-agent-builder[openai,anthropic,ollama,postgres,pgvector,qdrant,weaviate,chroma]"]
 
 [project.scripts]
-lab = "langgraph_agent_builder.cli.main:app"
-langgraph-agent-builder = "langgraph_agent_builder.cli.main:app"
-
-[project.entry-points."langgraph_agent_builder.components"]
-builtin = "langgraph_agent_builder.components"
+lab = "langgraph_agent_builder.cli:app"
 
 [dependency-groups]
 dev = [
@@ -79,16 +39,18 @@ dev = [
     "mypy>=1.13",
     "pre-commit>=4.0",
     "import-linter>=2.0",
-    # extras material for the dev/test matrix (both storage tiers, providers)
-    "asyncpg>=0.30",
-    "psycopg[binary]>=3.2",
-    "psycopg-pool>=3.2",
-    "langgraph-checkpoint-postgres>=2.0",
-    "langchain-postgres>=0.0.12",
-    "langchain-text-splitters>=0.3",
-    "pypdf>=5.0",
-    "langchain-openai>=0.2",
+    "respx>=0.22",
+    "jsonschema>=4.23",
+    "types-jsonschema>=4.23",
+    "types-pyyaml>=6.0",
+    "asgi-lifespan>=2.1",
 ]
+
+# Local path pins while agentplane is unreleased; replaced by PyPI pins on the
+# first platform release. Both repos live side by side.
+[tool.uv.sources]
+agentplane-core = { path = "../../agentplane/packages/core", editable = true }
+agentplane-sdk = { path = "../../agentplane/packages/sdk", editable = true }
 
 [build-system]
 requires = ["hatchling"]
@@ -111,68 +73,38 @@ src = ["src", "tests"]
 extend-exclude = ["src/langgraph_agent_builder/_static"]
 
 [tool.ruff.lint]
-# REFACTOR.md §8: E,F,I (basics+imports), UP (pyupgrade), B (bugbear),
-# ANN (annotations), ASYNC, PT (pytest-style), plus W/RUF hygiene.
 select = ["E", "F", "W", "I", "UP", "B", "ANN", "ASYNC", "PT", "RUF"]
 ignore = [
     "RUF001", "RUF002", "RUF003",
     "ANN401",  # allow `Any` where deliberately used (each site carries a why)
 ]
 
-[tool.ruff.lint.per-file-ignores]
-# Component metadata are ClassVars declared on Component; overriding them in
-# subclasses without re-annotating is the component-DSL convention.
-"src/langgraph_agent_builder/components/**" = ["RUF012"]
-"src/langgraph_agent_builder/sdk/**" = ["RUF012"]
-"tests/**" = ["RUF012"]
-
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
-# REFACTOR.md §4 tiers: unit/ (no net/DB, ms), contract/ (adapter ⇄ port
-# protocol), integration/ (real DB/MCP/A2A, opt-in via the marker + CI job).
-markers = [
-    "integration: exercises a real server/DB/network (vendor vector backends, live MCP/A2A); opt-in, separate CI job",
-]
 filterwarnings = [
     "ignore::DeprecationWarning",
-    "ignore::pydantic.PydanticDeprecatedSince20",
 ]
 
+# Design-time only (CLAUDE.md invariant 1): the builder never imports
+# execution frameworks or protocol servers — those live in agentplane-runtime.
 [tool.importlinter]
 root_package = "langgraph_agent_builder"
 include_external_packages = true
 
 [[tool.importlinter.contracts]]
-name = "sdk stays lightweight (no fastapi/db imports)"
-type = "forbidden"
-source_modules = ["langgraph_agent_builder.sdk"]
-forbidden_modules = ["fastapi", "langgraph_agent_builder.services.db", "langgraph_agent_builder.api", "sqlalchemy", "alembic"]
-
-# SPEC §8b.2 / §15.6: `import langgraph_agent_builder` must not import a vendor vector client — the
-# slim-core promise. The five backends live behind the VectorStoreProvider
-# protocol and import their client lazily *inside methods*; only those specific
-# adapter modules may reference the vendor package. Any other lab module reaching
-# for a vector client (or an eager top-level import that would load one at
-# `import langgraph_agent_builder`) fails this contract. A runtime backstop asserting the clients are
-# absent from `sys.modules` after `import langgraph_agent_builder` lives in tests/test_slim_core.py.
-[[tool.importlinter.contracts]]
-name = "core stays vector-vendor-free (importing the package must not import a vector client)"
+name = "design-time only: no execution/protocol frameworks"
 type = "forbidden"
 source_modules = ["langgraph_agent_builder"]
-forbidden_modules = ["qdrant_client", "weaviate", "chromadb", "pgvector"]
-ignore_imports = [
-    "langgraph_agent_builder.vectorstores.qdrant -> qdrant_client",
-    "langgraph_agent_builder.vectorstores.weaviate -> weaviate",
-    "langgraph_agent_builder.vectorstores.chroma -> chromadb",
+forbidden_modules = [
+    "langgraph",
+    "langchain_core",
+    "a2a",
+    "mcp",
+    "fastmcp",
 ]
 
-# --------------------------------------------------------------------------- mypy
-# REFACTOR.md §2/§8: strict type-checker as a hard gate. Pydantic plugin so
-# BaseModel field types are understood. Untyped third-party SDKs (a2a, mcp,
-# langgraph, vector clients) have no stubs → their imports are ignored, but our
-# own code stays under full strict rules.
 [tool.mypy]
 python_version = "3.12"
 strict = true
@@ -184,8 +116,6 @@ warn_unused_ignores = true
 warn_redundant_casts = true
 warn_unused_configs = true
 show_error_codes = true
-# tests exercise fakes and partial states; keep them typed but not strict-blocking
-# on decorator/return inference from pytest/pytest-asyncio.
 files = ["src", "tests"]
 
 [tool.pydantic-mypy]
@@ -196,46 +126,20 @@ warn_required_dynamic_aliases = true
 [[tool.mypy.overrides]]
 module = [
     "a2a.*",
-    "google.protobuf.*",  # protobuf runtime ships no stubs (types-protobuf not installed)
-    "mcp.*",
-    "langgraph.*",
-    "langgraph_checkpoint.*",
-    "langchain_mcp_adapters.*",
-    "langchain_openai.*",
-    "langchain_anthropic.*",
-    "langchain_ollama.*",
-    "langchain_postgres.*",
-    "langchain_text_splitters.*",
-    "sqlite_vec.*",
-    "jsonpath_ng.*",
-    "pgvector.*",
-    "qdrant_client.*",
-    "weaviate.*",
-    "chromadb.*",
-    "sse_starlette.*",
-    "pypdf.*",
+    "google.protobuf.*",  # protobuf runtime ships no stubs
 ]
 ignore_missing_imports = true
 
-# --------------------------------------------------------------------------- coverage
-# REFACTOR.md §4: ≥85 % on core logic. Branch coverage so untested routing /
-# error paths (the ones that matter) show up. `--cov` is opt-in; CI passes it.
+# The platform packages are fully typed but do not ship a py.typed marker yet
+# (tracked upstream); type-check them anyway instead of ignoring.
+[[tool.mypy.overrides]]
+module = ["agentplane_core.*", "agentplane_sdk.*"]
+follow_untyped_imports = true
+
 [tool.coverage.run]
 source = ["langgraph_agent_builder"]
 branch = true
-omit = [
-    "*/langgraph_agent_builder/db/migrations/*",
-    "*/langgraph_agent_builder/_static/*",
-    # Vendor vector backends are integration-tier adapters (SPEC §8b: "backends
-    # as extras, lazy import"). They require an uninstalled vendor client AND a
-    # live server, so they are exercised by the integration tier (extras + real
-    # servers, separate CI job), NOT the unit gate. The `local` (sqlite-vec)
-    # backend ships in core and IS unit-covered here.
-    "*/langgraph_agent_builder/vectorstores/chroma.py",
-    "*/langgraph_agent_builder/vectorstores/pgvector.py",
-    "*/langgraph_agent_builder/vectorstores/weaviate.py",
-    "*/langgraph_agent_builder/vectorstores/qdrant.py",
-]
+omit = ["*/langgraph_agent_builder/_static/*"]
 
 [tool.coverage.report]
 show_missing = true

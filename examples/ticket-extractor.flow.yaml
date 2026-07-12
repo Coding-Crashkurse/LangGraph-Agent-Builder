@@ -1,0 +1,48 @@
+# Structured output: the llm_call gains a `json` output port that feeds `end`.
+schema_version: 1
+name: ticket-extractor
+display_name: "Ticket Extractor"
+description: "Extracts a structured support ticket from free-form text"
+tags: [demo, structured]
+expose:
+  kind: a2a
+nodes:
+  - id: start_1
+    type: start
+    version: 1
+    config:
+      input_schema:
+        type: object
+        properties:
+          text:
+            type: string
+        required: [text]
+  - id: extract_1
+    type: llm_call
+    version: 1
+    config:
+      resource: default-llm
+      model: ""
+      prompt: "Extract the support ticket from:\n\n{text}"
+      system_prompt: "Return only the requested fields."
+      structured_output:
+        type: object
+        properties:
+          title: { type: string }
+          severity: { type: string, enum: [low, medium, high] }
+          summary: { type: string }
+        required: [title, severity, summary]
+      stream: false
+  - id: end_1
+    type: end
+    version: 1
+    config:
+      output_from: extract_1.json
+edges:
+  - { from: start_1.text, to: extract_1.text }
+  - { from: extract_1.json, to: end_1.input }
+layout:
+  nodes:
+    start_1: { x: 80, y: 220 }
+    extract_1: { x: 340, y: 220 }
+    end_1: { x: 620, y: 220 }

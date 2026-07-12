@@ -1,278 +1,232 @@
-"""Flows & versions API (SPEC §9.1)."""
+"""Flows API: drafts, validation, publish, playground, import/export (SPEC §3, §5).
+
+The request/response definition payload IS the canonical FlowDefinition JSON
+object (canvas positions confined to ``layout``). Validation issues carry a
+``source`` marker so local (advisory) and runtime (authoritative) results
+render identically in the frontend.
+"""
 
 from __future__ import annotations
 
-from typing import Any
+from datetime import datetime
+from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, HTTPException, Query
-from pydantic import BaseModel, Field
+from agentplane_core import ValidationIssue, validate_structure
+from fastapi import APIRouter, Body, Query, Response
+from pydantic import BaseModel, ConfigDict, Field
 
-from langgraph_agent_builder.api.deps import Services, StudioAuth
-from langgraph_agent_builder.db.models import FlowRow, FlowVersionRow
-from langgraph_agent_builder.schema.flowspec import FlowSpecError, parse_flowspec
+from langgraph_agent_builder.api.deps import CurrentPrincipal, Services
+from langgraph_agent_builder.serialization import (
+    dump_definition_yaml,
+    loads_definition_data,
+    parse_definition,
+)
+from langgraph_agent_builder.services.flows import StoredFlow
 
-router = APIRouter(prefix="/flows", tags=["flows"], dependencies=[StudioAuth])
+router = APIRouter(prefix="/flows", tags=["flows"])
 
+IssueSource = Literal["local", "runtime"]
 
-def flow_info(row: FlowRow, published: str | None = None) -> dict[str, Any]:
-    return {
-        "id": row.id,
-        "slug": row.slug,
-        "name": row.name,
-        "description": row.description,
-        "spec": row.spec,
-        "locked": bool(getattr(row, "locked", False)),
-        "serve_version": row.serve_version,
-        "published_version": published,
-        "created_at": row.created_at.isoformat(),
-        "updated_at": row.updated_at.isoformat(),
-    }
+DefinitionBody = Annotated[dict[str, Any], Body()]
 
 
-def version_info(row: FlowVersionRow) -> dict[str, Any]:
-    return {
-        "id": row.id,
-        "flow_id": row.flow_id,
-        "semver": row.semver,
-        "changelog": row.changelog,
-        "published_at": row.published_at.isoformat(),
-    }
+class SourcedIssue(BaseModel):
+    """A ValidationIssue plus where it came from — both render identically."""
+
+    model_config = ConfigDict(frozen=True)
+
+    code: str
+    severity: Literal["error", "warning"]
+    path: str
+    message: str
+    source: IssueSource
+
+    @classmethod
+    def wrap(cls, issue: ValidationIssue, source: IssueSource) -> SourcedIssue:
+        return cls(
+            code=issue.code,
+            severity=issue.severity,
+            path=issue.path,
+            message=issue.message,
+            source=source,
+        )
 
 
-class FlowCreate(BaseModel):
-    spec: dict[str, Any]
+class ValidationResponse(BaseModel):
+    valid: bool
+    runtime_checked: bool
+    issues: list[SourcedIssue]
 
 
-class FlowPatch(BaseModel):
-    spec: dict[str, Any]
+class FlowSummary(BaseModel):
+    name: str
+    display_name: str = ""
+    description: str = ""
+    tags: list[str] = Field(default_factory=list)
+    expose_kind: str = "a2a"
+    updated_at: datetime
 
 
-class ImportBody(BaseModel):
-    spec: dict[str, Any] | None = None  # single flow (back-compat)
-    specs: list[dict[str, Any]] | None = None  # multi-flow array
-    upsert: bool = True  # replace an existing flow with the same slug instead of 409
+class FlowDetail(BaseModel):
+    name: str
+    definition: dict[str, Any]
+    created_at: datetime
+    updated_at: datetime
 
 
-class PublishBody(BaseModel):
-    version: str = Field(default="patch", description="major|minor|patch or explicit semver")
-    changelog: str = ""
+class PublishResponse(BaseModel):
+    name: str
+    version: int
+    endpoint_url: str
+    registry_id: str | None = None
 
 
-class LockBody(BaseModel):
-    locked: bool = True
+class PlaygroundResponse(BaseModel):
+    name: str
+    endpoint_url: str
 
 
-class ServeVersionBody(BaseModel):
-    serve: str = Field(
-        default="latest_published", description='"latest_published" or a published semver'
+class ImportResponse(BaseModel):
+    name: str
+    created: bool
+
+
+def _summary(flow: StoredFlow) -> FlowSummary:
+    defn = flow.definition
+    expose = defn.get("expose")
+    expose_kind = expose.get("kind", "a2a") if isinstance(expose, dict) else "a2a"
+    return FlowSummary(
+        name=flow.name,
+        display_name=str(defn.get("display_name", "") or ""),
+        description=str(defn.get("description", "") or ""),
+        tags=[t for t in defn.get("tags", []) if isinstance(t, str)],
+        expose_kind=str(expose_kind),
+        updated_at=flow.updated_at,
+    )
+
+
+def _detail(flow: StoredFlow) -> FlowDetail:
+    return FlowDetail(
+        name=flow.name,
+        definition=flow.definition,
+        created_at=flow.created_at,
+        updated_at=flow.updated_at,
     )
 
 
 @router.get("")
-async def list_flows(
-    svc: Services,
-    tag: str | None = Query(default=None),
-    q: str | None = Query(default=None),
-    limit: int | None = Query(default=None, ge=1, le=500),
-    offset: int = Query(default=0, ge=0),
-) -> list[dict[str, Any]]:
-    rows = await svc.flows.list(tag=tag, q=q, limit=limit, offset=offset)
-    latest = await svc.flows.latest_versions([row.id for row in rows])
-    return [flow_info(row, latest[row.id].semver if row.id in latest else None) for row in rows]
+async def list_flows(svc: Services, principal: CurrentPrincipal) -> list[FlowSummary]:
+    return [_summary(flow) for flow in await svc.store.list(principal.sub)]
 
 
 @router.post("", status_code=201)
-async def create_flow(body: FlowCreate, svc: Services) -> dict[str, Any]:
-    try:
-        parsed = parse_flowspec(body.spec)
-    except FlowSpecError as exc:
-        raise HTTPException(422, f"invalid FlowSpec: {exc}") from exc
-    # slug uniqueness is enforced in FlowService (SlugConflictError → 409)
-    row = await svc.flows.create(parsed)
-    return flow_info(row)
+async def create_flow(
+    definition: DefinitionBody, svc: Services, principal: CurrentPrincipal
+) -> FlowDetail:
+    return _detail(await svc.store.create(definition, principal.sub))
 
 
-async def _resolve(svc: Services, id_or_slug: str) -> FlowRow:
-    row: FlowRow | None = await svc.flows.resolve(id_or_slug)
-    if row is None:
-        raise HTTPException(404, "flow not found")
-    return row
-
-
-@router.get("/{id_or_slug}")
-async def get_flow(id_or_slug: str, svc: Services) -> dict[str, Any]:
-    row = await _resolve(svc, id_or_slug)
-    latest = await svc.flows.latest_version(row.id)
-    return flow_info(row, latest.semver if latest else None)
-
-
-@router.patch("/{id_or_slug}")
-async def update_flow(id_or_slug: str, body: FlowPatch, svc: Services) -> dict[str, Any]:
-    current = await _resolve(svc, id_or_slug)
-    try:
-        parsed = parse_flowspec(body.spec)
-    except FlowSpecError as exc:
-        raise HTTPException(422, f"invalid FlowSpec: {exc}") from exc
-    # lock + slug rules live in FlowService (FlowLockedError/SlugConflictError → 409)
-    row = await svc.flows.update(current.id, parsed)
-    if row is None:
-        raise HTTPException(404, "flow not found")
-    return flow_info(row)
-
-
-@router.delete("/{id_or_slug}", status_code=204)
-async def delete_flow(id_or_slug: str, svc: Services) -> None:
-    row = await _resolve(svc, id_or_slug)
-    if not await svc.flows.delete(row.id):
-        raise HTTPException(404, "flow not found")
-    await svc.remount()
-
-
-@router.post("/{id_or_slug}/lock")
-async def lock_flow(id_or_slug: str, body: LockBody, svc: Services) -> dict[str, Any]:
-    row = await _resolve(svc, id_or_slug)
-    updated = await svc.flows.set_locked(row.id, body.locked)
-    if updated is None:  # deleted between resolve and update
-        raise HTTPException(404, "flow not found")
-    return flow_info(updated)
-
-
-@router.post("/{id_or_slug}/serve-version")
-async def set_serve_version(
-    id_or_slug: str, body: ServeVersionBody, svc: Services
-) -> dict[str, Any]:
-    """Pin the published version an agent serves (SPEC §7.1: latest_published | vX.Y.Z)."""
-    row = await _resolve(svc, id_or_slug)
-    serve = body.serve
-    if serve != "latest_published":
-        serve = serve.removeprefix("v")
-        if await svc.flows.get_version(row.id, serve) is None:
-            raise HTTPException(404, "version not found")
-    await svc.flows.set_serve_version(row.id, serve)
-    await svc.remount()
-    updated = await _resolve(svc, id_or_slug)
-    latest = await svc.flows.latest_version(updated.id)
-    return flow_info(updated, latest.semver if latest else None)
-
-
-@router.post("/{id_or_slug}/nodes/{node_id}/upgrade")
-async def upgrade_node(id_or_slug: str, node_id: str, svc: Services) -> dict[str, Any]:
-    row = await _resolve(svc, id_or_slug)
-    if row.locked:
-        raise HTTPException(409, "flow is locked")
-    updated, error = await svc.flows.upgrade_node(row.id, node_id, svc.registry)
-    if updated is None:
-        # a missing component is an install problem, not a missing resource
-        status = 422 if error == "component not installed" else 404
-        raise HTTPException(status, error or "upgrade failed")
-    diags, _compiled = await svc.orchestrator.validate(updated.spec)
-    return {
-        "flow": flow_info(updated),
-        "diagnostics": [d.model_dump(mode="json") for d in diags],
-    }
-
-
-@router.post("/{id_or_slug}/validate")
+@router.post("/validate")
 async def validate_flow(
-    id_or_slug: str, svc: Services, deep: bool = Query(default=False)
-) -> dict[str, Any]:
-    row = await _resolve(svc, id_or_slug)
-    diags, compiled = await svc.orchestrator.validate(row.spec, deep=deep)
-    return {
-        "diagnostics": [d.model_dump(mode="json") for d in diags],
-        "compile_report": compiled.report.model_dump(mode="json") if compiled else None,
-    }
-
-
-@router.post("/{id_or_slug}/publish")
-async def publish_flow(id_or_slug: str, body: PublishBody, svc: Services) -> dict[str, Any]:
-    row = await _resolve(svc, id_or_slug)
-    diags, _compiled = await svc.orchestrator.validate(row.spec)
-    version, all_diags = await svc.flows.publish(
-        row.id,
-        registry=svc.registry,
-        bump=body.version,
-        changelog=body.changelog,
-        compile_diagnostics=diags,
+    definition: DefinitionBody, svc: Services, principal: CurrentPrincipal
+) -> ValidationResponse:
+    """Merged local (advisory) + runtime (authoritative) validation."""
+    local = validate_structure(definition)
+    issues = [SourcedIssue.wrap(i, "local") for i in local]
+    runtime_result = await svc.gateway.validate(definition, principal.token)
+    if runtime_result is not None:
+        seen = {(i.code, i.path) for i in local}
+        issues += [
+            SourcedIssue.wrap(i, "runtime")
+            for i in runtime_result.issues
+            if (i.code, i.path) not in seen
+        ]
+    valid = not any(i.severity == "error" for i in issues)
+    return ValidationResponse(
+        valid=valid, runtime_checked=runtime_result is not None, issues=issues
     )
-    if version is None:
-        return {
-            "published": False,
-            "diagnostics": [d.model_dump(mode="json") for d in all_diags],
-        }
-    await svc.remount()
-    return {
-        "published": True,
-        "version": version_info(version),
-        "diagnostics": [d.model_dump(mode="json") for d in all_diags],
-    }
 
 
-@router.get("/{id_or_slug}/versions")
-async def list_versions(id_or_slug: str, svc: Services) -> list[dict[str, Any]]:
-    row = await _resolve(svc, id_or_slug)
-    return [version_info(v) for v in await svc.flows.versions(row.id)]
+@router.get("/{name}")
+async def get_flow(name: str, svc: Services, principal: CurrentPrincipal) -> FlowDetail:
+    return _detail(await svc.store.get(name, principal.sub))
 
 
-@router.get("/{id_or_slug}/versions/{semver}")
-async def get_version(id_or_slug: str, semver: str, svc: Services) -> dict[str, Any]:
-    row = await _resolve(svc, id_or_slug)
-    version = await svc.flows.get_version(row.id, semver)
-    if version is None:
-        raise HTTPException(404, "version not found")
-    return {**version_info(version), "flowspec": version.flowspec}
+@router.put("/{name}")
+async def save_flow(
+    name: str, definition: DefinitionBody, svc: Services, principal: CurrentPrincipal
+) -> FlowDetail:
+    """Save the builder-local draft (with layout); no platform interaction."""
+    return _detail(await svc.store.save(name, definition, principal.sub))
 
 
-@router.post("/{id_or_slug}/versions/{semver}/rollback")
-async def rollback(id_or_slug: str, semver: str, svc: Services) -> dict[str, Any]:
-    current = await _resolve(svc, id_or_slug)
-    row = await svc.flows.rollback(current.id, semver)
-    if row is None:
-        raise HTTPException(404, "version not found")
-    return flow_info(row)
+@router.delete("/{name}", status_code=204)
+async def delete_flow(name: str, svc: Services, principal: CurrentPrincipal) -> None:
+    await svc.store.delete(name, principal.sub)
 
 
-@router.get("/{id_or_slug}/export")
-async def export_flow(id_or_slug: str, svc: Services, format: str = Query(default="json")) -> Any:
-    row = await _resolve(svc, id_or_slug)
-    if format == "python":
-        from fastapi.responses import PlainTextResponse
+@router.post("/{name}/publish")
+async def publish_flow(name: str, svc: Services, principal: CurrentPrincipal) -> PublishResponse:
+    """Update the runtime draft + deploy; registration happens platform-side."""
+    stored = await svc.store.get(name, principal.sub)
+    defn = parse_definition(stored.definition)
+    deployment = await svc.gateway.publish(defn, principal.token)
+    return PublishResponse(
+        name=deployment.name,
+        version=deployment.version,
+        endpoint_url=deployment.endpoint_url,
+        registry_id=str(deployment.registry_id) if deployment.registry_id else None,
+    )
 
-        from langgraph_agent_builder.compiler.export_python import export_python
 
-        return PlainTextResponse(export_python(parse_flowspec(row.spec), svc.registry))
-    return row.spec
+@router.post("/{name}/playground")
+async def playground_flow(
+    name: str, svc: Services, principal: CurrentPrincipal
+) -> PlaygroundResponse:
+    """Ephemeral deploy of the current draft; the chat panel talks A2A to it."""
+    stored = await svc.store.get(name, principal.sub)
+    defn = parse_definition(stored.definition)
+    deployment = await svc.gateway.playground(defn, principal.token)
+    return PlaygroundResponse(name=deployment.name, endpoint_url=deployment.endpoint_url)
+
+
+@router.get("/{name}/export")
+async def export_flow(
+    name: str,
+    svc: Services,
+    principal: CurrentPrincipal,
+    format: Annotated[Literal["yaml", "json"], Query()] = "yaml",
+) -> Response:
+    """Canonical FlowDefinition YAML/JSON — importable here, deployable via CLI."""
+    stored = await svc.store.get(name, principal.sub)
+    if format == "json":
+        import json
+
+        from langgraph_agent_builder.serialization import canonical_definition_dict
+
+        payload = json.dumps(canonical_definition_dict(stored.definition), indent=2) + "\n"
+        media, filename = "application/json", f"{name}.flow.json"
+    else:
+        payload = dump_definition_yaml(stored.definition)
+        media, filename = "application/yaml", f"{name}.flow.yaml"
+    return Response(
+        content=payload,
+        media_type=media,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.post("/import", status_code=201)
-async def import_flow(body: ImportBody, svc: Services) -> Any:
-    """Import one or many flows (SPEC §9.1).
-
-    ``{"spec": …}`` imports a single flow (returns the flow object, back-compat).
-    ``{"specs": [ … ]}`` imports many (returns ``{"imported": [...], "count": n}``).
-    With ``upsert`` (default), a spec whose slug already exists updates that flow
-    in place instead of a 409; a locked target is refused with 409.
-    """
-    raw = body.specs if body.specs is not None else ([body.spec] if body.spec is not None else [])
-    if not raw:
-        raise HTTPException(422, "provide `spec` or `specs`")
-    results: list[dict[str, Any]] = []
-    for one in raw:
-        try:
-            parsed = parse_flowspec(one)
-        except FlowSpecError as exc:
-            raise HTTPException(422, f"invalid FlowSpec: {exc}") from exc
-        existing = await svc.flows.get_by_slug(parsed.flow.slug)
-        if existing is not None:
-            if not body.upsert:
-                raise HTTPException(409, f"slug {parsed.flow.slug!r} already exists")
-            # locked target → FlowLockedError → 409 via the exception-handler layer
-            row = await svc.flows.update(existing.id, parsed)
-            if row is None:  # pragma: no cover - lost between fetch and update
-                raise HTTPException(404, "flow not found")
-        else:
-            row = await svc.flows.create(parsed)
-        results.append(flow_info(row))
-    if body.specs is None:  # single-spec form → return the flow object directly
-        return results[0]
-    return {"imported": results, "count": len(results)}
+async def import_flow(
+    svc: Services,
+    principal: CurrentPrincipal,
+    body: Annotated[str, Body(media_type="application/yaml")],
+    overwrite: Annotated[bool, Query()] = False,
+) -> ImportResponse:
+    """Import canonical FlowDefinition YAML/JSON; round-trip safe."""
+    raw = loads_definition_data(body)
+    if overwrite:
+        stored, created = await svc.store.upsert(raw, principal.sub)
+    else:
+        stored, created = await svc.store.create(raw, principal.sub), True
+    return ImportResponse(name=stored.name, created=created)
