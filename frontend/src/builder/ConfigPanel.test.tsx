@@ -72,6 +72,19 @@ describe("ConfigPanel", () => {
     expect(def.config.prompt).toBe("Say {hi}");
   });
 
+  it("empty resource list still offers manual name entry", async () => {
+    server.use(http.get("/api/v1/resources", () => HttpResponse.json([])));
+    renderPanel("call_1");
+    await waitFor(() =>
+      expect(screen.getByText(/has no model provider resources yet/)).toBeInTheDocument(),
+    );
+    const manual = screen.getByPlaceholderText("resource-name");
+    await userEvent.clear(manual);
+    await userEvent.type(manual, "my-llm");
+    const def = useBuilder.getState().nodes.find((n) => n.id === "call_1")!.data.def;
+    expect(def.config.resource).toBe("my-llm");
+  });
+
   it("resource fields render a dropdown fed by GET /resources", async () => {
     renderPanel("call_1");
     await waitFor(() => expect(screen.getByLabelText("resource")).toBeInTheDocument());

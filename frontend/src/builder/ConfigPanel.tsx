@@ -177,7 +177,13 @@ function ResourcePicker({
             publish time.
           </p>
         ))}
-      {resources.isError && (
+      {resources.isSuccess && options.length === 0 && (
+        <p className="mt-1 text-[11px] text-text-3">
+          The platform has no {kind ? kind.replace("_", " ") : "matching"} resources yet
+          — type the name it will get; publish resolves it (E020 until it exists).
+        </p>
+      )}
+      {(resources.isError || (resources.isSuccess && options.length === 0)) && (
         <Input
           className="mt-1 h-7 font-mono text-xs"
           value={value}
