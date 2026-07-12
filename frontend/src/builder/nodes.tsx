@@ -156,6 +156,18 @@ function portShape(family: PortSpec["family"]): "circle" | "square" | "diamond" 
   return "circle";
 }
 
+/** Border-radius + rotation for a React Flow Handle, so the connection handles
+ * on the node edge use the same plane-shape as the inline HandleDot. */
+function handleShapeStyle(family: PortSpec["family"]): {
+  borderRadius: number;
+  transform?: string;
+} {
+  const shape = portShape(family);
+  if (shape === "square") return { borderRadius: 3 };
+  if (shape === "diamond") return { borderRadius: 2, transform: "rotate(45deg)" };
+  return { borderRadius: 999 };
+}
+
 /** The visible 12px handle inside a 16px invisible hit area (§11.2).
  * Pointer events stay on the parent Handle. */
 function HandleDot({ port, active }: { port: PortSpec; active: boolean }) {
@@ -429,6 +441,7 @@ export const LabNode = memo(function LabNode({ id, data, selected }: NodeProps<C
               border: `2px solid ${PORT_FAMILY_COLORS[port.family]}`,
               width: 11,
               height: 11,
+              ...handleShapeStyle(port.family),
               opacity: dimFor(port, "in", name) ? 0.25 : 1,
             }}
           />
@@ -447,6 +460,7 @@ export const LabNode = memo(function LabNode({ id, data, selected }: NodeProps<C
               border: `2px solid ${PORT_FAMILY_COLORS[port.family]}`,
               width: 11,
               height: 11,
+              ...handleShapeStyle(port.family),
               opacity: dimFor(port, "out", name) ? 0.25 : 1,
             }}
           />

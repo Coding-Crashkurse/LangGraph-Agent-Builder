@@ -382,16 +382,22 @@ export interface ResourceRef {
 
 // Port family colours resolve to the Appendix C theme tokens — the token file
 // is the single source of colour (SPEC §11.1/§11.5).
+// Color encodes the connection PLANE (paired with shape, §11.1) so that same
+// color + same shape ⇒ can connect. The whole data plane — every mutually
+// coercible family — is ONE color (a circle); capability (toolset) and control
+// (route) each get their own color + shape. The specific type is on the label/hover.
 export const PORT_FAMILY_COLORS: Record<PortFamily, string> = {
-  MESSAGE: "var(--color-port-message)",
+  MESSAGE: "var(--color-port-data)",
   DATA: "var(--color-port-data)",
-  TABLE: "var(--color-port-table)",
-  DOCUMENTS: "var(--color-port-documents)",
-  EMBEDDING: "var(--color-port-embedding)",
-  MODEL: "var(--color-port-model)",
-  VECTORSTORE: "var(--color-port-vectorstore)",
+  TABLE: "var(--color-port-data)",
+  DOCUMENTS: "var(--color-port-data)",
+  FILE: "var(--color-port-data)",
+  ANY: "var(--color-port-data)",
+  // deprecated families (now Resources, off-canvas) — keep on the data color
+  EMBEDDING: "var(--color-port-data)",
+  MODEL: "var(--color-port-data)",
+  VECTORSTORE: "var(--color-port-data)",
+  // capability + control planes — distinct color AND shape
   TOOLSET: "var(--color-port-toolset)",
   ROUTE: "var(--color-port-route)",
-  FILE: "var(--color-port-file)",
-  ANY: "var(--color-port-any)",
 };

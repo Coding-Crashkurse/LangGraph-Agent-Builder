@@ -93,10 +93,25 @@ def string_to_number(value: Any) -> Any:
             return value
 
 
+def text_to_json(value: Any) -> Any:
+    """Parse a text value as JSON (a single LLM `message` output → a Json input,
+    e.g. structured output). Non-JSON content passes through unchanged so the
+    target still receives a value."""
+    import json
+
+    text = value if isinstance(value, str) else message_to_text(value)
+    try:
+        return json.loads(text)
+    except (ValueError, TypeError):
+        return value
+
+
 # (source schema_ref, target schema_ref) → coercion name
 _EDGE_COERCIONS: dict[tuple[str, str], str] = {
     ("lab:Message", "lab:Text"): "message_to_text",
     ("lab:Text", "lab:Message"): "text_to_message",
+    ("lab:Message", "lab:Json"): "text_to_json",
+    ("lab:Text", "lab:Json"): "text_to_json",
     ("lab:Documents", "lab:Text"): "documents_to_text",
     ("lab:Json", "lab:Text"): "json_to_text",
     ("lab:Table", "lab:Json"): "table_to_json",
@@ -106,6 +121,7 @@ _EDGE_COERCIONS: dict[tuple[str, str], str] = {
 FUNCTIONS: dict[str, Callable[[Any], Any]] = {
     "message_to_text": message_to_text,
     "text_to_message": text_to_message,
+    "text_to_json": text_to_json,
     "documents_to_text": documents_to_text,
     "json_to_text": json_to_text,
     "table_to_json": table_to_json,

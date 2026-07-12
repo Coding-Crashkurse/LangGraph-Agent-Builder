@@ -15,7 +15,7 @@ from typing import Any
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from langgraph_agent_builder.sdk import Component, Output, fields, ports
-from langgraph_agent_builder.sdk.component import BuildContext, NodeConfig, NodeFn
+from langgraph_agent_builder.sdk.component import BuildContext, NodeFn
 from langgraph_agent_builder.sdk.runtime import get_run_context
 from langgraph_agent_builder.sdk.templating import render_prompt
 
@@ -71,21 +71,12 @@ class Call(Component):
             name="stream_tokens", display_name="Stream Tokens", default=True, advanced=True
         ),
     ]
-    # One response, one output: `message` coerces to text/data/any at the edge, so a
-    # separate `text` port is redundant. `json` appears only when structured output
-    # is forced (outputs_for_config), so the port set matches what the node produces.
+    # A single output: the LLM's response. It coerces at the edge to whatever the
+    # target needs — message→text, message→json (parsed) — so the separate `text`
+    # and `json` ports were pure redundancy. `Structured Output` still forces JSON
+    # *content*; wire the message into a Json input to get the parsed object.
+    # (The base outputs_for_config adds the Toolset port when Tool Mode is on.)
     outputs = [Output(name="message", display_name="Message", port=ports.MESSAGE)]
-
-    @classmethod
-    def outputs_for_config(cls, config: NodeConfig) -> list[Output]:
-        outs = [Output(name="message", display_name="Message", port=ports.MESSAGE)]
-        if config.get("structured_output"):
-            outs.append(Output(name="json", display_name="Json", port=ports.JSON))
-        if cls.tool_mode_supported and cls.tool_mode_enabled(config):
-            from langgraph_agent_builder.sdk.ports import TOOLSET
-
-            outs.append(Output(name="toolset", display_name="Toolset", port=TOOLSET))
-        return outs
 
     def build(self, ctx: BuildContext) -> NodeFn:
         from langgraph_agent_builder.components.llm._models import (

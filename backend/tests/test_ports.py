@@ -31,7 +31,7 @@ MATRIX: list[tuple[PortSpec, PortSpec, bool, str | None, str | None]] = [
     (TEXT, MESSAGE, True, "W203", "text_to_message"),
     (DOCUMENTS, TEXT, True, "W203", "documents_to_text"),
     (JSON, TEXT, True, "W203", "json_to_text"),
-    (TEXT, JSON, False, None, None),  # no registered coercion — Type Convert required
+    (TEXT, JSON, True, "W203", "text_to_json"),  # parse text/message as JSON (structured output)
     (TEXT, DOCUMENTS, False, None, None),
     (MESSAGE, TOOLSET, False, None, None),
     (ROUTE, TEXT, False, None, None),
