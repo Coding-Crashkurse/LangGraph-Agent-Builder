@@ -9,7 +9,7 @@ import sys
 import tempfile
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
@@ -105,10 +105,23 @@ class LiveServer:
             return flow_id
 
 
-def rpc(method: str, params: dict[str, Any], id: Any = 1) -> dict[str, Any]:
-    return {"jsonrpc": "2.0", "id": id, "method": method, "params": params}
-
-
 def text_message(text: str, **extra: Any) -> dict[str, Any]:
-    return {"role": "user", "messageId": str(uuid.uuid4()),
-            "parts": [{"kind": "text", "text": text}], **extra}
+    """A v1.0 (protocol) user message with a single flat text part."""
+    return {"role": "ROLE_USER", "messageId": str(uuid.uuid4()),
+            "parts": [{"text": text}], **extra}
+
+
+def data_message(data: dict[str, Any], **extra: Any) -> dict[str, Any]:
+    """A v1.0 user message with a single flat data part."""
+    return {"role": "ROLE_USER", "messageId": str(uuid.uuid4()),
+            "parts": [{"data": data}], **extra}
+
+
+async def send_message(client: Any, a2a_base: str, message: dict[str, Any]) -> dict[str, Any]:
+    """POST a v1.0 ``message:send`` to an A2A door (``a2a_base`` = ``…/a2a/{slug}``);
+    returns the Task dict (``response.json()["task"]``)."""
+    response = await client.post(
+        f"{a2a_base.rstrip('/')}/message:send", json={"message": message}
+    )
+    assert response.status_code == 200, response.text
+    return cast("dict[str, Any]", response.json()["task"])

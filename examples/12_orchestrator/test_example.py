@@ -8,7 +8,7 @@ from pathlib import Path
 import httpx
 
 sys.path.insert(0, str(Path(__file__).parents[1]))
-from _shared import LiveServer, rpc, text_message, validate_ok  # noqa: E402
+from _shared import LiveServer, send_message, text_message, validate_ok  # noqa: E402
 
 HERE = Path(__file__).parent
 
@@ -37,15 +37,10 @@ def test_orchestrator_delegates_over_a2a():
             await server.publish(orchestrator)
 
             async with httpx.AsyncClient(base_url=server.base, timeout=60) as client:
+
                 async def send(text: str) -> str:
-                    response = await client.post(
-                        "/a2a/orchestrator/",
-                        json=rpc("message/send", {"message": text_message(text)}),
-                    )
-                    body = response.json()
-                    assert "error" not in body, body
-                    task = body["result"]
-                    assert task["status"]["state"] == "completed", task["status"]
+                    task = await send_message(client, "/a2a/orchestrator", text_message(text))
+                    assert task["status"]["state"] == "TASK_STATE_COMPLETED", task["status"]
                     return task["artifacts"][0]["parts"][0]["text"]
 
                 shouted = await send("shout: ship it")

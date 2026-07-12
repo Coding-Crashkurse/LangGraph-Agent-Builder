@@ -28,30 +28,38 @@ def _det_message_id(*parts: str) -> str:
     return hashlib.sha256("|".join(parts).encode()).hexdigest()[:32]
 
 
-async def _rpc(
-    client: httpx.AsyncClient, url: str, method: str, params: dict[str, Any]
+async def _send_message(
+    client: httpx.AsyncClient, base: str, message: dict[str, Any]
 ) -> dict[str, Any]:
-    response = await client.post(
-        url,
-        json={"jsonrpc": "2.0", "id": 1, "method": method, "params": params},
-    )
-    response.raise_for_status()
-    body = response.json()
-    if "error" in body:
+    """POST {base}/message:send with a v1.0 REST body; return the Task dict."""
+    response = await client.post(f"{base}/message:send", json={"message": message})
+    if response.status_code >= 400:
+        body = response.json()
+        error = body.get("error") or {}
+        details = error.get("details") or [{}]
+        reason = details[0].get("reason") if details else None
         raise RuntimeError(
-            f"remote A2A error {body['error'].get('code')}: {body['error'].get('message')}"
+            f"remote A2A error {error.get('code') or response.status_code}: "
+            f"{reason or error.get('message') or response.text}"
         )
-    return body.get("result") or {}
+    return cast("dict[str, Any]", response.json().get("task") or {})
+
+
+async def _get_task(client: httpx.AsyncClient, base: str, task_id: str) -> dict[str, Any]:
+    """GET {base}/tasks/{id}; the v1.0 REST door returns the Task at top level."""
+    response = await client.get(f"{base}/tasks/{task_id}")
+    response.raise_for_status()
+    return cast("dict[str, Any]", response.json())
 
 
 def _task_text(task: dict[str, Any]) -> str:
     for artifact in task.get("artifacts") or []:
         for part in artifact.get("parts") or []:
-            if part.get("kind") == "text":
+            if "text" in part:
                 return cast(str, part["text"])
     message = (task.get("status") or {}).get("message") or {}
     for part in message.get("parts") or []:
-        if part.get("kind") == "text":
+        if "text" in part:
             return cast(str, part["text"])
     return ""
 
@@ -61,9 +69,9 @@ def _interrupt_payload(task: dict[str, Any], agent_url: str) -> dict[str, Any]:
     prompt = ""
     data: dict[str, Any] = {}
     for part in message.get("parts") or []:
-        if part.get("kind") == "text" and not prompt:
+        if "text" in part and not prompt:
             prompt = part["text"]
-        elif part.get("kind") == "data":
+        elif "data" in part:
             data = part.get("data") or {}
     payload = dict(data) if isinstance(data, dict) else {}
     payload.setdefault("kind", "free_text")
@@ -125,8 +133,8 @@ class A2ARemoteAgent(Component):
 
     @staticmethod
     def _endpoint(ctx: BuildContext) -> str:
-        url = str(ctx.get_field("agent_url") or "").rstrip("/")
-        return url + "/"
+        """Base agent URL (no trailing slash); v1.0 REST verbs are appended."""
+        return str(ctx.get_field("agent_url") or "").rstrip("/")
 
     # ---------------------------------------------------------------- node mode
     def build(self, ctx: BuildContext) -> NodeFn:
@@ -142,20 +150,17 @@ class A2ARemoteAgent(Component):
                 if session is not None:
                     # resuming: forward the recorded answer to the remote task
                     answer = interrupt(session["payload"])  # returns recorded resume
-                    task = await _rpc(
+                    task = await _send_message(
                         client,
                         endpoint,
-                        "message/send",
                         {
-                            "message": {
-                                "role": "user",
-                                "taskId": session["task_id"],
-                                "contextId": session["context_id"],
-                                "messageId": _det_message_id(
-                                    "resume", session["task_id"], str(answer)
-                                ),
-                                "parts": [{"kind": "data", "data": answer}],
-                            }
+                            "role": "ROLE_USER",
+                            "taskId": session["task_id"],
+                            "contextId": session["context_id"],
+                            "messageId": _det_message_id(
+                                "resume", session["task_id"], str(answer)
+                            ),
+                            "parts": [{"data": answer}],
                         },
                     )
                 else:
@@ -163,23 +168,20 @@ class A2ARemoteAgent(Component):
                     inbound = ctx.get_input(state, "input")
                     if inbound is not None and hasattr(inbound, "content"):
                         text = inbound.content or text
-                    task = await _rpc(
+                    task = await _send_message(
                         client,
                         endpoint,
-                        "message/send",
                         {
-                            "message": {
-                                "role": "user",
-                                "contextId": remote_context,
-                                "messageId": _det_message_id("msg", remote_context, text),
-                                "parts": [{"kind": "text", "text": text}],
-                            }
+                            "role": "ROLE_USER",
+                            "contextId": remote_context,
+                            "messageId": _det_message_id("msg", remote_context, text),
+                            "parts": [{"text": text}],
                         },
                     )
 
                 while True:
                     state_name = (task.get("status") or {}).get("state", "")
-                    if state_name == "input-required":
+                    if state_name == "TASK_STATE_INPUT_REQUIRED":
                         payload = _interrupt_payload(task, endpoint)
                         _REMOTE_SESSIONS[key] = {
                             "payload": payload,
@@ -188,30 +190,32 @@ class A2ARemoteAgent(Component):
                         }
                         rc.emit("remote.input_required", {"task_id": task.get("id")})
                         answer = interrupt(payload)  # pauses OUR flow
-                        task = await _rpc(
+                        task = await _send_message(
                             client,
                             endpoint,
-                            "message/send",
                             {
-                                "message": {
-                                    "role": "user",
-                                    "taskId": task.get("id"),
-                                    "contextId": task.get("contextId"),
-                                    "messageId": _det_message_id(
-                                        "resume", str(task.get("id")), str(answer)
-                                    ),
-                                    "parts": [{"kind": "data", "data": answer}],
-                                }
+                                "role": "ROLE_USER",
+                                "taskId": task.get("id"),
+                                "contextId": task.get("contextId"),
+                                "messageId": _det_message_id(
+                                    "resume", str(task.get("id")), str(answer)
+                                ),
+                                "parts": [{"data": answer}],
                             },
                         )
                         continue
-                    if state_name in ("completed", "failed", "canceled", "rejected"):
+                    if state_name in (
+                        "TASK_STATE_COMPLETED",
+                        "TASK_STATE_FAILED",
+                        "TASK_STATE_CANCELED",
+                        "TASK_STATE_REJECTED",
+                    ):
                         _REMOTE_SESSIONS.pop(key, None)
                         break
                     # non-terminal (e.g. blocking=false server): poll
-                    task = await _rpc(client, endpoint, "tasks/get", {"id": task.get("id")})
+                    task = await _get_task(client, endpoint, str(task.get("id")))
 
-            if state_name != "completed":
+            if state_name != "TASK_STATE_COMPLETED":
                 raise RuntimeError(f"remote agent task ended {state_name}")
             text = _task_text(task)
             rc.emit("remote.completed", {"task_id": task.get("id"), "preview": text[:200]})
@@ -229,25 +233,22 @@ class A2ARemoteAgent(Component):
 
         async def factory() -> list[ToolDef]:
             async with component._client(ctx) as client:
-                card = (await client.get(endpoint + ".well-known/agent-card.json")).json()
+                card = (await client.get(f"{endpoint}/.well-known/agent-card.json")).json()
             slug = str(card.get("name", "remote")).lower().replace(" ", "_")
 
             async def call_remote(message: str) -> str:
                 async with component._client(ctx) as client:
-                    task = await _rpc(
+                    task = await _send_message(
                         client,
                         endpoint,
-                        "message/send",
                         {
-                            "message": {
-                                "role": "user",
-                                "messageId": _det_message_id("tool", endpoint, message),
-                                "parts": [{"kind": "text", "text": message}],
-                            }
+                            "role": "ROLE_USER",
+                            "messageId": _det_message_id("tool", endpoint, message),
+                            "parts": [{"text": message}],
                         },
                     )
                 state_name = (task.get("status") or {}).get("state", "")
-                if state_name == "input-required":
+                if state_name == "TASK_STATE_INPUT_REQUIRED":
                     raise RuntimeError(
                         "remote agent requires human input — attach it as a node "
                         "(mode=node) so the interrupt can propagate"
