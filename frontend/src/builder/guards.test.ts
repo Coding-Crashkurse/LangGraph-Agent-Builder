@@ -52,6 +52,33 @@ describe("nodePorts", () => {
   });
 });
 
+describe("nodePorts — v1.1 nodes", () => {
+  it("router ports pass the configured input type through the branches", () => {
+    const router = node("router", {
+      input_type: "documents",
+      rules: [{ when: "not_empty", branch: "found" }],
+      default_branch: "missing",
+    });
+    const { inputs, outputs } = nodePorts(router, infoByType.get("router"), catalogFixture);
+    expect(inputs).toEqual([{ name: "input", type: "documents", label: "Input" }]);
+    expect(outputs).toEqual([
+      { name: "found", type: "documents", label: "found" },
+      { name: "missing", type: "documents", label: "missing" },
+    ]);
+  });
+
+  it("template has a trigger port plus {vars} from its text", () => {
+    const template = node("template", { text: "Nothing about {topic}." });
+    const { inputs, outputs } = nodePorts(
+      template,
+      infoByType.get("template"),
+      catalogFixture,
+    );
+    expect(inputs.map((p) => p.name)).toEqual(["trigger", "topic"]);
+    expect(outputs).toEqual([{ name: "text", type: "text", label: "Text" }]);
+  });
+});
+
 describe("portsCompatible", () => {
   it("same type always connects", () => {
     expect(portsCompatible("text", "text", catalogFixture)).toBe(true);

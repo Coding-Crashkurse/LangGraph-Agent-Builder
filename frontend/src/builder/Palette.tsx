@@ -10,12 +10,13 @@ import { cn } from "@/lib/utils";
 
 import { NODE_ICONS } from "./nodes";
 
-const CATEGORY_ORDER = ["io", "llm", "rag", "tools"];
+const CATEGORY_ORDER = ["io", "llm", "rag", "tools", "flow"];
 const CATEGORY_LABEL: Record<string, string> = {
   io: "Input / Output",
   llm: "LLM",
   rag: "Knowledge",
   tools: "Tools",
+  flow: "Flow Control",
 };
 
 export const DRAG_MIME = "application/x-agentplane-node-type";

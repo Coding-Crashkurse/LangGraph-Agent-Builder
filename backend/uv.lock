@@ -41,7 +41,7 @@ dependencies = [
     { name = "pydantic" },
 ]
 wheels = [
-    { filename = "agentplane_core-0.1.0-py3-none-any.whl", hash = "sha256:40b19bcf7f6897ded34e1aa7fef96174186bb0d7f710770071a2edfa451b09e9" },
+    { filename = "agentplane_core-0.1.0-py3-none-any.whl", hash = "sha256:0d48646f4f0ea9bcc07a2c73d159aee8280df630e72bfa6efe7cd30693593cd5" },
 ]
 
 [package.metadata]
@@ -61,7 +61,7 @@ dependencies = [
     { name = "typer" },
 ]
 wheels = [
-    { filename = "agentplane_sdk-0.1.0-py3-none-any.whl", hash = "sha256:60cdea4b9585560c6c9c3da8dc6c24e8b6597bbd4cd2c6bc151001a964cf099b" },
+    { filename = "agentplane_sdk-0.1.0-py3-none-any.whl", hash = "sha256:4b8eae9489b0a2d2c276858b0f5970ae997ad1ee900ccb1cf9d091be86a4467f" },
 ]
 
 [package.metadata]

@@ -50,14 +50,12 @@
         "additionalProperties": false,
         "properties": {
           "output_from": {
-            "description": "Reference 'node_id.port' the flow output is read from",
+            "default": "",
+            "description": "Reference 'node_id.port' the flow output is read from. Empty means: take the value wired into the `input` port — required for branched flows where different runs feed `end` from different nodes.",
             "title": "Output From",
             "type": "string"
           }
         },
-        "required": [
-          "output_from"
-        ],
         "title": "EndNodeConfig",
         "type": "object"
       },
@@ -313,6 +311,166 @@
         }
       },
       "default_config": {}
+    },
+    {
+      "type": "router",
+      "version": 1,
+      "label": "Router",
+      "icon": "git-branch",
+      "category": "flow",
+      "description": "If/else branching: routes the input value to the first matching branch.",
+      "config_schema": {
+        "$defs": {
+          "RouterRule": {
+            "additionalProperties": false,
+            "description": "One branch condition, evaluated in order; first match wins.",
+            "properties": {
+              "when": {
+                "enum": [
+                  "not_empty",
+                  "empty"
+                ],
+                "title": "When",
+                "type": "string"
+              },
+              "branch": {
+                "pattern": "^[a-z][a-z0-9_]*$",
+                "title": "Branch",
+                "type": "string"
+              }
+            },
+            "required": [
+              "when",
+              "branch"
+            ],
+            "title": "RouterRule",
+            "type": "object"
+          }
+        },
+        "additionalProperties": false,
+        "description": "Conditional branching (v1.1): routes the input value to one branch.\n\nEvery rule branch plus the default branch becomes a typed output port\nthat passes the input value through; only the chosen branch's downstream\nnodes execute.",
+        "properties": {
+          "input_type": {
+            "default": "text",
+            "enum": [
+              "text",
+              "json",
+              "documents"
+            ],
+            "title": "Input Type",
+            "type": "string"
+          },
+          "rules": {
+            "items": {
+              "$ref": "#/$defs/RouterRule"
+            },
+            "minItems": 1,
+            "title": "Rules",
+            "type": "array"
+          },
+          "default_branch": {
+            "default": "otherwise",
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "title": "Default Branch",
+            "type": "string"
+          }
+        },
+        "required": [
+          "rules"
+        ],
+        "title": "RouterNodeConfig",
+        "type": "object"
+      },
+      "inputs": [],
+      "outputs": [],
+      "dynamic_inputs": "router_input",
+      "dynamic_outputs": "router_branches",
+      "ui": {
+        "input_type": {
+          "widget": "text",
+          "label": "Input Type",
+          "help": "Port type flowing through the branches (text | json | documents).",
+          "placeholder": "",
+          "resource_kind": null,
+          "advanced": false,
+          "toggleable": false
+        },
+        "rules": {
+          "widget": "json",
+          "label": "Rules",
+          "help": "Ordered conditions, first match wins: [{\"when\": \"not_empty\", \"branch\": \"found\"}]",
+          "placeholder": "",
+          "resource_kind": null,
+          "advanced": false,
+          "toggleable": false
+        },
+        "default_branch": {
+          "widget": "text",
+          "label": "Default Branch",
+          "help": "Taken when no rule matches.",
+          "placeholder": "",
+          "resource_kind": null,
+          "advanced": false,
+          "toggleable": false
+        }
+      },
+      "default_config": {
+        "input_type": "text",
+        "rules": [
+          {
+            "when": "not_empty",
+            "branch": "found"
+          }
+        ],
+        "default_branch": "otherwise"
+      }
+    },
+    {
+      "type": "template",
+      "version": 1,
+      "label": "Template",
+      "icon": "type",
+      "category": "flow",
+      "description": "Static or interpolated text; {vars} become input ports (fallback messages).",
+      "config_schema": {
+        "additionalProperties": false,
+        "description": "Static/interpolated text (v1.1): `{vars}` become input ports.\n\nThe `trigger` input port exists on every template so a router branch can\nactivate it even when the text needs no variables (fallback messages).",
+        "properties": {
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "title": "TemplateNodeConfig",
+        "type": "object"
+      },
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "text",
+          "type": "text",
+          "label": "Text"
+        }
+      ],
+      "dynamic_inputs": "template_vars",
+      "dynamic_outputs": null,
+      "ui": {
+        "text": {
+          "widget": "prompt",
+          "label": "Text",
+          "help": "Rendered as-is; {vars} become input ports. The trigger port activates the node from a router branch.",
+          "placeholder": "",
+          "resource_kind": null,
+          "advanced": false,
+          "toggleable": false
+        }
+      },
+      "default_config": {
+        "text": ""
+      }
     },
     {
       "type": "retrieval",

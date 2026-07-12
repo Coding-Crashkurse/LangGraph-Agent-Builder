@@ -90,8 +90,12 @@ export interface NodeTypeInfo {
   config_schema: JsonSchema;
   inputs: PortDecl[];
   outputs: PortDecl[];
-  dynamic_inputs: "prompt_vars" | "arg_keys" | null;
-  dynamic_outputs: "input_schema_properties" | "structured_output_json" | null;
+  dynamic_inputs: "prompt_vars" | "arg_keys" | "template_vars" | "router_input" | null;
+  dynamic_outputs:
+    | "input_schema_properties"
+    | "structured_output_json"
+    | "router_branches"
+    | null;
   ui: Record<string, FieldUI>;
   /** Config a freshly dropped node starts with (UX starter, not contract). */
   default_config: Record<string, unknown>;

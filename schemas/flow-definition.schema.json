@@ -54,14 +54,12 @@
       "additionalProperties": false,
       "properties": {
         "output_from": {
-          "description": "Reference 'node_id.port' the flow output is read from",
+          "default": "",
+          "description": "Reference 'node_id.port' the flow output is read from. Empty means: take the value wired into the `input` port \u2014 required for branched flows where different runs feed `end` from different nodes.",
           "title": "Output From",
           "type": "string"
         }
       },
-      "required": [
-        "output_from"
-      ],
       "title": "EndNodeConfig",
       "type": "object"
     },
@@ -366,6 +364,97 @@
       "title": "RetrievalNodeConfig",
       "type": "object"
     },
+    "RouterNode": {
+      "additionalProperties": false,
+      "properties": {
+        "config": {
+          "$ref": "#/$defs/RouterNodeConfig"
+        },
+        "id": {
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "type": {
+          "const": "router",
+          "title": "Type",
+          "type": "string"
+        },
+        "version": {
+          "minimum": 1,
+          "title": "Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "version",
+        "type",
+        "config"
+      ],
+      "title": "RouterNode",
+      "type": "object"
+    },
+    "RouterNodeConfig": {
+      "additionalProperties": false,
+      "description": "Conditional branching (v1.1): routes the input value to one branch.\n\nEvery rule branch plus the default branch becomes a typed output port\nthat passes the input value through; only the chosen branch's downstream\nnodes execute.",
+      "properties": {
+        "default_branch": {
+          "default": "otherwise",
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "title": "Default Branch",
+          "type": "string"
+        },
+        "input_type": {
+          "default": "text",
+          "enum": [
+            "text",
+            "json",
+            "documents"
+          ],
+          "title": "Input Type",
+          "type": "string"
+        },
+        "rules": {
+          "items": {
+            "$ref": "#/$defs/RouterRule"
+          },
+          "minItems": 1,
+          "title": "Rules",
+          "type": "array"
+        }
+      },
+      "required": [
+        "rules"
+      ],
+      "title": "RouterNodeConfig",
+      "type": "object"
+    },
+    "RouterRule": {
+      "additionalProperties": false,
+      "description": "One branch condition, evaluated in order; first match wins.",
+      "properties": {
+        "branch": {
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "title": "Branch",
+          "type": "string"
+        },
+        "when": {
+          "enum": [
+            "not_empty",
+            "empty"
+          ],
+          "title": "When",
+          "type": "string"
+        }
+      },
+      "required": [
+        "when",
+        "branch"
+      ],
+      "title": "RouterRule",
+      "type": "object"
+    },
     "StartNode": {
       "additionalProperties": false,
       "properties": {
@@ -410,6 +499,52 @@
         "input_schema"
       ],
       "title": "StartNodeConfig",
+      "type": "object"
+    },
+    "TemplateNode": {
+      "additionalProperties": false,
+      "properties": {
+        "config": {
+          "$ref": "#/$defs/TemplateNodeConfig"
+        },
+        "id": {
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "type": {
+          "const": "template",
+          "title": "Type",
+          "type": "string"
+        },
+        "version": {
+          "minimum": 1,
+          "title": "Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "version",
+        "type",
+        "config"
+      ],
+      "title": "TemplateNode",
+      "type": "object"
+    },
+    "TemplateNodeConfig": {
+      "additionalProperties": false,
+      "description": "Static/interpolated text (v1.1): `{vars}` become input ports.\n\nThe `trigger` input port exists on every template so a router branch can\nactivate it even when the text needs no variables (fallback messages).",
+      "properties": {
+        "text": {
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "title": "TemplateNodeConfig",
       "type": "object"
     }
   },
@@ -462,7 +597,9 @@
             "llm_call": "#/$defs/LlmCallNode",
             "mcp_tool": "#/$defs/McpToolNode",
             "retrieval": "#/$defs/RetrievalNode",
-            "start": "#/$defs/StartNode"
+            "router": "#/$defs/RouterNode",
+            "start": "#/$defs/StartNode",
+            "template": "#/$defs/TemplateNode"
           },
           "propertyName": "type"
         },
@@ -481,6 +618,12 @@
           },
           {
             "$ref": "#/$defs/RetrievalNode"
+          },
+          {
+            "$ref": "#/$defs/RouterNode"
+          },
+          {
+            "$ref": "#/$defs/TemplateNode"
           }
         ]
       },

@@ -28,7 +28,8 @@ def test_e001_unsupported_schema_version() -> None:
 
 def test_e002_unknown_node_type() -> None:
     bad = definition()
-    bad["nodes"].append({"id": "x_1", "type": "router", "version": 1, "config": {}})
+    # subflow is reserved in the platform spec but not implemented (E002)
+    bad["nodes"].append({"id": "x_1", "type": "subflow", "version": 1, "config": {}})
     assert "E002" in _codes(bad)
 
 

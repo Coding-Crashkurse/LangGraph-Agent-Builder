@@ -48,6 +48,29 @@ function schemaPropertyPorts(inputSchema: unknown): PortDecl[] {
   });
 }
 
+const PORT_TYPES: PortType[] = ["text", "json", "message", "documents"];
+
+function asPortType(value: unknown): PortType {
+  return PORT_TYPES.includes(value as PortType) ? (value as PortType) : "text";
+}
+
+function routerBranches(config: Record<string, unknown>): string[] {
+  const rules = Array.isArray(config.rules) ? config.rules : [];
+  const names = rules
+    .map((rule) =>
+      typeof rule === "object" && rule !== null
+        ? (rule as { branch?: unknown }).branch
+        : undefined,
+    )
+    .filter((branch): branch is string => typeof branch === "string" && branch !== "");
+  const fallback =
+    typeof config.default_branch === "string" && config.default_branch
+      ? config.default_branch
+      : "otherwise";
+  if (!names.includes(fallback)) names.push(fallback);
+  return names;
+}
+
 /** Typed ports of one node, config-dependent ports included. */
 export function nodePorts(
   node: DefinitionNode,
@@ -67,6 +90,15 @@ export function nodePorts(
     const args = node.config.args;
     const keys = typeof args === "object" && args !== null ? Object.keys(args) : [];
     inputs = keys.map((name) => ({ name, type: "text" as const, label: name }));
+  } else if (info.dynamic_inputs === "template_vars") {
+    inputs = [
+      { name: "trigger", type: "text", label: "Trigger" },
+      ...promptVariables(catalog.prompt_var_pattern, node.config.text)
+        .filter((name) => name !== "trigger")
+        .map((name) => ({ name, type: "text" as const, label: name })),
+    ];
+  } else if (info.dynamic_inputs === "router_input") {
+    inputs = [{ name: "input", type: asPortType(node.config.input_type), label: "Input" }];
   }
   if (info.dynamic_outputs === "input_schema_properties") {
     outputs = schemaPropertyPorts(node.config.input_schema);
@@ -75,6 +107,13 @@ export function nodePorts(
     if (node.config.structured_output != null) {
       outputs.push({ name: "json", type: "json", label: "JSON" });
     }
+  } else if (info.dynamic_outputs === "router_branches") {
+    const branchType = asPortType(node.config.input_type);
+    outputs = routerBranches(node.config).map((name) => ({
+      name,
+      type: branchType,
+      label: name,
+    }));
   }
   return { inputs, outputs };
 }

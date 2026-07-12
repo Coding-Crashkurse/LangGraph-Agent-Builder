@@ -12,7 +12,16 @@ import {
   type EdgeProps,
   type NodeProps,
 } from "@xyflow/react";
-import { Database, Flag, Play, Sparkles, Wrench, type LucideIcon } from "lucide-react";
+import {
+  Database,
+  Flag,
+  GitBranch,
+  Play,
+  Sparkles,
+  Type,
+  Wrench,
+  type LucideIcon,
+} from "lucide-react";
 import { memo } from "react";
 
 import type { PortDecl, PortType } from "@/api/types";
@@ -28,6 +37,8 @@ export const NODE_ICONS: Record<string, LucideIcon> = {
   sparkles: Sparkles,
   wrench: Wrench,
   database: Database,
+  "git-branch": GitBranch,
+  type: Type,
 };
 
 const PORT_COLOR: Record<PortType, string> = {

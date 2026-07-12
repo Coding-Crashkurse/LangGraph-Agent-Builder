@@ -18,7 +18,9 @@ from agentplane_core import (
     McpToolNodeConfig,
     PortType,
     RetrievalNodeConfig,
+    RouterNodeConfig,
     StartNodeConfig,
+    TemplateNodeConfig,
 )
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -32,8 +34,8 @@ EXTRA_COMPATIBLE_PORTS: tuple[tuple[PortType, PortType], ...] = (
     ("text", "json"),
 )
 
-DynamicInputs = Literal["prompt_vars", "arg_keys"]
-DynamicOutputs = Literal["input_schema_properties", "structured_output_json"]
+DynamicInputs = Literal["prompt_vars", "arg_keys", "template_vars", "router_input"]
+DynamicOutputs = Literal["input_schema_properties", "structured_output_json", "router_branches"]
 ResourceKindFilter = Literal["model_provider", "vector_db", "mcp_server"]
 
 
@@ -203,6 +205,64 @@ NODE_TYPES: list[NodeTypeInfo] = [
                 widget="dict",
                 label="Arguments",
                 help="input port name → tool argument name",
+            ),
+        },
+    ),
+    NodeTypeInfo(
+        type="router",
+        version=1,
+        label="Router",
+        icon="git-branch",
+        category="flow",
+        description="If/else branching: routes the input value to the first matching branch.",
+        config_schema=RouterNodeConfig.model_json_schema(),
+        dynamic_inputs="router_input",
+        dynamic_outputs="router_branches",
+        default_config={
+            "input_type": "text",
+            "rules": [{"when": "not_empty", "branch": "found"}],
+            "default_branch": "otherwise",
+        },
+        ui={
+            "input_type": FieldUI(
+                widget="text",
+                label="Input Type",
+                help="Port type flowing through the branches (text | json | documents).",
+            ),
+            "rules": FieldUI(
+                widget="json",
+                label="Rules",
+                help=(
+                    "Ordered conditions, first match wins: "
+                    '[{"when": "not_empty", "branch": "found"}]'
+                ),
+            ),
+            "default_branch": FieldUI(
+                widget="text",
+                label="Default Branch",
+                help="Taken when no rule matches.",
+            ),
+        },
+    ),
+    NodeTypeInfo(
+        type="template",
+        version=1,
+        label="Template",
+        icon="type",
+        category="flow",
+        description="Static or interpolated text; {vars} become input ports (fallback messages).",
+        config_schema=TemplateNodeConfig.model_json_schema(),
+        outputs=[PortDecl(name="text", type="text", label="Text")],
+        dynamic_inputs="template_vars",
+        default_config={"text": ""},
+        ui={
+            "text": FieldUI(
+                widget="prompt",
+                label="Text",
+                help=(
+                    "Rendered as-is; {vars} become input ports. The trigger port "
+                    "activates the node from a router branch."
+                ),
             ),
         },
     ),
