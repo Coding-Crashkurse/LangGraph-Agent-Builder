@@ -83,6 +83,22 @@ async def test_runtime_duplicates_deduped(runtime_client: AsyncClient) -> None:
 
 
 @respx.mock
+async def test_runtime_check_skippable_for_silent_local_validate(
+    runtime_client: AsyncClient,
+) -> None:
+    """The canvas's debounced re-validate runs local-only (?runtime=false)."""
+    route = respx.post(f"{RUNTIME_URL}/api/v1/definitions/validate").mock(
+        return_value=Response(200, json={"valid": True, "issues": []})
+    )
+    resp = await runtime_client.post(
+        "/api/v1/flows/validate", params={"runtime": "false"}, json=definition()
+    )
+    body = resp.json()
+    assert body["runtime_checked"] is False
+    assert not route.called
+
+
+@respx.mock
 async def test_unreachable_runtime_degrades(runtime_client: AsyncClient) -> None:
     import httpx
 

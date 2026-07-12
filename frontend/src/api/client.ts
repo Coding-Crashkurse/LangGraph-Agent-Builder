@@ -77,8 +77,11 @@ export const api = {
     save: (name: string, definition: FlowDefinition) =>
       request<FlowDetail>(`/flows/${name}`, { ...jsonBody(definition), method: "PUT" }),
     delete: (name: string) => request<void>(`/flows/${name}`, { method: "DELETE" }),
-    validate: (definition: FlowDefinition) =>
-      request<ValidationResponse>("/flows/validate", jsonBody(definition)),
+    validate: (definition: FlowDefinition, opts?: { runtime?: boolean }) =>
+      request<ValidationResponse>(
+        `/flows/validate${opts?.runtime === false ? "?runtime=false" : ""}`,
+        jsonBody(definition),
+      ),
     publish: (name: string) =>
       request<PublishResponse>(`/flows/${name}/publish`, { method: "POST" }),
     playground: (name: string) =>

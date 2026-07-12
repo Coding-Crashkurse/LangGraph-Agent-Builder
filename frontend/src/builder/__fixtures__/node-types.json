@@ -36,7 +36,8 @@
           "advanced": false,
           "toggleable": false
         }
-      }
+      },
+      "default_config": {}
     },
     {
       "type": "end",
@@ -80,7 +81,8 @@
           "advanced": false,
           "toggleable": false
         }
-      }
+      },
+      "default_config": {}
     },
     {
       "type": "llm_call",
@@ -169,7 +171,7 @@
         "prompt": {
           "widget": "prompt",
           "label": "Prompt",
-          "help": "",
+          "help": "Template for the human message — {vars} become input ports. Plain chat: keep {message} to pass the incoming message through; RAG/tools: compose, e.g. 'Answer {query} using {documents}'.",
           "placeholder": "",
           "resource_kind": null,
           "advanced": false,
@@ -178,7 +180,7 @@
         "system_prompt": {
           "widget": "prompt",
           "label": "System Prompt",
-          "help": "Same template rules as the prompt — {vars} become input ports.",
+          "help": "Behavior/instructions; {vars} become input ports here too.",
           "placeholder": "",
           "resource_kind": null,
           "advanced": false,
@@ -202,6 +204,10 @@
           "advanced": false,
           "toggleable": false
         }
+      },
+      "default_config": {
+        "prompt": "{message}",
+        "system_prompt": ""
       }
     },
     {
@@ -305,7 +311,8 @@
           "advanced": false,
           "toggleable": false
         }
-      }
+      },
+      "default_config": {}
     },
     {
       "type": "retrieval",
@@ -412,6 +419,9 @@
           "advanced": true,
           "toggleable": false
         }
+      },
+      "default_config": {
+        "top_k": 4
       }
     }
   ],

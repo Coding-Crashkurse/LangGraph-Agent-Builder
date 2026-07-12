@@ -32,7 +32,9 @@ def make_settings(tmp_path: Path, **overrides: Any) -> Settings:
         "database_url": f"sqlite+aiosqlite:///{(tmp_path / 'test.db').as_posix()}",
         **overrides,
     }
-    return Settings(**values)
+    # _env_file=None keeps tests hermetic — a developer's backend/.env (e.g.
+    # BUILDER_RUNTIME_URL for local dev) must never leak into the suite.
+    return Settings(_env_file=None, **values)
 
 
 ClientFactory = Callable[..., AbstractAsyncContextManager[AsyncClient]]

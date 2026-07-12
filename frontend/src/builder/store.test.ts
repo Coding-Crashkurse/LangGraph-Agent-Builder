@@ -19,15 +19,54 @@ describe("builder store", () => {
     expect(current.name).toBe(original.name);
   });
 
-  it("addNode assigns catalog-conform ids and empty config", () => {
+  it("addNode assigns catalog-conform ids and the catalog starter config", () => {
     useBuilder.getState().addNode("llm_call", { x: 5, y: 5 });
     useBuilder.getState().addNode("llm_call", { x: 6, y: 6 });
     const ids = useBuilder.getState().nodes.map((n) => n.id);
     expect(ids).toContain("call_2"); // call_1 exists in the fixture
     expect(ids).toContain("call_3");
     const added = useBuilder.getState().nodes.find((n) => n.id === "call_2")!;
-    expect(added.data.def).toEqual({ id: "call_2", type: "llm_call", version: 1, config: {} });
+    expect(added.data.def).toEqual({
+      id: "call_2",
+      type: "llm_call",
+      version: 1,
+      config: { prompt: "{message}", system_prompt: "" },
+    });
     expect(useBuilder.getState().dirty).toBe(true);
+  });
+
+  it("undo/redo restores an added node", () => {
+    useBuilder.getState().addNode("llm_call", { x: 1, y: 1 });
+    expect(useBuilder.getState().nodes).toHaveLength(4);
+    useBuilder.getState().undo();
+    expect(useBuilder.getState().nodes).toHaveLength(3);
+    useBuilder.getState().redo();
+    expect(useBuilder.getState().nodes).toHaveLength(4);
+  });
+
+  it("deleting a node is one undo step incl. its wiring", () => {
+    useBuilder.getState().onNodesChange([{ type: "remove", id: "call_1" }]);
+    expect(useBuilder.getState().nodes.map((n) => n.id)).not.toContain("call_1");
+    expect(useBuilder.getState().edges).toHaveLength(0); // pruned with the node
+    useBuilder.getState().undo();
+    expect(useBuilder.getState().nodes.map((n) => n.id)).toContain("call_1");
+    expect(useBuilder.getState().edges).toHaveLength(2); // wiring restored too
+  });
+
+  it("config typing coalesces into a single undo step", () => {
+    const before = useBuilder.getState().past.length;
+    useBuilder.getState().updateNodeConfig("call_1", { prompt: "{m" });
+    useBuilder.getState().updateNodeConfig("call_1", { prompt: "{me}" });
+    expect(useBuilder.getState().past.length).toBe(before + 1);
+    useBuilder.getState().undo();
+    const def = useBuilder.getState().nodes.find((n) => n.id === "call_1")!.data.def;
+    expect(def.config.prompt).toBe("{message}");
+  });
+
+  it("meta edits are undoable", () => {
+    useBuilder.getState().updateMeta({ description: "changed" });
+    useBuilder.getState().undo();
+    expect(useBuilder.getState().meta.description).toBe("test flow");
   });
 
   it("onConnect refuses incompatible ports", () => {

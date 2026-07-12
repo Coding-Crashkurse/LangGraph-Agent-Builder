@@ -93,6 +93,8 @@ export interface NodeTypeInfo {
   dynamic_inputs: "prompt_vars" | "arg_keys" | null;
   dynamic_outputs: "input_schema_properties" | "structured_output_json" | null;
   ui: Record<string, FieldUI>;
+  /** Config a freshly dropped node starts with (UX starter, not contract). */
+  default_config: Record<string, unknown>;
 }
 
 export interface NodeCatalog {

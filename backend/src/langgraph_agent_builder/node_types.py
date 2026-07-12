@@ -78,6 +78,9 @@ class NodeTypeInfo(BaseModel):
     dynamic_inputs: DynamicInputs | None = None
     dynamic_outputs: DynamicOutputs | None = None
     ui: dict[str, FieldUI] = Field(default_factory=dict)
+    # Config a freshly dropped node starts with (UX starter, not contract —
+    # e.g. llm_call passes the incoming message through by default).
+    default_config: dict[str, object] = Field(default_factory=dict)
 
 
 class NodeCatalog(BaseModel):
@@ -141,6 +144,7 @@ NODE_TYPES: list[NodeTypeInfo] = [
         outputs=[PortDecl(name="text", type="text", label="Text")],
         dynamic_inputs="prompt_vars",
         dynamic_outputs="structured_output_json",
+        default_config={"prompt": "{message}", "system_prompt": ""},
         ui={
             "resource": FieldUI(
                 widget="resource",
@@ -148,11 +152,19 @@ NODE_TYPES: list[NodeTypeInfo] = [
                 resource_kind="model_provider",
             ),
             "model": FieldUI(widget="text", label="Model", placeholder="provider default"),
-            "prompt": FieldUI(widget="prompt", label="Prompt"),
+            "prompt": FieldUI(
+                widget="prompt",
+                label="Prompt",
+                help=(
+                    "Template for the human message — {vars} become input ports. "
+                    "Plain chat: keep {message} to pass the incoming message through; "
+                    "RAG/tools: compose, e.g. 'Answer {query} using {documents}'."
+                ),
+            ),
             "system_prompt": FieldUI(
                 widget="prompt",
                 label="System Prompt",
-                help="Same template rules as the prompt — {vars} become input ports.",
+                help="Behavior/instructions; {vars} become input ports here too.",
             ),
             "structured_output": FieldUI(
                 widget="schema",
@@ -204,6 +216,7 @@ NODE_TYPES: list[NodeTypeInfo] = [
         config_schema=RetrievalNodeConfig.model_json_schema(),
         inputs=[PortDecl(name="query", type="text", label="Query")],
         outputs=[PortDecl(name="documents", type="documents", label="Documents")],
+        default_config={"top_k": 4},
         ui={
             "resource": FieldUI(widget="resource", label="Vector DB", resource_kind="vector_db"),
             "collection": FieldUI(widget="text", label="Collection"),

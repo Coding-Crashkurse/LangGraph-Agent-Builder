@@ -18,9 +18,11 @@ import {
   Check,
   Loader2,
   MessageSquare,
+  Redo2,
   Rocket,
   Save,
   Share2,
+  Undo2,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
@@ -71,6 +73,7 @@ function Canvas({ flowName }: { flowName: string }) {
       onEdgesChange={onEdgesChange}
       onConnect={onConnect}
       isValidConnection={isValidConnection}
+      deleteKeyCode={["Backspace", "Delete"]}
       onDrop={onDrop}
       onDragOver={(event) => {
         event.preventDefault();
@@ -101,6 +104,13 @@ function BuilderInner({ flowName }: { flowName: string }) {
   const setIssues = useBuilder((s) => s.setIssues);
   const markSaved = useBuilder((s) => s.markSaved);
   const select = useBuilder((s) => s.select);
+  const undo = useBuilder((s) => s.undo);
+  const redo = useBuilder((s) => s.redo);
+  const canUndo = useBuilder((s) => s.past.length > 0);
+  const canRedo = useBuilder((s) => s.future.length > 0);
+  const nodes = useBuilder((s) => s.nodes);
+  const edges = useBuilder((s) => s.edges);
+  const meta = useBuilder((s) => s.meta);
 
   const [busy, setBusy] = useState<"save" | "validate" | "publish" | "playground" | null>(null);
   const [publishOpen, setPublishOpen] = useState(false);
@@ -121,6 +131,47 @@ function BuilderInner({ flowName }: { flowName: string }) {
       load(flowQuery.data.definition, catalogQuery.data);
     }
   }, [flowQuery.data, catalogQuery.data, flowName, load]);
+
+  // Undo/redo keyboard shortcuts; form fields keep their native text undo.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey)) return;
+      const target = event.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.tagName === "SELECT" ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+      const key = event.key.toLowerCase();
+      if (key === "z" && !event.shiftKey) {
+        event.preventDefault();
+        undo();
+      } else if (key === "y" || (key === "z" && event.shiftKey)) {
+        event.preventDefault();
+        redo();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [undo, redo]);
+
+  // Silent local re-validate after semantic changes: keeps issues fresh while
+  // editing (no stale field errors); the Validate button adds the
+  // authoritative runtime answer on top.
+  useEffect(() => {
+    if (!loaded || useBuilder.getState().validated) return;
+    const timer = setTimeout(() => {
+      api.flows
+        .validate(currentDefinition(), { runtime: false })
+        .then(setValidation)
+        .catch(() => undefined); // silent — manual Validate surfaces errors
+    }, 700);
+    return () => clearTimeout(timer);
+  }, [nodes, edges, meta, loaded, currentDefinition, setValidation]);
 
   const save = useCallback(async (): Promise<boolean> => {
     setBusy("save");
@@ -226,6 +277,26 @@ function BuilderInner({ flowName }: { flowName: string }) {
         {validated && !blocked && <Badge tone="success">valid</Badge>}
         {validated && blocked && <Badge tone="danger">errors</Badge>}
         <span className="ml-auto flex items-center gap-1.5">
+          <Button
+            size="icon"
+            variant="ghost"
+            onClick={undo}
+            disabled={!canUndo}
+            title="Undo (Ctrl+Z)"
+            aria-label="Undo"
+          >
+            <Undo2 size={14} />
+          </Button>
+          <Button
+            size="icon"
+            variant="ghost"
+            onClick={redo}
+            disabled={!canRedo}
+            title="Redo (Ctrl+Y)"
+            aria-label="Redo"
+          >
+            <Redo2 size={14} />
+          </Button>
           <Button size="sm" variant="secondary" onClick={() => void save()} disabled={busy !== null}>
             {busy === "save" ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
             Save

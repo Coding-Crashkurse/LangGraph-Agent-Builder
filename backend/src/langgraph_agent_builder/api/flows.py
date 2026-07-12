@@ -128,12 +128,22 @@ async def create_flow(
 
 @router.post("/validate")
 async def validate_flow(
-    definition: DefinitionBody, svc: Services, principal: CurrentPrincipal
+    definition: DefinitionBody,
+    svc: Services,
+    principal: CurrentPrincipal,
+    runtime: Annotated[bool, Query()] = True,
 ) -> ValidationResponse:
-    """Merged local (advisory) + runtime (authoritative) validation."""
+    """Merged local (advisory) + runtime (authoritative) validation.
+
+    ``runtime=false`` runs the instant local check only — used by the
+    canvas's silent re-validate while editing; the Validate button asks the
+    runtime for the full picture.
+    """
     local = validate_structure(definition)
     issues = [SourcedIssue.wrap(i, "local") for i in local]
-    runtime_result = await svc.gateway.validate(definition, principal.token)
+    runtime_result = (
+        await svc.gateway.validate(definition, principal.token) if runtime else None
+    )
     if runtime_result is not None:
         seen = {(i.code, i.path) for i in local}
         issues += [
