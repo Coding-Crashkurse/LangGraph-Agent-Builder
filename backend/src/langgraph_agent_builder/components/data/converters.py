@@ -14,11 +14,15 @@ from langgraph_agent_builder.sdk.templating import message_text, render_prompt
 
 class PromptTemplate(Component):
     component_id = "lab.data.prompt_template"
-    legacy = True
-    display_name = "Prompt Template"
-    description = "Standalone PromptInput: renders {vars} into Text/Message."
+    display_name = "Prompt"
+    description = (
+        "Compose a prompt from a template — each {variable} becomes an input port "
+        "(wire Documents, Text or values in; Documents coerce to text). Outputs the "
+        "rendered Text/Message to feed an LLM Agent's input or an LLM Call {var}."
+    )
     icon = "file-text"
-    category = "data"
+    category = "io"
+    priority = 30
 
     inputs = [
         fields.PromptInput(name="template", display_name="Template", required=True),

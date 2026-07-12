@@ -40,12 +40,15 @@ if TYPE_CHECKING:
 
     from langgraph_agent_builder.services.settings import Settings
 
-# The 12 product nodes that must remain in the palette after the cut (the 13th,
-# lab.flow.code, is a later phase). Assert the SET, not just the count.
+# The product nodes that must remain in the palette after the cut (lab.flow.code
+# is a later phase). Assert the SET, not just the count. lab.data.prompt_template
+# ("Prompt") was restored to the palette (Langflow-parity: compose a prompt from a
+# template whose {variables} become input ports — the RAG documents→{context} path).
 TARGET_PALETTE = {
     "lab.io.start",
     "lab.io.end",
     "lab.io.set_data",
+    "lab.data.prompt_template",
     "lab.llm.call",
     "lab.llm.agent",
     "lab.flow.router",
