@@ -15,7 +15,7 @@ from typing import Any
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from langgraph_agent_builder.sdk import Component, Output, fields, ports
-from langgraph_agent_builder.sdk.component import BuildContext, NodeFn
+from langgraph_agent_builder.sdk.component import BuildContext, NodeConfig, NodeFn
 from langgraph_agent_builder.sdk.runtime import get_run_context
 from langgraph_agent_builder.sdk.templating import render_prompt
 
@@ -57,20 +57,35 @@ class Call(Component):
         fields.BoolInput(
             name="structured_output",
             display_name="Structured Output",
-            info="Force JSON output matching `output_schema`.",
+            info="Force JSON output matching the schema; adds a Json output port.",
             default=False,
             advanced=True,
         ),
-        fields.NestedDictInput(name="output_schema", display_name="Output Schema", advanced=True),
+        fields.NestedDictInput(
+            name="output_schema",
+            display_name="Output Schema",
+            advanced=True,
+            show_when={"field": "structured_output", "equals": True},
+        ),
         fields.BoolInput(
             name="stream_tokens", display_name="Stream Tokens", default=True, advanced=True
         ),
     ]
-    outputs = [
-        Output(name="message", display_name="Message", port=ports.MESSAGE),
-        Output(name="text", display_name="Text", port=ports.TEXT),
-        Output(name="json", display_name="Json", port=ports.JSON),
-    ]
+    # One response, one output: `message` coerces to text/data/any at the edge, so a
+    # separate `text` port is redundant. `json` appears only when structured output
+    # is forced (outputs_for_config), so the port set matches what the node produces.
+    outputs = [Output(name="message", display_name="Message", port=ports.MESSAGE)]
+
+    @classmethod
+    def outputs_for_config(cls, config: NodeConfig) -> list[Output]:
+        outs = [Output(name="message", display_name="Message", port=ports.MESSAGE)]
+        if config.get("structured_output"):
+            outs.append(Output(name="json", display_name="Json", port=ports.JSON))
+        if cls.tool_mode_supported and cls.tool_mode_enabled(config):
+            from langgraph_agent_builder.sdk.ports import TOOLSET
+
+            outs.append(Output(name="toolset", display_name="Toolset", port=TOOLSET))
+        return outs
 
     def build(self, ctx: BuildContext) -> NodeFn:
         from langgraph_agent_builder.components.llm._models import (

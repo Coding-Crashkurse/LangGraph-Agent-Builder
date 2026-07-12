@@ -40,6 +40,17 @@ const CATEGORY_ICONS: Record<string, LucideIcon> = {
   testing: FlaskConical,
 };
 
+/** Conditional field visibility: a field with `show_when: {field, equals}` is
+ * hidden unless the sibling field's current value equals the target. */
+function showWhenSatisfied(
+  field: FieldDescriptor,
+  config: Record<string, unknown>,
+): boolean {
+  const sw = field.show_when as { field: string; equals: unknown } | undefined;
+  if (!sw || typeof sw !== "object") return true;
+  return config[sw.field] === sw.equals;
+}
+
 export function ConfigPanel() {
   const selectedNodeId = useBuilder((s) => s.selectedNodeId);
   const nodes = useBuilder((s) => s.nodes);
@@ -79,17 +90,19 @@ function Inspector({ node, descriptor }: { node: CanvasNode; descriptor: Compone
     [],
   );
 
-  const fields = useMemo(() => {
-    const list = liveFields ?? descriptor.fields;
-    return list.filter((f) => !f.port_only && f.show && !f.deprecated);
-  }, [descriptor, liveFields]);
-
   // descriptor defaults materialize through convert.ts's defaultConfig — the
   // single source shared with node creation (inline widgets read the same map).
   const effectiveConfig = useMemo(
     () => ({ ...defaultConfig(descriptor), ...node.data.config }),
     [descriptor, node.data.config],
   );
+
+  const fields = useMemo(() => {
+    const list = liveFields ?? descriptor.fields;
+    return list.filter(
+      (f) => !f.port_only && f.show && !f.deprecated && showWhenSatisfied(f, effectiveConfig),
+    );
+  }, [descriptor, liveFields, effectiveConfig]);
 
   const nodeDiags = diagnostics.filter((d) => d.node_id === node.id);
 

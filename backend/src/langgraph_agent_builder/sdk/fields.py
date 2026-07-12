@@ -53,6 +53,9 @@ class Field(BaseModel):
     # (SPEC §10.5). NEVER enabled on a Secret field (guarded on SecretInput).
     expressions: bool = False
     deprecated: bool = False
+    # Conditional visibility: {"field": "<sibling>", "equals": <value>} — the field
+    # is hidden in the form unless the sibling field's current value == <value>.
+    show_when: dict[str, Any] | None = None
     # handle capability
     as_port: PortSpec | None = None
     port_only: bool = False
