@@ -69,7 +69,16 @@ class KbRetriever(Component):
             info="A knowledge base resource (vector store connection + collection + embedding).",
         ),
         fields.IntInput(name="k", display_name="Top K", default=4, min=1, max=50),
-        fields.QueryInput(name="query", display_name="Query", tool_mode=True),
+        # Query is a connectable TEXT input (wire a Chat Input / upstream text in),
+        # not a global-variable slot — it also accepts typed text and falls back to
+        # the last human message when left unconnected.
+        fields.QueryInput(
+            name="query",
+            display_name="Query",
+            as_port=ports.TEXT,
+            accepts_global_variable=False,
+            tool_mode=True,
+        ),
         fields.NestedDictInput(name="filter", display_name="Metadata Filter", advanced=True),
         fields.FloatInput(
             name="score_threshold", display_name="Score Threshold", advanced=True, min=0.0, max=1.0
@@ -99,7 +108,7 @@ class KbRetriever(Component):
             handle = VectorStoreHandle(connection=connection, collection=str(collection))
 
             query = str(
-                ctx.get_field("query")
+                ctx.get_input(state, "query")  # connected TEXT port wins over typed value
                 or last_message_text(state, human_only=True)
                 or last_message_text(state)
             )

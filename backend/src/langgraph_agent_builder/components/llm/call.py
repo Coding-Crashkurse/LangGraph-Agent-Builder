@@ -47,6 +47,13 @@ class Call(Component):
             required=True,
             info="A model provider resource; pick the model on the reference.",
         ),
+        fields.HandleField(
+            name="documents",
+            display_name="Documents",
+            as_port=ports.DOCUMENTS,
+            info="Optional retrieved documents (e.g. from a Knowledge Base) — "
+            "injected into the prompt as context for RAG.",
+        ),
         fields.MultilineInput(
             name="system",
             display_name="System Prompt",
@@ -91,6 +98,15 @@ class Call(Component):
             system = ctx.get_input(state, "system")
             if system:
                 messages.append(SystemMessage(content=str(system)))
+            docs = ctx.get_input(state, "documents")
+            if docs:
+                from langgraph_agent_builder.sdk.ports.coerce import documents_to_text
+
+                context = documents_to_text(docs)
+                if context.strip():
+                    messages.append(
+                        SystemMessage(content="Use the following context:\n\n" + context)
+                    )
             if structured and schema:
                 messages.append(
                     SystemMessage(

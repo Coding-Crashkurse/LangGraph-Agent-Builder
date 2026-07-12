@@ -50,6 +50,13 @@ class Agent(Component):
             default="You are a helpful assistant.",
         ),
         fields.ToolsInput(name="tools", display_name="Tools"),
+        fields.HandleField(
+            name="documents",
+            display_name="Documents",
+            as_port=ports.DOCUMENTS,
+            info="Optional retrieved documents (e.g. from a Knowledge Base) — "
+            "appended to the system prompt as context for RAG.",
+        ),
         fields.IntInput(
             name="max_iterations", display_name="Max Iterations", default=6, min=1, max=25
         ),
@@ -87,6 +94,13 @@ class Agent(Component):
 
             template = str(ctx.get_field("system_prompt") or "")
             system = render_prompt(template, collect_prompt_values(ctx, state, template))
+            docs = ctx.get_input(state, "documents")
+            if docs:
+                from langgraph_agent_builder.sdk.ports.coerce import documents_to_text
+
+                context = documents_to_text(docs)
+                if context.strip():
+                    system = system + "\n\nUse the following context:\n\n" + context
 
             conversation: list[BaseMessage] = list(state.get("messages") or [])
             if ctx.get_field("memory_enabled"):
