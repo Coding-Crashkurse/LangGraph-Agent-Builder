@@ -16,9 +16,6 @@ import {
 import {
   ArrowLeft,
   Check,
-  CircleCheck,
-  Copy,
-  ExternalLink,
   Loader2,
   MessageSquare,
   Rocket,
@@ -32,72 +29,16 @@ import { api, ApiError } from "@/api/client";
 import type { PublishResponse } from "@/api/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Dialog } from "@/components/ui/dialog";
 import { toast } from "@/components/ui/toast";
-import { copyToClipboard } from "@/lib/utils";
 
 import { ConfigPanel } from "./ConfigPanel";
 import { DRAG_MIME, Palette } from "./Palette";
 import { Playground } from "./Playground";
+import { PublishDialog } from "./PublishDialog";
 import { ShareDialog } from "./ShareDialog";
 import { ValidationPanel } from "./ValidationPanel";
 import { edgeTypes, nodeTypes } from "./nodes";
 import { hasErrors, useBuilder } from "./store";
-
-function PublishResultDialog({
-  result,
-  registryUiUrl,
-  onClose,
-}: {
-  result: PublishResponse | null;
-  registryUiUrl: string;
-  onClose: () => void;
-}) {
-  const [copied, setCopied] = useState(false);
-  if (!result) return null;
-  return (
-    <Dialog open onClose={onClose} title="Published">
-      <p className="inline-flex items-center gap-1.5 text-sm text-success">
-        <CircleCheck size={15} /> Version {result.version} is live on the runtime.
-      </p>
-      <div className="mt-3 rounded-lg border border-border bg-canvas p-2.5">
-        <p className="text-[11px] uppercase tracking-wide text-text-3">Endpoint</p>
-        <div className="mt-1 flex items-center gap-2">
-          <code className="min-w-0 flex-1 truncate font-mono text-xs text-text-1">
-            {result.endpoint_url}
-          </code>
-          <Button
-            size="icon"
-            variant="ghost"
-            aria-label="Copy endpoint URL"
-            onClick={() => {
-              void copyToClipboard(result.endpoint_url).then(() => setCopied(true));
-            }}
-          >
-            {copied ? <Check size={13} /> : <Copy size={13} />}
-          </Button>
-        </div>
-      </div>
-      <p className="mt-2 text-xs text-text-3">
-        Registration happens platform-side.{" "}
-        {registryUiUrl && (
-          <a
-            className="inline-flex items-center gap-1 text-accent hover:underline"
-            href={
-              result.registry_id
-                ? `${registryUiUrl.replace(/\/$/, "")}/${result.registry_id}`
-                : registryUiUrl
-            }
-            target="_blank"
-            rel="noreferrer"
-          >
-            Open in registry <ExternalLink size={11} />
-          </a>
-        )}
-      </p>
-    </Dialog>
-  );
-}
 
 function Canvas({ flowName }: { flowName: string }) {
   const reactFlow = useReactFlow();
@@ -162,7 +103,7 @@ function BuilderInner({ flowName }: { flowName: string }) {
   const select = useBuilder((s) => s.select);
 
   const [busy, setBusy] = useState<"save" | "validate" | "publish" | "playground" | null>(null);
-  const [publishResult, setPublishResult] = useState<PublishResponse | null>(null);
+  const [publishOpen, setPublishOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   const [playgroundEndpoint, setPlaygroundEndpoint] = useState<string | null>(null);
 
@@ -206,12 +147,13 @@ function BuilderInner({ flowName }: { flowName: string }) {
     }
   }, [currentDefinition, setValidation]);
 
-  const publish = useCallback(async () => {
-    if (!(await save())) return;
+  const runPublish = useCallback(async (): Promise<PublishResponse | null> => {
+    if (!(await save())) return null;
     setBusy("publish");
     try {
-      setPublishResult(await api.flows.publish(flowName));
+      const published = await api.flows.publish(flowName);
       toast.success("Deployed to the runtime");
+      return published;
     } catch (err) {
       if (err instanceof ApiError && err.issues.length > 0) {
         setIssues(err.issues);
@@ -219,6 +161,7 @@ function BuilderInner({ flowName }: { flowName: string }) {
       } else {
         toast.error(err instanceof Error ? err.message : "publish failed");
       }
+      return null;
     } finally {
       setBusy(null);
     }
@@ -314,11 +257,11 @@ function BuilderInner({ flowName }: { flowName: string }) {
           </Button>
           <Button
             size="sm"
-            onClick={() => void publish()}
+            onClick={() => setPublishOpen(true)}
             disabled={busy !== null || !configQuery.data?.runtime_configured}
             title={
               configQuery.data?.runtime_configured
-                ? "Update runtime draft + deploy"
+                ? "Choose the door, then update runtime draft + deploy"
                 : "No runtime configured"
             }
           >
@@ -345,10 +288,11 @@ function BuilderInner({ flowName }: { flowName: string }) {
           <ConfigPanel />
         )}
       </div>
-      <PublishResultDialog
-        result={publishResult}
-        registryUiUrl={configQuery.data?.registry_ui_url ?? ""}
-        onClose={() => setPublishResult(null)}
+      <PublishDialog
+        flowName={flowName}
+        open={publishOpen}
+        onClose={() => setPublishOpen(false)}
+        onPublish={runPublish}
       />
       <ShareDialog flowName={flowName} open={shareOpen} onClose={() => setShareOpen(false)} />
     </div>
