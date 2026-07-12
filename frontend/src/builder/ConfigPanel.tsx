@@ -166,11 +166,17 @@ function ResourcePicker({
           </option>
         ))}
       </Select>
-      {resources.isError && (
-        <p className="mt-1 text-[11px] text-warning">
-          Runtime resources unavailable — enter the name manually below.
-        </p>
-      )}
+      {resources.isError &&
+        (config.data?.runtime_configured ? (
+          <p className="mt-1 text-[11px] text-warning">
+            Platform runtime unreachable — enter the name manually below.
+          </p>
+        ) : (
+          <p className="mt-1 text-[11px] text-text-3">
+            No platform runtime connected — type the resource name; it resolves at
+            publish time.
+          </p>
+        ))}
       {resources.isError && (
         <Input
           className="mt-1 h-7 font-mono text-xs"
