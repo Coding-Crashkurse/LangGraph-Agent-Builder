@@ -61,7 +61,7 @@ def _spec(
                 "id": "e1",
                 "kind": "data",
                 "source": {"node": "start", "output": "message"},
-                "target": {"node": "end", "input": "message"},
+                "target": {"node": "end", "input": "result"},
             }
         ],
     }
@@ -152,7 +152,7 @@ def test_publish_guards_e063_mcp_with_unresolved_interrupt() -> None:
             "id": "e2",
             "kind": "router",
             "source": {"node": "review", "output": "approve"},
-            "target": {"node": "end", "input": "message"},
+            "target": {"node": "end", "input": "result"},
         },
     ]
     spec = parse_flowspec(
@@ -187,7 +187,7 @@ def _json_edges() -> list[dict[str, Any]]:
             "id": "e1",
             "kind": "data",
             "source": {"node": "start", "output": "message"},
-            "target": {"node": "end", "input": "json"},
+            "target": {"node": "end", "input": "result"},
         }
     ]
 
@@ -203,21 +203,6 @@ def test_publish_guards_e065_malformed_output_schema_blocks() -> None:
     assert has_errors(e065)  # blocks publish
     assert e065[0].node_id == "end"
     assert e065[0].field == "output_schema"
-
-
-def test_publish_guards_e064_mcp_door_wired_json_without_schema() -> None:
-    spec = parse_flowspec(
-        _spec(
-            mcp={"enabled": True, "description": "tool"},
-            nodes=_structured_nodes(),
-            edges=_json_edges(),
-        )
-    )
-    diags = publish_guards(spec, get_registry())
-    e064 = [d for d in diags if d.code == DiagnosticCode.E064]
-    assert len(e064) == 1
-    assert not has_errors(e064)  # warning only, does not block
-    assert e064[0].node_id == "end"
 
 
 def test_publish_guards_e064_silent_for_api_door() -> None:
@@ -244,7 +229,7 @@ def test_publish_guards_e064_silent_when_structured_inputs_unwired() -> None:
             "id": "e1",
             "kind": "data",
             "source": {"node": "start", "output": "message"},
-            "target": {"node": "end", "input": "message"},
+            "target": {"node": "end", "input": "result"},
         }
     ]
     spec = parse_flowspec(
@@ -255,21 +240,13 @@ def test_publish_guards_e064_silent_when_structured_inputs_unwired() -> None:
 
 
 def test_publish_guards_e064_schema_declared_but_unwired_warns() -> None:
-    # the inverse direction: a declared contract that can never be fulfilled
-    # (json/table unwired) would hard-fail every MCP/A2A call at runtime
+    # a declared output contract that can never be fulfilled (nothing wired into
+    # the end node's Result input) would hard-fail every MCP/A2A call at runtime
     nodes = _structured_nodes(
         {"output_schema": {"type": "object", "properties": {"answer": {"type": "string"}}}}
     )
-    edges = [
-        {
-            "id": "e1",
-            "kind": "data",
-            "source": {"node": "start", "output": "message"},
-            "target": {"node": "end", "input": "message"},
-        }
-    ]
     spec = parse_flowspec(
-        _spec(mcp={"enabled": True, "description": "tool"}, nodes=nodes, edges=edges)
+        _spec(mcp={"enabled": True, "description": "tool"}, nodes=nodes, edges=[])
     )
     e064 = [d for d in publish_guards(spec, get_registry()) if d.code == DiagnosticCode.E064]
     assert len(e064) == 1

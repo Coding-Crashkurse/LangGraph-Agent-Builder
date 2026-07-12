@@ -293,7 +293,7 @@ def _probe_spec(text_value: str) -> dict[str, Any]:
                 "id": "e2",
                 "kind": "data",
                 "source": {"node": "probe", "output": "text"},
-                "target": {"node": "end", "input": "message"},
+                "target": {"node": "end", "input": "result"},
             },
         ],
     }

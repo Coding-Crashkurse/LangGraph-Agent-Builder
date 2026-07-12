@@ -228,27 +228,8 @@ def _migrate_1_to_2(raw: dict[str, Any]) -> dict[str, Any]:
     return raw
 
 
-def _migrate_legacy_ids(raw: dict[str, Any]) -> dict[str, Any]:
-    """Specs written before the package rename reference components as ``lga.*``."""
-    nodes = raw.get("nodes")
-    if not isinstance(nodes, list):
-        return raw
-    migrated: list[Any] = []
-    changed = False
-    for node in nodes:
-        cid = node.get("component_id") if isinstance(node, dict) else None
-        if isinstance(cid, str) and cid.startswith("lga."):
-            node = {**node, "component_id": "lab." + cid.removeprefix("lga.")}
-            changed = True
-        migrated.append(node)
-    if not changed:
-        return raw
-    return {**raw, "nodes": migrated}
-
-
 def migrate_schema(raw: dict[str, Any]) -> dict[str, Any]:
     """Migrate older schema_versions to the current one."""
-    raw = _migrate_legacy_ids(raw)
     version = str(raw.get("schema_version", "") or "1")
     if version == SCHEMA_VERSION:
         return raw

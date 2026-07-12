@@ -182,7 +182,7 @@ def hello_spec(slug: str = "hello", **flow_extra: Any) -> dict[str, Any]:
                 "id": "e2",
                 "kind": "data",
                 "source": {"node": "fake", "output": "message"},
-                "target": {"node": "end", "input": "message"},
+                "target": {"node": "end", "input": "result"},
             },
         ],
     }
@@ -248,7 +248,7 @@ def approval_spec(slug: str = "hitl") -> dict[str, Any]:
                 "id": "e3",
                 "kind": "router",
                 "source": {"node": "review", "output": "approve"},
-                "target": {"node": "end", "input": "message"},
+                "target": {"node": "end", "input": "result"},
             },
             {
                 "id": "e4",
@@ -303,7 +303,7 @@ def slow_spec(slug: str = "slow", seconds: float = 10.0) -> dict[str, Any]:
                 "id": "e2",
                 "kind": "data",
                 "source": {"node": "slow", "output": "message"},
-                "target": {"node": "end", "input": "message"},
+                "target": {"node": "end", "input": "result"},
             },
         ],
     }

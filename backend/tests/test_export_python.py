@@ -69,14 +69,41 @@ async def test_exported_graph_runs_under_vanilla_langgraph(tmp_path: Path) -> No
 
 
 def test_secret_refs_become_environ(tmp_path: Path) -> None:
+    # $secret must live in a Secret field (E014). No product component carries an
+    # inline secret anymore (those live on model_provider resources), so exercise
+    # the export path with a synthetic Secret-field component.
+    from typing import Any
+
+    from langgraph_agent_builder.sdk import BuildContext, Component, Output, fields, ports
+    from langgraph_agent_builder.sdk.component import NodeFn
+    from langgraph_agent_builder.sdk.registry import ComponentRegistry
+
+    class _SecretTool(Component):
+        component_id = "test.tools.secret_tool"
+        display_name = "Secret Tool"
+        description = "holds an api key secret"
+        category = "testing"
+        inputs = [fields.SecretInput(name="api_key", display_name="API Key")]
+        outputs = [Output(name="text", display_name="Text", port=ports.TEXT)]
+
+        def build(self, ctx: BuildContext) -> NodeFn:
+            async def node(state: dict[str, Any], config: Any) -> dict[str, Any]:
+                return {"text": ""}
+
+            return node
+
+    registry = ComponentRegistry()
+    for cls in get_registry().components.values():
+        registry.register(cls, "test")
+    registry.register(_SecretTool, "test")
+
     spec_dict = hello_spec("export-secret")
-    # $secret must live in a Secret field (E014); web_search.api_key is one.
     spec_dict["nodes"].append(
         {
             "id": "t",
-            "component_id": "lab.tools.web_search",
+            "component_id": "test.tools.secret_tool",
             "component_version": "1.0.0",
-            "config": {"query": "x", "api_key": {"$secret": "my_api_key"}},
+            "config": {"api_key": {"$secret": "my_api_key"}},
             "position": {"x": 0, "y": 0},
         }
     )
@@ -84,7 +111,7 @@ def test_secret_refs_become_environ(tmp_path: Path) -> None:
 
     os.environ["LAB_CRED_MY_API_KEY"] = "sk-test"
     try:
-        source = export_python(parse_flowspec(spec_dict), get_registry())
+        source = export_python(parse_flowspec(spec_dict), registry)
     finally:
         del os.environ["LAB_CRED_MY_API_KEY"]
     # same env var the headless EnvVariablesProvider reads — exported flow and

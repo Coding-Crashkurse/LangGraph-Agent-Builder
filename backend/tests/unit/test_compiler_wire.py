@@ -175,11 +175,11 @@ def test_tool_edge_from_non_provider_yields_no_tools() -> None:
 
 
 def test_tool_edge_from_tool_mode_node_uses_node_as_tool() -> None:
-    """A calculator (tool_mode) wired via a tool edge becomes a callable ToolDef."""
-    from langgraph_agent_builder.components.tools.basic_tools import Calculator
+    """An http_request (tool_mode) wired via a tool edge becomes a callable ToolDef."""
+    from langgraph_agent_builder.components.tools.basic_tools import HttpRequest
 
-    ir = _ir({"calc": Calculator, "agent": _Plain}, [_tool_edge("calc", "agent")])
+    ir = _ir({"calc": HttpRequest, "agent": _Plain}, [_tool_edge("calc", "agent")])
     contexts = wire(ir)
     tools = contexts["agent"].tools
     assert len(tools) == 1
-    assert tools[0].name  # slugified calculator label / tool name
+    assert tools[0].name  # slugified http_request label / tool name

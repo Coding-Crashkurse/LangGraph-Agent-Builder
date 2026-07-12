@@ -1,24 +1,47 @@
 """Loop — merged For-Each / Loop-Until (palette v2, SPEC §5.5, §12.3).
 
-One palette node with a ``mode`` switch replacing the two legacy loop nodes:
+One palette node with a ``mode`` switch:
 
-* ``collection`` → map a template over a list (successor of ``lab.data.for_each``);
-  a TASK emitting ``results`` (Table) + ``text`` (joined Text).
-* ``until``      → cycle helper with a counter guard (successor of
-  ``lab.flow.loop_until``); a ROUTER emitting ``continue`` / ``done`` routes.
-
-``build``/``node_kind``/``outputs`` all branch on ``mode``; ``build`` delegates to
-the legacy classes' node functions (their field reads are a subset of Loop's
-field union). Loop-durability / checkpoint-cursor is a later phase — this
-replicates the existing self-contained in-node behavior.
+* ``collection`` → map a template over a list; a TASK emitting ``results``
+  (Table) + ``text`` (joined Text).
+* ``until``      → cycle helper with a counter guard; a ROUTER emitting
+  ``continue`` / ``done`` routes.
 """
 
 from __future__ import annotations
 
-from langgraph_agent_builder.components.data.batch import ForEach
-from langgraph_agent_builder.components.flow_control.loop_until import LoopUntil
+from typing import Any
+
 from langgraph_agent_builder.sdk import BuildContext, Component, NodeKind, Output, fields, ports
 from langgraph_agent_builder.sdk.component import NodeConfig, NodeFn
+from langgraph_agent_builder.sdk.ports import Document, Message
+from langgraph_agent_builder.sdk.templating import eval_predicate, last_message_text, render_jinja
+
+
+def _as_items(raw: Any) -> list[Any]:
+    """Coerce a wired input into a list: Table/Documents/Messages/list stay,
+    a Json ``{rows: [...]}`` unwraps, anything else becomes a one-item list."""
+    if raw is None:
+        return []
+    if isinstance(raw, list):
+        return raw
+    if isinstance(raw, dict):
+        rows = raw.get("rows")
+        return rows if isinstance(rows, list) else [raw]
+    return [raw]
+
+
+def _item_context(item: Any, index: int) -> dict[str, Any]:
+    """Per-item jinja context. Documents/Messages expose their natural fields so
+    templates read `{{ item }}` (or `{{ page_content }}`) without type juggling."""
+    ctx: dict[str, Any] = {"index": index, "item": item}
+    if isinstance(item, Document):
+        ctx["item"] = {"page_content": item.page_content, "metadata": item.metadata}
+        ctx["page_content"] = item.page_content
+        ctx["metadata"] = item.metadata
+    elif isinstance(item, Message):
+        ctx["item"] = item.content
+    return ctx
 
 
 class Loop(Component):
@@ -89,5 +112,36 @@ class Loop(Component):
     def build(self, ctx: BuildContext) -> NodeFn:
         mode = str(ctx.get_field("mode") or "collection")
         if mode == "until":
-            return LoopUntil().build(ctx)
-        return ForEach().build(ctx)
+            return self._build_until(ctx)
+        return self._build_collection(ctx)
+
+    def _build_collection(self, ctx: BuildContext) -> NodeFn:
+        async def node(state: dict[str, Any], config: Any) -> dict[str, Any]:
+            template = str(ctx.get_field("template") or "{{ item }}")
+            separator = str(ctx.get_field("separator") or "\n")
+            items = _as_items(ctx.get_input(state, "items"))
+            rendered = [render_jinja(template, _item_context(it, i)) for i, it in enumerate(items)]
+            results = [{"index": i, "result": r} for i, r in enumerate(rendered)]
+            return {"results": results, "text": separator.join(rendered)}
+
+        return node
+
+    def _build_until(self, ctx: BuildContext) -> NodeFn:
+        counter_key = f"__loop_{ctx.node_id}"
+
+        async def node(state: dict[str, Any], config: Any) -> dict[str, Any]:
+            data = dict(state.get("data") or {})
+            iteration = int(data.get(counter_key, 0)) + 1
+            condition = str(ctx.get_field("condition") or "").strip()
+            done = iteration > int(ctx.get_field("max_iterations") or 5)
+            if not done and condition:
+                try:
+                    done = eval_predicate(
+                        condition,
+                        {"data": data, "message": last_message_text(state), "iteration": iteration},
+                    )
+                except Exception:
+                    done = False
+            return {"route": "done" if done else "continue", "data": {counter_key: iteration}}
+
+        return node

@@ -67,8 +67,10 @@ class Agent(Component):
     outputs = [Output(name="message", display_name="Message", port=ports.MESSAGE)]
 
     def build(self, ctx: BuildContext) -> NodeFn:
-        from langgraph_agent_builder.components.llm._models import resolve_model_resource
-        from langgraph_agent_builder.components.llm.llm_call import collect_prompt_values
+        from langgraph_agent_builder.components.llm._models import (
+            collect_prompt_values,
+            resolve_model_resource,
+        )
         from langgraph_agent_builder.runtime.tools import as_langchain_tools
         from langgraph_agent_builder.sdk.templating import render_prompt
 

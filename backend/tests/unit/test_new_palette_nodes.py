@@ -20,7 +20,6 @@ from langgraph_agent_builder.components.flow_control.loop import Loop
 from langgraph_agent_builder.components.flow_control.router import Router
 from langgraph_agent_builder.components.llm.agent import Agent
 from langgraph_agent_builder.components.llm.call import Call
-from langgraph_agent_builder.components.rag.components import VectorWriter
 from langgraph_agent_builder.components.rag.kb_retriever import KbRetriever
 from langgraph_agent_builder.sdk.component import (
     BuildContext,
@@ -58,22 +57,6 @@ TARGET_PALETTE = {
     "lab.rag.kb_retriever",
     "lab.tools.http_request",
     "lab.tools.flow_as_tool",
-}
-
-# Ids that were merged/retired — none may appear in the palette anymore.
-RETIRED_IDS = {
-    "lab.llm.llm_call",
-    "lab.llm.llm_agent",
-    "lab.flow.llm_router",
-    "lab.flow.rule_router",
-    "lab.flow.loop_until",
-    "lab.data.for_each",
-    "lab.rag.retriever",
-    "lab.llm.language_model",
-    "lab.llm.structured_output",
-    "lab.io.text_input",
-    "lab.io.text_output",
-    "lab.tools.calculator",
 }
 
 
@@ -146,28 +129,9 @@ def test_product_palette_is_exactly_the_target_set() -> None:
     assert product == TARGET_PALETTE
 
 
-def _get(cid: str) -> type[Component]:
-    cls = get_registry().get(cid)
-    assert cls is not None, f"{cid} must stay loadable"
-    return cls
-
-
-def test_retired_ids_absent_from_palette_but_still_loadable() -> None:
-    palette = {c.component_id for c in get_registry().all() if not c.legacy}
-    for cid in RETIRED_IDS:
-        assert cid not in palette, f"{cid} should be legacy"
-        assert _get(cid).legacy is True
-
-
-def test_merged_nodes_advertise_successors() -> None:
-    assert _get("lab.llm.llm_call").successor == "lab.llm.call"
-    assert _get("lab.llm.llm_agent").successor == "lab.llm.agent"
-    assert _get("lab.flow.llm_router").successor == "lab.flow.router"
-    assert _get("lab.flow.rule_router").successor == "lab.flow.router"
-    assert _get("lab.flow.loop_until").successor == "lab.flow.loop"
-    assert _get("lab.data.for_each").successor == "lab.flow.loop"
-    assert _get("lab.rag.retriever").successor == "lab.rag.kb_retriever"
-    assert _get("lab.rag.pgvector_retriever").successor == "lab.rag.kb_retriever"
+def test_no_legacy_components_remain() -> None:
+    # the clean cut removed every legacy/merged component outright
+    assert [c.component_id for c in get_registry().all() if c.legacy] == []
 
 
 # --------------------------------------------------------------------- lab.llm.call
@@ -316,23 +280,21 @@ async def test_loop_until_counts_and_stops() -> None:
 async def test_kb_retriever_searches_referenced_knowledge_base(
     sqlite_settings: Settings, restore_locator: None
 ) -> None:
+    from langgraph_agent_builder.components.rag.components import _embeddings
     from langgraph_agent_builder.services import locator
+    from langgraph_agent_builder.vectorstores import build_provider
 
     # 1. ingest into a local collection (headless local provider under tmp home)
     locator.set_services(None)
-    writer = _build_with_settings(
-        VectorWriter,
-        sqlite_settings,
-        config={"vector_store": {"$vectorstore": "local", "collection": "kb"}},
-        port_values={
-            "documents": [
-                {"page_content": "the cat sat on the mat", "metadata": {"source": "a"}},
-                {"page_content": "dogs are loyal companions", "metadata": {"source": "b"}},
-            ],
-            "embedding": {"provider": "fake", "dim": 32},
-        },
-    )
-    await writer()
+    docs_in = [
+        Document(page_content="the cat sat on the mat", metadata={"source": "a"}),
+        Document(page_content="dogs are loyal companions", metadata={"source": "b"}),
+    ]
+    provider = build_provider("local", "local", home=sqlite_settings.home)
+    emb = _embeddings({"provider": "fake", "dim": 32})
+    vectors = [list(v) for v in await emb.aembed_documents([d.page_content for d in docs_in])]
+    await provider.ensure_collection("kb", 32)
+    await provider.upsert("kb", docs_in, vectors)
 
     # 2. a knowledge_base resource points at that connection/collection/embedding
     kb_cfg = {

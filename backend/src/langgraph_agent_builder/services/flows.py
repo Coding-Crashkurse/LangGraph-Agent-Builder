@@ -74,32 +74,21 @@ def publish_guards(spec: FlowSpec, registry: Any) -> list[Diagnostic]:
     end_node = next((n for n in spec.nodes if n.component_id == "lab.io.end"), None)
     _declared_schema_or_e065(start_node, "input_schema", diags)
     output_schema = _declared_schema_or_e065(end_node, "output_schema", diags)
-    output_schema_raw = end_node.config.get("output_schema") if end_node is not None else None
     if end_node is not None and spec.flow.serve_mode in ("mcp", "a2a"):
-        # E064 is symmetric: schema and wiring must agree at the structured doors.
-        structured_wired = any(
-            e.target.node == end_node.id and e.target.input in ("json", "table") for e in spec.edges
+        # E064: a declared output contract must have something wired into the end
+        # node's Result input, or every MCP/A2A call fails the contract at runtime.
+        result_wired = any(
+            e.target.node == end_node.id and e.target.input == "result" for e in spec.edges
         )
-        if structured_wired and not output_schema_raw:
+        if output_schema is not None and not result_wired:
             diags.append(
                 Diagnostic.make(
                     DiagnosticCode.E064,
-                    "structured results are served over the MCP/A2A door without a declared "
-                    "output_schema — clients get untyped payloads",
+                    "output_schema is declared but the end node's Result input is unwired — "
+                    "every MCP/A2A call would fail the output contract at runtime",
                     node_id=end_node.id,
                     field="output_schema",
-                    fix_hint="Declare Output → Structured Output Schema.",
-                )
-            )
-        elif output_schema is not None and not structured_wired:
-            diags.append(
-                Diagnostic.make(
-                    DiagnosticCode.E064,
-                    "output_schema is declared but the end node's json/table inputs are "
-                    "unwired — every MCP/A2A call would fail the output contract at runtime",
-                    node_id=end_node.id,
-                    field="output_schema",
-                    fix_hint="Wire a Json or Table value into Output, or remove the output_schema.",
+                    fix_hint="Wire a value into Output → Result, or remove the output_schema.",
                 )
             )
     if spec.flow.a2a.enabled:

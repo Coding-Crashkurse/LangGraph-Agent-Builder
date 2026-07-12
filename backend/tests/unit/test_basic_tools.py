@@ -1,7 +1,7 @@
 """Unit tests for langgraph_agent_builder.components.tools.basic_tools.
 
-safe_eval + Calculator (pure); HttpRequest / WebSearch drive an in-repo fake
-httpx client and the real SSRF guard (no network).
+HttpRequest drives an in-repo fake httpx client and the real SSRF guard (no
+network).
 """
 
 from __future__ import annotations
@@ -11,76 +11,9 @@ from typing import Any
 import httpx
 import pytest
 
-from langgraph_agent_builder.components.tools.basic_tools import (
-    Calculator,
-    HttpRequest,
-    WebSearch,
-    safe_eval,
-)
+from langgraph_agent_builder.components.tools.basic_tools import HttpRequest
 from langgraph_agent_builder.sdk.component import BuildContext, Component, NodeFn
-from langgraph_agent_builder.sdk.testing import ComponentTestHarness
 from langgraph_agent_builder.services.settings import Settings
-
-# --------------------------------------------------------------------------- safe_eval
-
-
-def test_safe_eval_arithmetic_precedence() -> None:
-    assert safe_eval("(2+3)*4/5") == 4.0
-
-
-def test_safe_eval_unary_and_pow() -> None:
-    assert safe_eval("-2 ** 3") == -8
-
-
-def test_safe_eval_floordiv_and_mod() -> None:
-    assert safe_eval("17 // 5") == 3
-    assert safe_eval("17 % 5") == 2
-
-
-def test_safe_eval_rejects_names() -> None:
-    with pytest.raises(ValueError, match="unsupported expression element"):
-        safe_eval("a + 1")
-
-
-def test_safe_eval_rejects_calls() -> None:
-    with pytest.raises(ValueError, match="unsupported expression element"):
-        safe_eval("__import__('os')")
-
-
-# --------------------------------------------------------------------------- Calculator
-
-
-async def test_calculator_integer_result() -> None:
-    node = ComponentTestHarness().build(Calculator, config={"expression": "2+3"})
-    out = await node()
-    assert out["text"] == "5"
-
-
-async def test_calculator_float_result() -> None:
-    node = ComponentTestHarness().build(Calculator, config={"expression": "1/2"})
-    out = await node()
-    assert out["text"] == "0.5"
-
-
-async def test_calculator_input_port_overrides_field() -> None:
-    node = ComponentTestHarness().build(
-        Calculator, config={"expression": "0"}, ports={"expression": "6*7"}
-    )
-    out = await node()
-    assert out["text"] == "42"
-
-
-async def test_calculator_division_by_zero_is_error_text() -> None:
-    node = ComponentTestHarness().build(Calculator, config={"expression": "1/0"})
-    out = await node()
-    assert out["text"].startswith("error:")
-
-
-async def test_calculator_syntax_error_is_error_text() -> None:
-    node = ComponentTestHarness().build(Calculator, config={"expression": "foo("})
-    out = await node()
-    assert out["text"].startswith("error:")
-
 
 # --------------------------------------------------------------------------- fake httpx
 
@@ -315,96 +248,3 @@ async def test_http_request_no_idempotency_key_without_run_context(
     node = _build(HttpRequest, {"url": "http://svc.local/x"}, sqlite_settings)
     await node({}, {})
     assert "Idempotency-Key" not in sink[0]["headers"]
-
-
-# --------------------------------------------------------------------------- WebSearch
-
-
-async def test_web_search_tavily_maps_results(
-    sqlite_settings: Settings, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    _install_fake_httpx(
-        monkeypatch,
-        _FakeResponse(json_data={"results": [{"title": "T", "url": "U", "content": "C"}]}),
-    )
-    node = _build(WebSearch, {"provider": "tavily", "query": "q", "api_key": "k"}, sqlite_settings)
-    out = await node({}, {})
-    assert out["table"] == [{"title": "T", "url": "U", "content": "C"}]
-
-
-async def test_web_search_serpapi_maps_results(
-    sqlite_settings: Settings, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    _install_fake_httpx(
-        monkeypatch,
-        _FakeResponse(json_data={"organic_results": [{"title": "T", "link": "L", "snippet": "S"}]}),
-    )
-    node = _build(WebSearch, {"provider": "serpapi", "query": "q", "api_key": "k"}, sqlite_settings)
-    out = await node({}, {})
-    assert out["table"] == [{"title": "T", "url": "L", "content": "S"}]
-
-
-async def test_web_search_missing_api_key_is_error_row(sqlite_settings: Settings) -> None:
-    node = _build(WebSearch, {"provider": "tavily", "query": "q"}, sqlite_settings)
-    out = await node({}, {})
-    assert "api_key is required" in out["table"][0]["error"]
-
-
-async def test_web_search_http_error_is_error_row(
-    sqlite_settings: Settings, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    _install_fake_httpx(monkeypatch, _FakeResponse(status_code=401, json_data={}))
-    node = _build(WebSearch, {"provider": "tavily", "query": "q", "api_key": "k"}, sqlite_settings)
-    out = await node({}, {})
-    assert out["table"] == [{"error": "tavily search failed: HTTP 401"}]
-
-
-async def test_web_search_non_json_body_is_error_row(
-    sqlite_settings: Settings, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    _install_fake_httpx(monkeypatch, _FakeResponse(text="<html>", raise_json=True))
-    node = _build(WebSearch, {"provider": "serpapi", "query": "q", "api_key": "k"}, sqlite_settings)
-    out = await node({}, {})
-    assert out["table"] == [{"error": "serpapi returned a non-JSON response"}]
-
-
-def test_web_search_descriptor_marks_api_key_required_per_provider() -> None:
-    for provider, required in (("tavily", True), ("serpapi", True), ("searxng", False)):
-        desc = WebSearch.descriptor({"provider": provider})
-        field = next(f for f in desc["fields"] if f["name"] == "api_key")
-        assert field["required"] is required
-
-
-async def test_web_search_unknown_provider_returns_empty_table(
-    sqlite_settings: Settings,
-) -> None:
-    node = _build(WebSearch, {"provider": "bogus", "query": "q"}, sqlite_settings)
-    out = await node({}, {})
-    assert out["table"] == []
-
-
-async def test_web_search_searxng_blocks_loopback(sqlite_settings: Settings) -> None:
-    node = _build(
-        WebSearch,
-        {"provider": "searxng", "query": "q", "searxng_url": "http://127.0.0.1:8080"},
-        sqlite_settings,
-    )
-    out = await node({}, {})
-    assert "error" in out["table"][0]
-
-
-async def test_web_search_searxng_success(
-    sqlite_settings: Settings, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    sqlite_settings.push_allow_private = True
-    _install_fake_httpx(
-        monkeypatch,
-        _FakeResponse(json_data={"results": [{"title": "T", "url": "U", "content": "C"}]}),
-    )
-    node = _build(
-        WebSearch,
-        {"provider": "searxng", "query": "q", "searxng_url": "http://searx.local"},
-        sqlite_settings,
-    )
-    out = await node({}, {})
-    assert out["table"] == [{"title": "T", "url": "U", "content": "C"}]

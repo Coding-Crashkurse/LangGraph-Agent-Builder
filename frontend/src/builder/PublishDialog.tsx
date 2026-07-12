@@ -262,6 +262,38 @@ const splitList = (value: string) =>
     .map((s) => s.trim())
     .filter(Boolean);
 
+/**
+ * Comma-separated list editor. Holds the raw text locally so the user can type
+ * commas (and trailing spaces) freely — the parent only ever sees the parsed
+ * array. Re-syncs from `value` only when the external list genuinely diverges
+ * from what our text would produce (e.g. switching flows), never on a keystroke.
+ */
+function CommaListInput({
+  value,
+  placeholder,
+  onChange,
+}: {
+  value: string[];
+  placeholder?: string;
+  onChange: (v: string[]) => void;
+}) {
+  const [raw, setRaw] = useState(() => value.join(", "));
+  useEffect(() => {
+    if (splitList(raw).join(" ") !== value.join(" ")) setRaw(value.join(", "));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value]);
+  return (
+    <Input
+      value={raw}
+      placeholder={placeholder}
+      onChange={(e) => {
+        setRaw(e.target.value);
+        onChange(splitList(e.target.value));
+      }}
+    />
+  );
+}
+
 export function ShareDialog({
   open,
   onClose,
@@ -470,21 +502,17 @@ export function ShareDialog({
                   />
                 </Field>
                 <Field label="Skill examples" hint="comma-separated" guard={guardFor("a2a.examples")}>
-                  <Input
-                    value={(a2a.examples ?? []).join(", ")}
+                  <CommaListInput
+                    value={a2a.examples ?? []}
                     placeholder="Summarise this ticket, Draft a reply…"
-                    onChange={(e) =>
-                      updateFlowMeta({ a2a: { ...a2a, examples: splitList(e.target.value) } })
-                    }
+                    onChange={(v) => updateFlowMeta({ a2a: { ...a2a, examples: v } })}
                   />
                 </Field>
                 <Field label="Tags" hint="comma-separated">
-                  <Input
-                    value={(a2a.tags ?? []).join(", ")}
+                  <CommaListInput
+                    value={a2a.tags ?? []}
                     placeholder="support, summarisation"
-                    onChange={(e) =>
-                      updateFlowMeta({ a2a: { ...a2a, tags: splitList(e.target.value) } })
-                    }
+                    onChange={(v) => updateFlowMeta({ a2a: { ...a2a, tags: v } })}
                   />
                 </Field>
                 <div className="grid grid-cols-2 gap-3">
@@ -517,18 +545,15 @@ export function ShareDialog({
                       <option value="api-key">api-key (X-API-Key · a2a:invoke)</option>
                     </Select>
                   </Field>
-                  <Field label="Push notifications">
+                  <Field label="Push notifications" hint="client supplies the webhook per task">
                     <div className="flex h-8.5 items-center gap-2">
                       <Switch
-                        checked={a2a.push_notifications ?? true}
-                        onCheckedChange={(v) =>
-                          updateFlowMeta({ a2a: { ...a2a, push_notifications: v } })
-                        }
+                        checked={false}
+                        disabled
+                        onCheckedChange={() => {}}
                         label="Push notifications"
                       />
-                      <span className="text-xs text-text-2">
-                        {(a2a.push_notifications ?? true) ? "on" : "off"}
-                      </span>
+                      <span className="text-xs text-text-2">not configured here</span>
                     </div>
                   </Field>
                 </div>

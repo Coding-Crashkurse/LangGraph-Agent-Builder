@@ -19,9 +19,26 @@ if TYPE_CHECKING:
     from langchain_core.messages import BaseMessage
     from langchain_core.outputs import ChatResult
 
+    from langgraph_agent_builder.sdk.component import BuildContext
     from langgraph_agent_builder.sdk.runtime import RunContext
 
 PROVIDERS = ("openai", "anthropic", "ollama", "fake", "echo")
+
+
+def collect_prompt_values(
+    ctx: BuildContext, state: dict[str, Any], template: str
+) -> dict[str, Any]:
+    """Resolve {var} values: connected port > shared data key > config field."""
+    from langgraph_agent_builder.sdk.templating import PROMPT_VAR_RE
+
+    values: dict[str, Any] = {}
+    data = state.get("data") or {}
+    for var in PROMPT_VAR_RE.findall(template):
+        value = ctx.get_input(state, var)
+        if value is None:
+            value = data.get(var)
+        values[var] = value
+    return values
 
 
 class ProviderNotInstalledError(LabRuntimeError):

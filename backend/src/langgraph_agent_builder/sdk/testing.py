@@ -130,7 +130,7 @@ class ComponentTestHarness:
                     "id": "e_out",
                     "kind": "data",
                     "source": {"node": "under_test", "output": outs[0].name},
-                    "target": {"node": "end", "input": "message"},
+                    "target": {"node": "end", "input": "result"},
                 }
             )
         spec["edges"] = edges

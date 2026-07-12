@@ -12,17 +12,16 @@ from langgraph_agent_builder.sdk.templating import message_text
 class End(Component):
     component_id = "lab.io.end"
     display_name = "Chat Output"
-    description = "Flow exit: formats the final artifact from message/text/json/table input."
+    description = "Flow exit: the final result — any type (message/text/json/table) coerces here."
     icon = "message-square-reply"
     category = "io"
     node_kind = NodeKind.TERMINAL
     priority = 1
 
     inputs = [
-        fields.HandleField(name="message", display_name="Message", as_port=ports.MESSAGE),
-        fields.HandleField(name="text", display_name="Text", as_port=ports.TEXT),
-        fields.HandleField(name="json", display_name="Json", as_port=ports.JSON),
-        fields.HandleField(name="table", display_name="Table", as_port=ports.TABLE),
+        # A single ANY input — the four old typed ports (message/text/json/table)
+        # were redundant since anything coerces to the flow's final artifact.
+        fields.HandleField(name="result", display_name="Result", as_port=ports.ANY),
         fields.NestedDictInput(
             name="output_schema",
             display_name="Structured Output Schema",
@@ -34,24 +33,14 @@ class End(Component):
             advanced=True,
         ),
     ]
+    # No downstream edges, but the terminal still publishes its resolved value on
+    # the `result` channel so the executor's extract_result can read it (SPEC §7.8).
     outputs = [Output(name="result", display_name="Result", port=ports.ANY)]
 
     def build(self, ctx: BuildContext) -> NodeFn:
         async def node(state: dict[str, Any], config: Any) -> dict[str, Any]:
-            message = ctx.get_input(state, "message")
-            text = ctx.get_input(state, "text")
-            json_value = ctx.get_input(state, "json")
-            table = ctx.get_input(state, "table")
-            result: Any
-            if message is not None:
-                result = message
-            elif text is not None:
-                result = str(text)
-            elif json_value is not None:
-                result = json_value
-            elif table is not None:
-                result = table
-            else:
+            result = ctx.get_input(state, "result")
+            if result is None:
                 # fall back to the last assistant message of the conversation
                 msgs = [m for m in state.get("messages") or [] if getattr(m, "type", "") == "ai"]
                 result = (

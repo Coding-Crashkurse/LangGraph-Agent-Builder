@@ -46,7 +46,7 @@ def _spec(slug: str, description: str = "a flow") -> dict[str, Any]:
                 "id": "e1",
                 "kind": "data",
                 "source": {"node": "start", "output": "message"},
-                "target": {"node": "end", "input": "message"},
+                "target": {"node": "end", "input": "result"},
             }
         ],
     }

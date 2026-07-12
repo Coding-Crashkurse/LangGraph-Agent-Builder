@@ -43,7 +43,7 @@ GOOD_EDGES = [
     {"id": "e2", "kind": "data", "source": {"node": "parse", "output": "batch"},
      "target": {"node": "summary", "input": "batch"}},
     {"id": "e3", "kind": "data", "source": {"node": "summary", "output": "text"},
-     "target": {"node": "end", "input": "text"}},
+     "target": {"node": "end", "input": "result"}},
 ]
 
 
@@ -66,13 +66,18 @@ def test_e020_names_both_custom_schema_refs():
     from langgraph_agent_builder.compiler import compile_flow
     from langgraph_agent_builder.schema.diagnostics import DiagnosticCode
 
-    bad = [
-        GOOD_EDGES[0],
-        # TicketBatch → Message input: structurally incompatible
+    spec = _spec([GOOD_EDGES[0]])
+    # a second parser exposes a TEXT input; feeding the TicketBatch into it is a
+    # cross-family, structurally-incompatible edge (TicketBatch → Text)
+    spec["nodes"].append(
+        {"id": "sink", "component_id": "ticket_triage.data.ticket_parser",
+         "component_version": "1.0.0", "config": {}, "position": {"x": 0, "y": 0}}
+    )
+    spec["edges"].append(
         {"id": "bad", "kind": "data", "source": {"node": "parse", "output": "batch"},
-         "target": {"node": "end", "input": "message"}},
-    ]
-    compiled = compile_flow(_spec(bad), registry=_registry(), use_cache=False)
+         "target": {"node": "sink", "input": "text"}}
+    )
+    compiled = compile_flow(spec, registry=_registry(), use_cache=False)
     diag = next(d for d in compiled.diagnostics if d.code == DiagnosticCode.E020)
     assert "ticket_triage:TicketBatch" in diag.message
-    assert "lab:Message" in diag.message
+    assert "lab:Text" in diag.message

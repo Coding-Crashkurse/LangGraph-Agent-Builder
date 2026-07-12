@@ -127,7 +127,11 @@ def _json_flow(slug: str, output_schema: dict[str, Any] | None = None) -> dict[s
                 "id": "sd",
                 "component_id": "lab.io.set_data",
                 "component_version": "1.0.0",
-                "config": {"entries": [{"key": "greeting", "template": "hi {{ message }}"}]},
+                "config": {
+                    "entries": [
+                        {"key": "greeting", "template": "hi {{ state.messages[-1].content }}"}
+                    ]
+                },
                 "position": {"x": 0, "y": 0},
             },
             {
@@ -149,7 +153,7 @@ def _json_flow(slug: str, output_schema: dict[str, Any] | None = None) -> dict[s
                 "id": "e2",
                 "kind": "data",
                 "source": {"node": "sd", "output": "data"},
-                "target": {"node": "end", "input": "json"},
+                "target": {"node": "end", "input": "result"},
             },
         ],
     }

@@ -145,7 +145,7 @@ class Component(ABC):
     """Base class for all components (SPEC §4.1)."""
 
     # ---- identity (stability rules §4.9) ----
-    component_id: ClassVar[str]  # REQUIRED, immutable, e.g. "lab.llm.llm_call"
+    component_id: ClassVar[str]  # REQUIRED, immutable, e.g. "lab.llm.call"
     version: ClassVar[str] = "1.0.0"
     display_name: ClassVar[str] = ""
     description: ClassVar[str] = ""

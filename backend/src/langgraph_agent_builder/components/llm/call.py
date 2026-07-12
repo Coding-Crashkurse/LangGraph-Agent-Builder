@@ -80,11 +80,11 @@ class Call(Component):
 
     def build(self, ctx: BuildContext) -> NodeFn:
         from langgraph_agent_builder.components.llm._models import (
+            collect_prompt_values,
             parse_json_reply,
             resolve_model_resource,
             stream_completion,
         )
-        from langgraph_agent_builder.components.llm.llm_call import collect_prompt_values
 
         async def node(state: dict[str, Any], config: Any) -> dict[str, Any]:
             rc = get_run_context(config)

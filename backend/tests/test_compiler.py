@@ -50,10 +50,44 @@ def _registry_with(*extra: type[Component]) -> ComponentRegistry:
     return registry
 
 
+class _SecretComp(Component):
+    """Component with a real Secret field — exercises the E014 leak guard."""
+
+    component_id = "test.secret_comp"
+    display_name = "Secret Comp"
+    category = "testing"
+    inputs = [fields.SecretInput(name="api_key", display_name="API Key")]
+    outputs = [Output(name="text", display_name="Text", port=TEXT)]
+
+    def build(self, ctx: BuildContext) -> NodeFn:
+        async def node(state: dict[str, Any], config: Any) -> dict[str, Any]:
+            return {}
+
+        return node
+
+
+class _TextSink(Component):
+    """A TEXT input port — a Message wired in forces a message_to_text coercion."""
+
+    component_id = "test.text_sink"
+    display_name = "Text Sink"
+    category = "testing"
+    inputs = [fields.HandleField(name="text_in", display_name="Text In", as_port=TEXT)]
+    outputs = [Output(name="text", display_name="Text", port=TEXT)]
+
+    def build(self, ctx: BuildContext) -> NodeFn:
+        async def node(state: dict[str, Any], config: Any) -> dict[str, Any]:
+            return {"text": ""}
+
+        return node
+
+
 def test_hello_compiles_clean() -> None:
     compiled = compile_flow(hello_spec(), use_cache=False)
     assert compiled.ok
-    assert codes(compiled) == []
+    # the only diagnostic is W201 on the terminal edge into the end node's ANY
+    # `result` input — every flow's terminal edge is untyped by design.
+    assert codes(compiled) == ["W201"]
     drawn = compiled.graph.get_graph()
     assert set(drawn.nodes) == {"__start__", "start", "fake", "end", "__end__"}
 
@@ -97,20 +131,12 @@ def test_e010_required_field_empty() -> None:
     spec["nodes"].insert(
         2,
         {
-            "id": "call",
-            "component_id": "lab.llm.llm_call",
+            "id": "prompt",
+            "component_id": "lab.data.prompt_template",
             "component_version": "1.0.0",
-            "config": {"model": {"provider": "fake", "model": "x"}},  # prompt missing
+            "config": {},  # required `template` missing
             "position": {"x": 0, "y": 0},
         },
-    )
-    spec["edges"].append(
-        {
-            "id": "e9",
-            "kind": "data",
-            "source": {"node": "fake", "output": "message"},
-            "target": {"node": "call", "input": "input"},
-        }
     )
     compiled = compile_flow(spec, use_cache=False)
     assert DiagnosticCode.E010 in [d.code for d in compiled.diagnostics]
@@ -130,9 +156,9 @@ def test_e012_missing_secret_ref() -> None:
     spec["nodes"].append(
         {
             "id": "t",
-            "component_id": "lab.io.text_input",
+            "component_id": "lab.data.prompt_template",
             "component_version": "1.0.0",
-            "config": {"value": {"$var": "definitely_missing_var_xyz"}},
+            "config": {"template": {"$var": "definitely_missing_var_xyz"}},
             "position": {"x": 0, "y": 0},
         }
     )
@@ -141,7 +167,7 @@ def test_e012_missing_secret_ref() -> None:
             "id": "et",
             "kind": "data",
             "source": {"node": "t", "output": "text"},
-            "target": {"node": "end", "input": "text"},
+            "target": {"node": "end", "input": "result"},
         }
     )
     compiled = compile_flow(spec, use_cache=False)
@@ -154,9 +180,9 @@ def test_e014_credential_in_non_secret_field() -> None:
     spec["nodes"].append(
         {
             "id": "t",
-            "component_id": "lab.io.text_input",
+            "component_id": "lab.data.prompt_template",
             "component_version": "1.0.0",
-            "config": {"value": {"$secret": "OPENAI_API_KEY"}},  # `value` is not a Secret field
+            "config": {"template": {"$secret": "OPENAI_API_KEY"}},  # `template` is not a Secret
             "position": {"x": 0, "y": 0},
         }
     )
@@ -165,28 +191,28 @@ def test_e014_credential_in_non_secret_field() -> None:
             "id": "et",
             "kind": "data",
             "source": {"node": "t", "output": "text"},
-            "target": {"node": "end", "input": "text"},
+            "target": {"node": "end", "input": "result"},
         }
     )
     compiled = compile_flow(spec, use_cache=False)
     diag = next(d for d in compiled.diagnostics if d.code == DiagnosticCode.E014)
     assert diag.node_id == "t"
-    assert diag.field == "value"
+    assert diag.field == "template"
 
 
 def test_e014_allows_secret_in_secret_field() -> None:
-    """A $secret in an actual Secret field (web_search.api_key) does NOT trip E014."""
+    """A $secret in an actual Secret field (api_key) does NOT trip E014."""
     spec = hello_spec()
     spec["nodes"].append(
         {
             "id": "ws",
-            "component_id": "lab.tools.web_search",
+            "component_id": _SecretComp.component_id,
             "component_version": "1.0.0",
             "config": {"api_key": {"$secret": "TAVILY_KEY"}},  # api_key IS a SecretInput
             "position": {"x": 0, "y": 0},
         }
     )
-    compiled = compile_flow(spec, use_cache=False)
+    compiled = compile_flow(spec, registry=_registry_with(_SecretComp), use_cache=False)
     assert DiagnosticCode.E014 not in [d.code for d in compiled.diagnostics]
 
 
@@ -266,9 +292,9 @@ def test_e020_incompatible_edge_names_both_refs() -> None:
     spec["nodes"].append(
         {
             "id": "tools",
-            "component_id": "lab.tools.calculator",
+            "component_id": "lab.tools.http_request",
             "component_version": "1.0.0",
-            "config": {"expression": "1"},
+            "config": {"url": "https://example.com"},
             "position": {"x": 0, "y": 0},
         }
     )
@@ -293,7 +319,7 @@ def test_e021_tool_edge_rules() -> None:
             "id": "bad",
             "kind": "tool",
             "source": {"node": "fake", "output": "message"},
-            "target": {"node": "end", "input": "message"},
+            "target": {"node": "end", "input": "result"},
         }
     )
     compiled = compile_flow(spec, use_cache=False)
@@ -362,14 +388,14 @@ def test_e031_required_port_unconnected() -> None:
     spec["nodes"].append(
         {
             "id": "out",
-            "component_id": "lab.io.text_output",
+            "component_id": "lab.io.set_data",
             "component_version": "1.0.0",
             "config": {},
             "position": {"x": 0, "y": 0},
         }
     )
     compiled = compile_flow(spec, use_cache=False)
-    # text_output.text is a HandleField but not required → W401 only; make one required
+    # an unreachable island node → W401 (node unreachable from start)
     assert DiagnosticCode.W401 in [d.code for d in compiled.diagnostics]
 
 
@@ -412,13 +438,32 @@ def test_i501_guarded_cycle_is_info() -> None:
 
 def test_w203_coercion_reported() -> None:
     spec = hello_spec()
+    spec["nodes"].insert(
+        2,
+        {
+            "id": "sink",
+            "component_id": _TextSink.component_id,
+            "component_version": "1.0.0",
+            "config": {},
+            "position": {"x": 0, "y": 0},
+        },
+    )
+    # fake.message → sink.text_in is Message → Text (coercion); sink.text → end
     spec["edges"][1] = {
         "id": "e2",
         "kind": "data",
         "source": {"node": "fake", "output": "message"},
-        "target": {"node": "end", "input": "text"},
-    }  # Message → Text
-    compiled = compile_flow(spec, use_cache=False)
+        "target": {"node": "sink", "input": "text_in"},
+    }
+    spec["edges"].append(
+        {
+            "id": "e3",
+            "kind": "data",
+            "source": {"node": "sink", "output": "text"},
+            "target": {"node": "end", "input": "result"},
+        }
+    )
+    compiled = compile_flow(spec, registry=_registry_with(_TextSink), use_cache=False)
     assert DiagnosticCode.W203 in [d.code for d in compiled.diagnostics]
     assert {"edge_id": "e2", "coercion": "message_to_text"} in compiled.report.coercions
 
@@ -437,18 +482,18 @@ def test_tool_provider_not_a_graph_node() -> None:
     spec["nodes"].append(
         {
             "id": "calc",
-            "component_id": "lab.tools.calculator",
+            "component_id": "lab.tools.http_request",
             "component_version": "1.0.0",
-            "config": {"expression": "1+1"},
+            "config": {"url": "https://example.com"},
             "position": {"x": 0, "y": 0},
         }
     )
     spec["nodes"].append(
         {
             "id": "agent",
-            "component_id": "lab.llm.llm_agent",
+            "component_id": "lab.llm.agent",
             "component_version": "1.0.0",
-            "config": {"model": {"provider": "fake", "model": "ok"}},
+            "config": {"model": {"$resource": "m", "provider": "fake", "model": "ok"}},
             "position": {"x": 0, "y": 0},
         }
     )
@@ -469,7 +514,7 @@ def test_tool_provider_not_a_graph_node() -> None:
             "id": "e2",
             "kind": "data",
             "source": {"node": "agent", "output": "message"},
-            "target": {"node": "end", "input": "message"},
+            "target": {"node": "end", "input": "result"},
         },
     ]
     spec["nodes"] = [n for n in spec["nodes"] if n["id"] != "fake"]
@@ -513,14 +558,15 @@ def test_compile_cache_missed_when_secret_rotates() -> None:
     spec["nodes"].append(
         {
             "id": "ws",
-            "component_id": "lab.tools.web_search",
+            "component_id": _SecretComp.component_id,
             "component_version": "1.0.0",
-            "config": {"query": "x", "api_key": {"$secret": "K"}},
+            "config": {"api_key": {"$secret": "K"}},
             "position": {"x": 0, "y": 0},
         }
     )
-    a = compile_flow(spec, variables=_Vars(secrets={"K": "sk-old"}))
-    b = compile_flow(spec, variables=_Vars(secrets={"K": "sk-new"}))
+    reg = _registry_with(_SecretComp)
+    a = compile_flow(spec, registry=reg, variables=_Vars(secrets={"K": "sk-old"}))
+    b = compile_flow(spec, registry=reg, variables=_Vars(secrets={"K": "sk-new"}))
     assert b is not a  # rotated secret → recompile, old plaintext gone
     assert b.ir is not None
     assert str(b.ir.nodes["ws"].config["api_key"]) == "sk-new"
@@ -655,16 +701,16 @@ def test_e014_nested_secret_ref_is_caught() -> None:
     spec["nodes"].append(
         {
             "id": "t",
-            "component_id": "lab.io.text_input",
+            "component_id": "lab.data.prompt_template",
             "component_version": "1.0.0",
-            "config": {"value": {"headers": {"auth": {"$secret": "OPENAI_KEY"}}}},
+            "config": {"template": {"headers": {"auth": {"$secret": "OPENAI_KEY"}}}},
             "position": {"x": 0, "y": 0},
         }
     )
     compiled = compile_flow(spec, use_cache=False)
     diag = next(d for d in compiled.diagnostics if d.code == DiagnosticCode.E014)
     assert diag.node_id == "t"
-    assert diag.field == "value"
+    assert diag.field == "template"
 
 
 def _deep(obj: Any) -> Any:

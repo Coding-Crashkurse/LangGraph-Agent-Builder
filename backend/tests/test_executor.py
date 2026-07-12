@@ -70,9 +70,9 @@ async def test_table_terminal_emits_structured_result(
             },
             {
                 "id": "fe",
-                "component_id": "lab.data.for_each",
+                "component_id": "lab.flow.loop",
                 "component_version": "1.0.0",
-                "config": {"template": "{{ item }}!"},
+                "config": {"mode": "collection", "template": "{{ item }}!"},
                 "position": {"x": 300, "y": 0},
             },
             {
@@ -94,7 +94,7 @@ async def test_table_terminal_emits_structured_result(
                 "id": "e2",
                 "kind": "data",
                 "source": {"node": "fe", "output": "results"},
-                "target": {"node": "end", "input": "table"},
+                "target": {"node": "end", "input": "result"},
             },
         ],
     }
@@ -226,9 +226,9 @@ async def test_recursion_limit_rt105(mem_executor: tuple[Executor, EventBus]) ->
             },
             {
                 "id": "loop",
-                "component_id": "lab.flow.loop_until",
+                "component_id": "lab.flow.loop",
                 "component_version": "1.0.0",
-                "config": {"max_iterations": 100},
+                "config": {"mode": "until", "max_iterations": 100},
                 "position": {"x": 0, "y": 0},
             },
             {
@@ -262,7 +262,7 @@ async def test_recursion_limit_rt105(mem_executor: tuple[Executor, EventBus]) ->
                 "id": "e4",
                 "kind": "router",
                 "source": {"node": "loop", "output": "done"},
-                "target": {"node": "end", "input": "message"},
+                "target": {"node": "end", "input": "result"},
             },
         ],
     }
@@ -295,9 +295,13 @@ async def test_loop_until_terminates(mem_executor: tuple[Executor, EventBus]) ->
             },
             {
                 "id": "loop",
-                "component_id": "lab.flow.loop_until",
+                "component_id": "lab.flow.loop",
                 "component_version": "1.0.0",
-                "config": {"condition": '"APPROVED" in message', "max_iterations": 10},
+                "config": {
+                    "mode": "until",
+                    "condition": '"APPROVED" in message',
+                    "max_iterations": 10,
+                },
                 "position": {"x": 0, "y": 0},
             },
             {
@@ -331,7 +335,7 @@ async def test_loop_until_terminates(mem_executor: tuple[Executor, EventBus]) ->
                 "id": "e4",
                 "kind": "router",
                 "source": {"node": "loop", "output": "done"},
-                "target": {"node": "end", "input": "message"},
+                "target": {"node": "end", "input": "result"},
             },
         ],
     }
@@ -355,8 +359,12 @@ def _loop_spec(condition: str = "", max_iterations: int = 3) -> dict[str, Any]:
             },
             {
                 "id": "loop",
-                "component_id": "lab.flow.loop_until",
-                "config": {"condition": condition, "max_iterations": max_iterations},
+                "component_id": "lab.flow.loop",
+                "config": {
+                    "mode": "until",
+                    "condition": condition,
+                    "max_iterations": max_iterations,
+                },
             },
             {"id": "end", "component_id": "lab.io.end", "config": {}},
         ],
@@ -364,7 +372,7 @@ def _loop_spec(condition: str = "", max_iterations: int = 3) -> dict[str, Any]:
             _edge("e1", "data", "start", "message", "fake", "input"),
             _edge("e2", "data", "fake", "message", "loop", "input"),
             _edge("e3", "router", "loop", "continue", "fake", "input"),
-            _edge("e4", "router", "loop", "done", "end", "message"),
+            _edge("e4", "router", "loop", "done", "end", "result"),
         ],
     }
 
@@ -500,7 +508,7 @@ async def test_rt102_invalid_router_label(mem_executor: tuple[Executor, EventBus
             },
             {
                 "id": "end2",
-                "component_id": "lab.io.text_output",
+                "component_id": "lab.io.end",
                 "component_version": "1.0.0",
                 "config": {},
                 "position": {"x": 0, "y": 0},
@@ -517,13 +525,13 @@ async def test_rt102_invalid_router_label(mem_executor: tuple[Executor, EventBus
                 "id": "e2",
                 "kind": "router",
                 "source": {"node": "r", "output": "a"},
-                "target": {"node": "end", "input": "message"},
+                "target": {"node": "end", "input": "result"},
             },
             {
                 "id": "e3",
                 "kind": "router",
                 "source": {"node": "r", "output": "b"},
-                "target": {"node": "end2", "input": "text"},
+                "target": {"node": "end2", "input": "result"},
             },
         ],
     }
@@ -658,7 +666,7 @@ async def test_rt101_data_write_conflict(mem_executor: tuple[Executor, EventBus]
             },
             {
                 "id": "end2",
-                "component_id": "lab.io.text_output",
+                "component_id": "lab.io.end",
                 "component_version": "1.0.0",
                 "config": {},
                 "position": {"x": 0, "y": 0},
@@ -681,13 +689,13 @@ async def test_rt101_data_write_conflict(mem_executor: tuple[Executor, EventBus]
                 "id": "e3",
                 "kind": "data",
                 "source": {"node": "w1", "output": "out"},
-                "target": {"node": "end", "input": "message"},
+                "target": {"node": "end", "input": "result"},
             },
             {
                 "id": "e4",
                 "kind": "data",
                 "source": {"node": "w2", "output": "out"},
-                "target": {"node": "end2", "input": "text"},
+                "target": {"node": "end2", "input": "result"},
             },
         ],
     }
@@ -813,9 +821,11 @@ async def test_harness_run_in_flow() -> None:
 
 
 async def test_harness_build() -> None:
-    from langgraph_agent_builder.components.tools.basic_tools import Calculator
+    from langgraph_agent_builder.components.data.converters import PromptTemplate
     from langgraph_agent_builder.sdk.testing import ComponentTestHarness
 
-    node = ComponentTestHarness().build(Calculator, config={"expression": "(2+3)*4"})
+    node = ComponentTestHarness().build(
+        PromptTemplate, config={"template": "Hi {name}"}, ports={"name": "Ada"}
+    )
     result = await node()
-    assert result["text"] == "20"
+    assert result["text"] == "Hi Ada"

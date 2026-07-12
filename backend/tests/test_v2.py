@@ -4,7 +4,7 @@ templates, migration, tool events (SPEC §8b, §6.4, §4.3, §9, §4.11, §9.9).
 from __future__ import annotations
 
 import sys
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, cast
 
 import pytest
 
@@ -13,7 +13,6 @@ from langgraph_agent_builder.sdk.ports import (
     TABLE,
     TEXT,
     Document,
-    VectorStoreHandle,
     check_compatibility,
     coerce,
 )
@@ -124,59 +123,7 @@ def test_import_lga_does_not_import_vendor_clients() -> None:
 
 
 # --------------------------------------------------------------------------- compiler
-def test_vectorstore_ref_resolves_to_handle_and_e013() -> None:
-    from langgraph_agent_builder.compiler import compile_flow
-
-    def spec(conn: str) -> dict[str, Any]:
-        return {
-            "schema_version": "2",
-            "flow": {"name": "r", "slug": "r"},
-            "nodes": [
-                {"id": "start", "component_id": "lab.io.start"},
-                {
-                    "id": "emb",
-                    "component_id": "lab.testing.fake_embeddings",
-                    "config": {"dim": 8},
-                },
-                {
-                    "id": "ret",
-                    "component_id": "lab.rag.retriever",
-                    "config": {"vector_store": {"$vectorstore": conn, "collection": "c"}},
-                },
-                {"id": "end", "component_id": "lab.io.end"},
-            ],
-            "edges": [
-                {
-                    "id": "e0",
-                    "kind": "data",
-                    "source": {"node": "start", "output": "message"},
-                    "target": {"node": "ret", "input": "query_port"},
-                },
-                {
-                    "id": "e1",
-                    "kind": "data",
-                    "source": {"node": "emb", "output": "embedding"},
-                    "target": {"node": "ret", "input": "embedding"},
-                },
-                {
-                    "id": "e2",
-                    "kind": "data",
-                    "source": {"node": "ret", "output": "documents"},
-                    "target": {"node": "end", "input": "text"},
-                },
-            ],
-        }
-
-    ok = compile_flow(spec("local"), vectorstore_names={"local"})
-    handle = ok.node_contexts["ret"].get_field("vector_store")
-    assert isinstance(handle, VectorStoreHandle)
-    assert handle.connection == "local"
-    assert handle.collection == "c"
-
-    bad = compile_flow(spec("ghost"), vectorstore_names={"local"})
-    assert any(d.code.value == "E013" for d in bad.diagnostics)
-
-
+# ($vectorstore ref resolution + E013 is covered in tests/unit/test_compiler_resolve.py)
 def test_partial_run_subgraph_induction() -> None:
     from langgraph_agent_builder.compiler import compile_flow
     from langgraph_agent_builder.compiler.subgraph import ancestors_of, induce_subgraph
@@ -204,7 +151,7 @@ async def test_slug_first_and_lock(client: httpx.AsyncClient) -> None:
                 "id": "e",
                 "kind": "data",
                 "source": {"node": "start", "output": "message"},
-                "target": {"node": "end", "input": "message"},
+                "target": {"node": "end", "input": "result"},
             }
         ],
     }
@@ -250,32 +197,33 @@ async def test_templates_api(client: httpx.AsyncClient) -> None:
 
 
 async def test_node_upgrade_endpoint(client: httpx.AsyncClient) -> None:
-    # legacy pgvector node → migrate_config re-pins to installed version
+    # a stale component_version re-pins to the installed one, config preserved (§4.11)
     spec = {
         "schema_version": "2",
         "flow": {"name": "up", "slug": "upflow"},
         "nodes": [
             {"id": "start", "component_id": "lab.io.start"},
             {
-                "id": "pg",
-                "component_id": "lab.rag.pgvector_retriever",
+                "id": "kb",
+                "component_id": "lab.rag.kb_retriever",
                 "component_version": "0.9.0",
-                "config": {"collection": "old"},
+                "config": {"k": 3},
             },
             {"id": "end", "component_id": "lab.io.end"},
         ],
         "edges": [],
     }
     await client.post("/api/v1/flows", json={"spec": spec})
-    r = await client.post("/api/v1/flows/upflow/nodes/pg/upgrade")
+    r = await client.post("/api/v1/flows/upflow/nodes/kb/upgrade")
     assert r.status_code == 200
-    node = next(n for n in r.json()["flow"]["spec"]["nodes"] if n["id"] == "pg")
-    assert node["config"]["vector_store"]["$vectorstore"] == "local"
-    assert node["config"]["vector_store"]["collection"] == "old"
+    node = next(n for n in r.json()["flow"]["spec"]["nodes"] if n["id"] == "kb")
+    assert node["component_version"] == "1.0.0"  # re-pinned to installed
+    assert node["config"]["k"] == 3  # config preserved
 
 
 async def test_rag_end_to_end_local(client: httpx.AsyncClient, svc: AppServices) -> None:
-    # seed the local store, then retrieve via a partial run (§6.4 + §8b)
+    # seed the local store, wrap it in a Knowledge Base resource, then retrieve
+    # through kb_retriever via a partial run (§6.4 + §8b + Resources §8c)
     provider = await svc.vectorstores.provider("local")
     await provider.ensure_collection("kb", dim=32)
     from langgraph_agent_builder.components.llm._models import resolve_embeddings
@@ -286,16 +234,28 @@ async def test_rag_end_to_end_local(client: httpx.AsyncClient, svc: AppServices)
     await provider.upsert(
         "kb", [Document(page_content=t, metadata={"id": str(i)}) for i, t in enumerate(texts)], vecs
     )
+    # the knowledge_base resource bundles connection + collection + embedding
+    made = await client.post(
+        "/api/v1/resources/knowledge_base",
+        json={
+            "name": "localkb",
+            "config": {
+                "vectorstore": "local",
+                "collection": "kb",
+                "embedding": {"provider": "fake", "dim": 32},
+            },
+        },
+    )
+    assert made.status_code == 201, made.text
     spec = {
         "schema_version": "2",
         "flow": {"name": "rag", "slug": "raglocal"},
         "nodes": [
             {"id": "start", "component_id": "lab.io.start"},
-            {"id": "emb", "component_id": "lab.testing.fake_embeddings", "config": {"dim": 32}},
             {
                 "id": "ret",
-                "component_id": "lab.rag.retriever",
-                "config": {"vector_store": {"$vectorstore": "local", "collection": "kb"}, "k": 2},
+                "component_id": "lab.rag.kb_retriever",
+                "config": {"knowledge_base": {"$resource": "localkb"}, "k": 2},
             },
             {"id": "end", "component_id": "lab.io.end"},
         ],
@@ -304,19 +264,13 @@ async def test_rag_end_to_end_local(client: httpx.AsyncClient, svc: AppServices)
                 "id": "e0",
                 "kind": "data",
                 "source": {"node": "start", "output": "message"},
-                "target": {"node": "ret", "input": "query_port"},
+                "target": {"node": "ret", "input": "query"},
             },
             {
                 "id": "e1",
                 "kind": "data",
-                "source": {"node": "emb", "output": "embedding"},
-                "target": {"node": "ret", "input": "embedding"},
-            },
-            {
-                "id": "e2",
-                "kind": "data",
                 "source": {"node": "ret", "output": "documents"},
-                "target": {"node": "end", "input": "text"},
+                "target": {"node": "end", "input": "result"},
             },
         ],
     }

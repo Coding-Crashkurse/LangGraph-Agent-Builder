@@ -55,7 +55,7 @@ def _structured_output_spec(slug: str, output_schema: dict[str, Any]) -> dict[st
             "id": "e2",
             "kind": "data",
             "source": {"node": "setter", "output": "data"},
-            "target": {"node": "end", "input": "json"},
+            "target": {"node": "end", "input": "result"},
         },
     ]
     return spec

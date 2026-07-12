@@ -41,6 +41,27 @@ class _FallbackVars(_Vars):
         return "from-env" if name == "needs_fallback" else None
 
 
+class _SecretComp(Component):
+    """Minimal component with a Secret field, to exercise the $secret guard."""
+
+    component_id = "test.secret_comp"
+    display_name = "Secret Comp"
+    category = "testing"
+    inputs = [fields.SecretInput(name="api_key", display_name="API Key")]
+
+    def build(self, ctx: BuildContext) -> NodeFn:
+        async def node(state: dict[str, Any], config: Any) -> dict[str, Any]:
+            return {}
+
+        return node
+
+
+def _secret_registry() -> ComponentRegistry:
+    registry = ComponentRegistry()
+    registry.register(_SecretComp)
+    return registry
+
+
 def _spec(component_id: str, config: dict[str, Any], version: str = "1.0.0") -> FlowSpec:
     raw = {
         "schema_version": "1",
@@ -100,11 +121,8 @@ def test_var_env_fallback_used_when_absent() -> None:
 
 
 def test_secret_resolves_to_secretref() -> None:
-    spec = _spec(
-        "lab.llm.language_model",
-        {"model": {"provider": "fake", "model": "x"}, "api_key": {"$secret": "K"}},
-    )
-    ir, diags = resolve(spec, get_registry(), _Vars(secrets={"K": "sk-abc"}))
+    spec = _spec("test.secret_comp", {"api_key": {"$secret": "K"}})
+    ir, diags = resolve(spec, _secret_registry(), _Vars(secrets={"K": "sk-abc"}))
     assert DiagnosticCode.E012 not in _codes(diags)
     assert DiagnosticCode.E014 not in _codes(diags)
     value = ir.nodes["n"].config["api_key"]
@@ -113,11 +131,8 @@ def test_secret_resolves_to_secretref() -> None:
 
 
 def test_missing_secret_is_e012() -> None:
-    spec = _spec(
-        "lab.llm.language_model",
-        {"model": {"provider": "fake", "model": "x"}, "api_key": {"$secret": "GONE"}},
-    )
-    _ir, diags = resolve(spec, get_registry(), _Vars())
+    spec = _spec("test.secret_comp", {"api_key": {"$secret": "GONE"}})
+    _ir, diags = resolve(spec, _secret_registry(), _Vars())
     diag = next(d for d in diags if d.code == DiagnosticCode.E012)
     assert "GONE" in diag.message
 
@@ -152,8 +167,8 @@ def test_tweak_unknown_field_is_e011() -> None:
 
 
 def test_tweak_on_secret_field_is_rejected() -> None:
-    spec = _spec("lab.llm.language_model", {"model": {"provider": "fake", "model": "x"}})
-    _ir, diags = resolve(spec, get_registry(), _Vars(), tweaks={"n": {"api_key": "leaked"}})
+    spec = _spec("test.secret_comp", {})
+    _ir, diags = resolve(spec, _secret_registry(), _Vars(), tweaks={"n": {"api_key": "leaked"}})
     diag = next(d for d in diags if d.code == DiagnosticCode.E011)
     assert "not tweakable" in diag.message
 
@@ -236,11 +251,8 @@ def test_nested_secret_in_non_secret_field_is_e014_and_unresolved() -> None:
 
 
 def test_nested_secret_in_secret_field_is_allowed() -> None:
-    spec = _spec(
-        "lab.llm.language_model",
-        {"model": {"provider": "fake", "model": "x"}, "api_key": {"$secret": "K"}},
-    )
-    _ir, diags = resolve(spec, get_registry(), _Vars(secrets={"K": "sk"}))
+    spec = _spec("test.secret_comp", {"api_key": {"$secret": "K"}})
+    _ir, diags = resolve(spec, _secret_registry(), _Vars(secrets={"K": "sk"}))
     assert DiagnosticCode.E014 not in _codes(diags)
 
 

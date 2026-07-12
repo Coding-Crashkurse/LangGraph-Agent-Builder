@@ -232,7 +232,7 @@ class ResourcesService:
             }
         resolved = await self._resolve_params(config)
         try:
-            from langgraph_agent_builder.components.tools.mcp_toolset import load_mcp_tools
+            from langgraph_agent_builder.services.mcp_client import load_mcp_tools
 
             await load_mcp_tools(resolved)
         except Exception as exc:

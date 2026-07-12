@@ -8,6 +8,6 @@
   ],
   "edges": [
     { "id": "e1", "kind": "data", "source": { "node": "start", "output": "message" }, "target": { "node": "fake", "input": "input" } },
-    { "id": "e2", "kind": "data", "source": { "node": "fake", "output": "message" }, "target": { "node": "end", "input": "message" } }
+    { "id": "e2", "kind": "data", "source": { "node": "fake", "output": "message" }, "target": { "node": "end", "input": "result" } }
   ]
 }

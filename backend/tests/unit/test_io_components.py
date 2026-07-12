@@ -1,10 +1,9 @@
 """Unit tests for the IO components (SPEC §12.1).
 
-Covers langgraph_agent_builder.components.io.start, .end, .text_io and .set_data by driving each
-NodeFn directly through the ComponentTestHarness. The emphasis is on the input
-precedence branches (End), the literal/message toggle (TextInput), the jinja
-rendering + blank-key skipping (SetData) and the structured-input shaping
-(Start).
+Covers langgraph_agent_builder.components.io.start, .end and .set_data by driving
+each NodeFn directly through the ComponentTestHarness. The emphasis is on the
+input precedence branches (End), the jinja rendering + blank-key skipping
+(SetData) and the structured-input shaping (Start).
 """
 
 from __future__ import annotations
@@ -16,7 +15,6 @@ from langchain_core.messages import AIMessage, HumanMessage
 from langgraph_agent_builder.components.io.end import End
 from langgraph_agent_builder.components.io.set_data import SetData
 from langgraph_agent_builder.components.io.start import Start
-from langgraph_agent_builder.components.io.text_io import TextInput, TextOutput, WebhookInput
 from langgraph_agent_builder.sdk import Component, ports
 from langgraph_agent_builder.sdk.testing import BuiltNode, ComponentTestHarness
 
@@ -68,28 +66,15 @@ async def test_start_passes_through_files() -> None:
 
 
 # ------------------------------------------------------------------------- End
-async def test_end_prefers_message_over_text_and_json() -> None:
-    node = _build(
-        End,
-        port_values={
-            "message": ports.Message(role="assistant", content="M"),
-            "text": "T",
-            "json": {"j": 1},
-        },
-    )
+async def test_end_returns_wired_result() -> None:
+    node = _build(End, port_values={"result": ports.Message(role="assistant", content="M")})
     result = await node()
     assert isinstance(result["result"], ports.Message)
     assert result["result"].content == "M"
 
 
-async def test_end_uses_text_when_no_message() -> None:
-    node = _build(End, port_values={"text": "just text"})
-    result = await node()
-    assert result["result"] == "just text"
-
-
-async def test_end_uses_json_when_no_message_or_text() -> None:
-    node = _build(End, port_values={"json": {"a": 1}})
+async def test_end_result_accepts_any_type() -> None:
+    node = _build(End, port_values={"result": {"a": 1}})
     result = await node()
     assert result["result"] == {"a": 1}
 
@@ -105,51 +90,6 @@ async def test_end_is_empty_string_without_any_input() -> None:
     node = _build(End)
     result = await node()
     assert result["result"] == ""
-
-
-# ------------------------------------------------------------------- TextInput
-async def test_text_input_emits_literal_value() -> None:
-    node = _build(TextInput, config={"value": "literal"})
-    result = await node()
-    assert result["text"] == "literal"
-
-
-async def test_text_input_uses_inbound_message_when_toggled() -> None:
-    node = _build(TextInput, config={"value": "ignored", "from_message": True})
-    result = await node({"messages": [HumanMessage(content="human said")]})
-    assert result["text"] == "human said"
-
-
-async def test_text_input_defaults_to_empty_string() -> None:
-    node = _build(TextInput)
-    result = await node()
-    assert result["text"] == ""
-
-
-# ------------------------------------------------------------------ TextOutput
-async def test_text_output_returns_connected_text() -> None:
-    node = _build(TextOutput, port_values={"text": "the result"})
-    result = await node()
-    assert result["result"] == "the result"
-
-
-async def test_text_output_defaults_to_empty_string() -> None:
-    node = _build(TextOutput)
-    result = await node()
-    assert result["result"] == ""
-
-
-# ---------------------------------------------------------------- WebhookInput
-async def test_webhook_input_exposes_payload() -> None:
-    node = _build(WebhookInput)
-    result = await node({"data": {"webhook_payload": {"event": "ping"}}})
-    assert result["payload"] == {"event": "ping"}
-
-
-async def test_webhook_input_defaults_to_empty_object() -> None:
-    node = _build(WebhookInput)
-    result = await node()
-    assert result["payload"] == {}
 
 
 # --------------------------------------------------------------------- SetData

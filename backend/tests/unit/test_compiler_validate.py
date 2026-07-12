@@ -8,11 +8,44 @@ from typing import Any
 
 from langgraph_agent_builder.compiler import CompiledFlow, compile_flow
 from langgraph_agent_builder.schema.diagnostics import DiagnosticCode
+from langgraph_agent_builder.sdk import BuildContext, Component, Output, fields, ports
+from langgraph_agent_builder.sdk.component import NodeFn
+from langgraph_agent_builder.sdk.registry import ComponentRegistry, get_registry
 from tests.conftest import approval_spec, hello_spec
 
 
 def _codes(compiled: CompiledFlow) -> list[DiagnosticCode]:
     return [d.code for d in compiled.diagnostics]
+
+
+class _NeedsPort(Component):
+    """Two input ports; ``must`` is a required port left unwired to trip E031."""
+
+    component_id = "test.needs_port"
+    display_name = "Needs Port"
+    category = "testing"
+    inputs = [
+        fields.HandleField(name="input", display_name="Input", as_port=ports.MESSAGE),
+        fields.HandleField(
+            name="model", display_name="Model", as_port=ports.MESSAGE, required=True
+        ),
+    ]
+    outputs = [Output(name="message", display_name="Message", port=ports.MESSAGE)]
+
+    def build(self, ctx: BuildContext) -> NodeFn:
+        async def node(state: dict[str, Any], config: Any) -> dict[str, Any]:
+            return {}
+
+        return node
+
+
+def _registry_with(*extra: type[Component]) -> ComponentRegistry:
+    registry = ComponentRegistry()
+    for cls in get_registry().components.values():
+        registry.register(cls, "test")
+    for cls in extra:
+        registry.register(cls, "test")
+    return registry
 
 
 def test_router_edge_from_non_router_node_is_e023() -> None:
@@ -23,7 +56,7 @@ def test_router_edge_from_non_router_node_is_e023() -> None:
             "id": "r1",
             "kind": "router",
             "source": {"node": "fake", "output": "message"},
-            "target": {"node": "end", "input": "message"},
+            "target": {"node": "end", "input": "result"},
         }
     )
     compiled = compile_flow(spec, use_cache=False)
@@ -39,7 +72,7 @@ def test_router_edge_unknown_branch_is_e022() -> None:
             "id": "r-bad",
             "kind": "router",
             "source": {"node": "review", "output": "maybe"},
-            "target": {"node": "end", "input": "message"},
+            "target": {"node": "end", "input": "result"},
         }
     )
     compiled = compile_flow(spec, use_cache=False)
@@ -102,11 +135,11 @@ def test_any_typed_edge_warns_w201() -> None:
 
 def test_required_input_port_unconnected_is_e031() -> None:
     spec = hello_spec()
-    # llm_agent.model is a required LANGUAGE_MODEL port; leave it empty + unwired
+    # _NeedsPort.model is a required MESSAGE port; leave it unwired (input is wired)
     spec["nodes"].append(
         {
             "id": "agent",
-            "component_id": "lab.llm.llm_agent",
+            "component_id": _NeedsPort.component_id,
             "component_version": "1.0.0",
             "config": {},
             "position": {"x": 0, "y": 0},
@@ -120,7 +153,7 @@ def test_required_input_port_unconnected_is_e031() -> None:
             "target": {"node": "agent", "input": "input"},
         }
     )
-    compiled = compile_flow(spec, use_cache=False)
+    compiled = compile_flow(spec, registry=_registry_with(_NeedsPort), use_cache=False)
     diag = next(d for d in compiled.diagnostics if d.code == DiagnosticCode.E031)
     assert diag.node_id == "agent"
     assert diag.field == "model"
@@ -201,7 +234,7 @@ def test_interrupt_in_parallel_branch_is_e040() -> None:
                 "id": "app",
                 "kind": "router",
                 "source": {"node": "review", "output": "approve"},
-                "target": {"node": "end", "input": "message"},
+                "target": {"node": "end", "input": "result"},
             },
             {
                 "id": "rej",
@@ -213,7 +246,7 @@ def test_interrupt_in_parallel_branch_is_e040() -> None:
                 "id": "o",
                 "kind": "data",
                 "source": {"node": "other", "output": "message"},
-                "target": {"node": "end", "input": "message"},
+                "target": {"node": "end", "input": "result"},
             },
         ],
     }

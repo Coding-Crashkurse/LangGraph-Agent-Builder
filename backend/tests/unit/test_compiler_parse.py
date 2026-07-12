@@ -50,7 +50,7 @@ def test_reserved_node_id_wrong_component_is_e003() -> None:
 def test_duplicate_edge_id_is_e001() -> None:
     raw = hello_spec()
     clone = copy.deepcopy(raw["edges"][0])  # reuse id "e1" on a valid endpoint pair
-    clone["target"] = {"node": "end", "input": "message"}
+    clone["target"] = {"node": "end", "input": "result"}
     raw["edges"].append(clone)
     _, diagnostics = parse_pass.parse(raw)
     assert any(
@@ -65,7 +65,7 @@ def test_edge_referencing_unknown_node_is_e001() -> None:
             "id": "ghost",
             "kind": "data",
             "source": {"node": "does_not_exist", "output": "message"},
-            "target": {"node": "end", "input": "message"},
+            "target": {"node": "end", "input": "result"},
         }
     )
     _, diagnostics = parse_pass.parse(raw)

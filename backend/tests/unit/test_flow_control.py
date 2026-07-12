@@ -1,10 +1,9 @@
-"""Unit tests for the flow-control components (SPEC §5.5, §12.3).
+"""Unit tests for the interrupt-based Human flow-control components (SPEC §5.5).
 
-Routers and Loop Until are driven directly through the ComponentTestHarness;
-the interrupt-based Human components need the real interrupt/resume machinery
-and so run through a compiler + in-memory Executor. The focus is the branchy
-error paths: broken predicates, no-match fallbacks, counter guards, and the
-approval decision parsing (dict / string / invalid → reject).
+The Human components need the real interrupt/resume machinery and so run through
+a compiler + in-memory Executor. The focus is the approval decision parsing
+(dict / string / invalid → reject), the comment-append branch, and the preview
+toggle. Router/Loop branching is covered by ``test_new_palette_nodes``.
 """
 
 from __future__ import annotations
@@ -12,168 +11,10 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-from langchain_core.messages import HumanMessage
 
 from langgraph_agent_builder.compiler import compile_flow
-from langgraph_agent_builder.components.flow_control.loop_until import LoopUntil
-from langgraph_agent_builder.components.flow_control.routers import LLMRouter, RuleRouter
 from langgraph_agent_builder.runtime.executor import Executor
 from langgraph_agent_builder.runtime.streams import EventBus
-from langgraph_agent_builder.sdk import Component
-from langgraph_agent_builder.sdk.testing import BuiltNode, ComponentTestHarness
-
-
-def _build(
-    component: type[Component],
-    config: dict[str, Any] | None = None,
-    port_values: dict[str, Any] | None = None,
-) -> BuiltNode:
-    return ComponentTestHarness().build(component, config=config, ports=port_values)
-
-
-def _state_with_message(text: str) -> dict[str, Any]:
-    return {"messages": [HumanMessage(content=text)]}
-
-
-# ------------------------------------------------------------------- LoopUntil
-async def test_loop_until_continues_and_counts_first_iteration() -> None:
-    node = _build(LoopUntil, config={"max_iterations": 5})
-    result = await node()
-    assert result["route"] == "continue"
-    assert result["data"] == {"__loop_under_test": 1}
-
-
-async def test_loop_until_stops_when_max_iterations_exceeded() -> None:
-    node = _build(LoopUntil, config={"max_iterations": 3})
-    result = await node({"data": {"__loop_under_test": 3}})
-    assert result["route"] == "done"
-    assert result["data"] == {"__loop_under_test": 4}
-
-
-async def test_loop_until_done_when_condition_holds() -> None:
-    node = _build(
-        LoopUntil,
-        config={"condition": '"APPROVED" in message', "max_iterations": 10},
-    )
-    result = await node(_state_with_message("APPROVED now"))
-    assert result["route"] == "done"
-
-
-async def test_loop_until_continues_when_condition_false() -> None:
-    node = _build(
-        LoopUntil,
-        config={"condition": '"APPROVED" in message', "max_iterations": 10},
-    )
-    result = await node(_state_with_message("not yet"))
-    assert result["route"] == "continue"
-
-
-async def test_loop_until_broken_condition_continues() -> None:
-    node = _build(LoopUntil, config={"condition": "1 / 0", "max_iterations": 10})
-    result = await node()
-    assert result["route"] == "continue"
-
-
-# ------------------------------------------------------------------- LLMRouter
-async def test_llm_router_keyword_match_without_model() -> None:
-    node = _build(LLMRouter, config={"labels": ["refund", "other"]})
-    result = await node(_state_with_message("I want a refund"))
-    assert result["route"] == "refund"
-
-
-async def test_llm_router_no_match_falls_to_last_label() -> None:
-    node = _build(LLMRouter, config={"labels": ["refund", "other"]})
-    result = await node(_state_with_message("hello there"))
-    assert result["route"] == "other"
-
-
-async def test_llm_router_uses_model_when_connected() -> None:
-    node = _build(
-        LLMRouter,
-        config={"labels": ["refund", "other"]},
-        port_values={"model": {"provider": "fake", "replies": ["refund"]}},
-    )
-    result = await node(_state_with_message("ambiguous text"))
-    assert result["route"] == "refund"
-
-
-async def test_llm_router_empty_labels_routes_to_empty_string() -> None:
-    node = _build(LLMRouter, config={"labels": []})
-    result = await node(_state_with_message("x"))
-    assert result["route"] == ""
-
-
-# ------------------------------------------------------------------ RuleRouter
-def test_rule_router_outputs_dedup_and_append_default() -> None:
-    outs = RuleRouter.outputs_for_config(
-        {
-            "rules": [{"label": "a"}, {"label": "a"}, {"label": "b"}],
-            "default_label": "fallback",
-        }
-    )
-    assert [o.name for o in outs] == ["a", "b", "fallback"]
-
-
-def test_rule_router_outputs_skip_default_already_declared() -> None:
-    outs = RuleRouter.outputs_for_config({"rules": [{"label": "a"}], "default_label": "a"})
-    assert [o.name for o in outs] == ["a"]
-
-
-async def test_rule_router_first_matching_rule_wins() -> None:
-    node = _build(
-        RuleRouter,
-        config={
-            "rules": [
-                {"label": "refund", "when": '"refund" in message'},
-                {"label": "greet", "when": '"hi" in message'},
-            ],
-            "default_label": "default",
-        },
-    )
-    result = await node(_state_with_message("refund please"))
-    assert result["route"] == "refund"
-
-
-async def test_rule_router_falls_back_to_default() -> None:
-    node = _build(
-        RuleRouter,
-        config={
-            "rules": [{"label": "refund", "when": '"refund" in message'}],
-            "default_label": "default",
-        },
-    )
-    result = await node(_state_with_message("hello"))
-    assert result["route"] == "default"
-
-
-async def test_rule_router_skips_broken_predicate() -> None:
-    node = _build(
-        RuleRouter,
-        config={
-            "rules": [
-                {"label": "boom", "when": "1 / 0"},
-                {"label": "ok", "when": '"yes" in message'},
-            ],
-            "default_label": "default",
-        },
-    )
-    result = await node(_state_with_message("yes indeed"))
-    assert result["route"] == "ok"
-
-
-async def test_rule_router_skips_rows_missing_label_or_predicate() -> None:
-    node = _build(
-        RuleRouter,
-        config={
-            "rules": [
-                {"label": "", "when": '"x" in message'},
-                {"label": "nowhen", "when": ""},
-            ],
-            "default_label": "default",
-        },
-    )
-    result = await node(_state_with_message("x"))
-    assert result["route"] == "default"
 
 
 # ----------------------------------------------------- Human components (interrupt)
@@ -209,11 +50,12 @@ def _edge(edge_id: str, kind: str, src: str, out: str, dst: str, inp: str) -> di
 
 
 def _approval_spec(review_config: dict[str, Any]) -> dict[str, Any]:
-    """start → review; approve → echo → text_output, reject → text_output.
+    """start → review; approve → echo → end, reject → end.
 
     The echo node re-emits the last human message, so an appended reviewer
     comment surfaces as the terminal text — making the append_comment branch
-    observable.
+    observable. The reject branch reaches the terminal with no wired value, so
+    the flow result falls back to empty.
     """
     return {
         "schema_version": "1",
@@ -222,14 +64,13 @@ def _approval_spec(review_config: dict[str, Any]) -> dict[str, Any]:
             _node("start", "lab.io.start", {}),
             _node("review", "lab.flow.human_approval", review_config),
             _node("echo", "lab.testing.echo_llm", {}),
-            _node("out", "lab.io.text_output", {}),
-            _node("rej", "lab.io.text_output", {}),
+            _node("end", "lab.io.end", {}),
         ],
         "edges": [
             _edge("e1", "data", "start", "message", "review", "input"),
             _edge("e2", "router", "review", "approve", "echo", "input"),
-            _edge("e3", "data", "echo", "text", "out", "text"),
-            _edge("e4", "router", "review", "reject", "rej", "text"),
+            _edge("e3", "data", "echo", "text", "end", "result"),
+            _edge("e4", "router", "review", "reject", "end", "result"),
         ],
     }
 
@@ -245,7 +86,7 @@ def _input_spec(node_config: dict[str, Any]) -> dict[str, Any]:
         ],
         "edges": [
             _edge("e1", "data", "start", "message", "ask", "input"),
-            _edge("e2", "data", "ask", "message", "end", "message"),
+            _edge("e2", "data", "ask", "message", "end", "result"),
         ],
     }
 
@@ -304,7 +145,7 @@ async def test_human_approval_invalid_decision_is_rejected(executor: Executor) -
     compiled = compile_flow(_approval_spec({"prompt": "p"}), use_cache=False)
     await executor.execute(compiled, input_text="hello", thread_id="a5")
     resumed = await executor.execute(compiled, thread_id="a5", resume={"decision": "maybe-later"})
-    # unparseable decision → reject branch → routes to the rejection terminal
+    # unparseable decision → reject branch → routes to the terminal
     assert resumed.status == "completed"
     assert resumed.result_text == ""
 

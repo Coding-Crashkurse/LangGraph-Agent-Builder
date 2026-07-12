@@ -1,23 +1,23 @@
 """Router — merged Rule/LLM router (palette v2, SPEC §5.5, §12.3).
 
-One palette node with a ``mode`` switch replacing the two legacy routers:
+One palette node with a ``mode`` switch:
 
-* ``rules`` → predicate table (successor of ``lab.flow.rule_router``): one ROUTE
-  output per distinct rule label plus the default label.
-* ``llm``   → label classification (successor of ``lab.flow.llm_router``): one
-  ROUTE output per configured label; the classifier model stays an **inline**
-  ModelInput (a router's throwaway classifier is not a shared resource).
-
-``build`` delegates to the legacy classes' node functions — the field union is a
-superset of both, so their ``ctx.get_field(...)`` reads resolve unchanged.
+* ``rules`` → predicate table: one ROUTE output per distinct rule label plus the
+  default label. First matching (sandboxed jinja) predicate wins.
+* ``llm``   → label classification: one ROUTE output per configured label; the
+  classifier model stays an **inline** ModelInput (a router's throwaway
+  classifier is not a shared resource). Without a model, keyword matching routes.
 """
 
 from __future__ import annotations
 
-from langgraph_agent_builder.components.flow_control.routers import LLMRouter, RuleRouter
+from typing import Any
+
 from langgraph_agent_builder.sdk import BuildContext, Component, NodeKind, Output, fields, ports
 from langgraph_agent_builder.sdk.component import NodeConfig, NodeFn
 from langgraph_agent_builder.sdk.fields import MultiselectInput
+from langgraph_agent_builder.sdk.runtime import get_run_context
+from langgraph_agent_builder.sdk.templating import eval_predicate, last_message_text
 
 
 class Router(Component):
@@ -78,7 +78,7 @@ class Router(Component):
                 if isinstance(f, MultiselectInput):
                     labels = f.default or []
             return [Output(name=str(lb), port=ports.ROUTE) for lb in labels]
-        # rules mode — distinct rule labels + default (mirrors RuleRouter)
+        # rules mode — distinct rule labels + default
         out_labels: list[str] = []
         for row in config.get("rules") or []:
             label = str(row.get("label", "")).strip()
@@ -92,5 +92,74 @@ class Router(Component):
     def build(self, ctx: BuildContext) -> NodeFn:
         mode = str(ctx.get_field("mode") or "rules")
         if mode == "llm":
-            return LLMRouter().build(ctx)
-        return RuleRouter().build(ctx)
+            return self._build_llm(ctx)
+        return self._build_rules(ctx)
+
+    def _build_llm(self, ctx: BuildContext) -> NodeFn:
+        labels = [str(x) for x in ctx.get_field("labels") or []]
+
+        async def node(state: dict[str, Any], config: Any) -> dict[str, Any]:
+            rc = get_run_context(config)
+            text = last_message_text(state)
+            model_cfg = ctx.get_input(state, "model")
+            label: str | None = None
+            if model_cfg:
+                from langgraph_agent_builder.components.llm._models import resolve_model
+
+                model = resolve_model(model_cfg)
+                prompt = (
+                    "Classify the user message into exactly one of these labels: "
+                    f"{', '.join(labels)}.\n"
+                    f"{ctx.get_field('instructions') or ''}\n"
+                    f"Message: {text}\n"
+                    "Reply with the label only."
+                )
+                response = await model.ainvoke(prompt)
+                raw = (
+                    (
+                        response.content
+                        if isinstance(response.content, str)
+                        else str(response.content)
+                    )
+                    .strip()
+                    .lower()
+                )
+                label = next((lb for lb in labels if lb.lower() == raw), None) or next(
+                    (lb for lb in labels if lb.lower() in raw), None
+                )
+            else:
+                lowered = text.lower()
+                label = next((lb for lb in labels if lb.lower() == lowered), None) or next(
+                    (lb for lb in labels if lb.lower() in lowered), None
+                )
+            if label is None:
+                # no match → last label (catch-all by convention, e.g. "other")
+                label = labels[-1] if labels else ""
+            rc.emit_status(f"routed → {label}")
+            return {"route": label}
+
+        return node
+
+    def _build_rules(self, ctx: BuildContext) -> NodeFn:
+        rules = list(ctx.get_field("rules") or [])
+        default = str(ctx.get_field("default_label") or "default")
+
+        async def node(state: dict[str, Any], config: Any) -> dict[str, Any]:
+            variables = {
+                "data": dict(state.get("data") or {}),
+                "message": last_message_text(state),
+                "route": dict(state.get("route") or {}),
+            }
+            for row in rules:
+                predicate = str(row.get("when", "")).strip()
+                label = str(row.get("label", "")).strip()
+                if not predicate or not label:
+                    continue
+                try:
+                    if eval_predicate(predicate, variables):
+                        return {"route": label}
+                except Exception:
+                    continue  # broken predicate never matches
+            return {"route": default}
+
+        return node

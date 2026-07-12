@@ -75,7 +75,7 @@ def test_induced_subgraph_diagnostics_scoped_to_kept_nodes() -> None:
     spec["nodes"].append(
         {
             "id": "island",
-            "component_id": "lab.io.text_output",
+            "component_id": "lab.io.set_data",
             "component_version": "1.0.0",
             "config": {},
             "position": {"x": 0, "y": 0},

@@ -18,7 +18,7 @@
   "edges": [
     { "id": "e1", "kind": "data", "source": { "node": "start", "output": "message" }, "target": { "node": "draft", "input": "input" } },
     { "id": "e2", "kind": "data", "source": { "node": "draft", "output": "message" }, "target": { "node": "review", "input": "input" } },
-    { "id": "e3", "kind": "router", "source": { "node": "review", "output": "approve" }, "target": { "node": "end", "input": "message" } },
+    { "id": "e3", "kind": "router", "source": { "node": "review", "output": "approve" }, "target": { "node": "end", "input": "result" } },
     { "id": "e4", "kind": "router", "source": { "node": "review", "output": "reject" }, "target": { "node": "draft", "input": "input" } }
   ]
 }

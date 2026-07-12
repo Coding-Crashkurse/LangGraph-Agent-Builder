@@ -86,25 +86,6 @@ const TOOLSET_PORT: PortSpec = {
   family: "TOOLSET",
   is_list: true,
 };
-const MESSAGE_PORT: PortSpec = {
-  schema_ref: "lab:Message",
-  json_schema: {},
-  family: "MESSAGE",
-  is_list: false,
-};
-const JSON_PORT: PortSpec = {
-  schema_ref: "lab:Json",
-  json_schema: { type: "object" },
-  family: "DATA",
-  is_list: false,
-};
-const DOCUMENTS_PORT: PortSpec = {
-  schema_ref: "lab:Documents",
-  json_schema: {},
-  family: "DOCUMENTS",
-  is_list: true,
-};
-
 /** Live mirrors of server-side `outputs_for_config`/`input_ports_for_config`
  * overrides so ports update while typing. Built-ins only — custom components
  * fall back to the on_field_change round-trip (SPEC §4.6). */
@@ -112,7 +93,7 @@ function applyDynamicPortMirrors(
   descriptor: ComponentDescriptor,
   config: Record<string, unknown>,
   outputs: Map<string, PortSpec>,
-  inputs: Map<string, PortSpec>,
+  _inputs: Map<string, PortSpec>,
   routeLabels: Set<string>,
 ): void {
   // Tool Mode toggle (§4.7/§18): toolset output only while enabled
@@ -122,12 +103,10 @@ function applyDynamicPortMirrors(
     else outputs.delete("toolset");
   }
 
-  // Legacy Rule Router (on-canvas legacy nodes) + the new merged Router in
-  // rules mode both derive ROUTE outputs from the rules table. The new Router's
-  // llm mode uses dynamic_outputs_from="labels" (handled generically upstream).
+  // The merged Router in rules mode derives ROUTE outputs from the rules table;
+  // its llm mode uses dynamic_outputs_from="labels" (handled generically upstream).
   const isRulesRouter =
-    descriptor.component_id === "lab.flow.rule_router" ||
-    (descriptor.component_id === "lab.flow.router" && String(config.mode ?? "rules") === "rules");
+    descriptor.component_id === "lab.flow.router" && String(config.mode ?? "rules") === "rules";
   if (isRulesRouter) {
     outputs.clear();
     routeLabels.clear();
@@ -141,29 +120,6 @@ function applyDynamicPortMirrors(
     }
   }
 
-  if (descriptor.component_id === "lab.data.type_convert") {
-    const conversions: Record<string, [PortSpec, PortSpec]> = {
-      message_to_text: [MESSAGE_PORT, TEXT_PORT],
-      text_to_message: [TEXT_PORT, MESSAGE_PORT],
-      documents_to_text: [DOCUMENTS_PORT, TEXT_PORT],
-      json_to_text: [JSON_PORT, TEXT_PORT],
-      text_to_json: [TEXT_PORT, JSON_PORT],
-    };
-    const pair = conversions[String(config.conversion ?? "message_to_text")];
-    if (pair) {
-      inputs.set("input", pair[0]);
-      outputs.set("output", pair[1]);
-    }
-  }
-
-  if (descriptor.component_id === "lab.tools.a2a_remote_agent") {
-    if (String(config.mode ?? "node") === "tool") {
-      outputs.clear();
-      outputs.set("toolset", TOOLSET_PORT);
-    } else {
-      outputs.delete("toolset");
-    }
-  }
 }
 
 // same rule as the backend PROMPT_VAR_RE: {var}, but not {{escaped}}

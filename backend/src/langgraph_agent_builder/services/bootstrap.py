@@ -63,7 +63,7 @@ STARTER_FLOWS: list[dict[str, Any]] = [
                 "id": "e2",
                 "kind": "data",
                 "source": {"node": "fake_llm", "output": "message"},
-                "target": {"node": "end", "input": "message"},
+                "target": {"node": "end", "input": "result"},
             },
         ],
     },
@@ -122,7 +122,7 @@ STARTER_FLOWS: list[dict[str, Any]] = [
                 "id": "e3",
                 "kind": "router",
                 "source": {"node": "review", "output": "approve"},
-                "target": {"node": "end", "input": "message"},
+                "target": {"node": "end", "input": "result"},
             },
             {
                 "id": "e4",

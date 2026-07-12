@@ -10,18 +10,18 @@ from langgraph_agent_builder.sdk.registry import get_registry
 
 
 def test_tool_capable_schema_accepts_implicit_fields() -> None:
-    calculator = get_registry().get("lab.tools.calculator")
-    assert calculator is not None
-    assert calculator.tool_mode_supported
-    schema = calculator.config_schema()
+    http_request = get_registry().get("lab.tools.http_request")
+    assert http_request is not None
+    assert http_request.tool_mode_supported
+    schema = http_request.config_schema()
     assert schema["additionalProperties"] is False
     # a config the node form legitimately produces must validate
     jsonschema.validate(
         {
-            "expression": "1+1",
+            "url": "https://example.com",
             "tool_mode": True,
-            "tool_name": "calc",
-            "tool_description": "adds numbers",
+            "tool_name": "fetch",
+            "tool_description": "fetches a URL",
         },
         schema,
     )
@@ -38,8 +38,8 @@ def test_non_tool_component_schema_rejects_tool_fields() -> None:
 
 
 def test_implicit_fields_derived_from_one_source() -> None:
-    calculator = get_registry().get("lab.tools.calculator")
-    assert calculator is not None
-    names = [f.name for f in calculator._implicit_field_objects()]
+    http_request = get_registry().get("lab.tools.http_request")
+    assert http_request is not None
+    names = [f.name for f in http_request._implicit_field_objects()]
     assert names == ["tool_mode", "tool_name", "tool_description"]
-    assert [d["name"] for d in calculator._implicit_fields()] == names
+    assert [d["name"] for d in http_request._implicit_fields()] == names
