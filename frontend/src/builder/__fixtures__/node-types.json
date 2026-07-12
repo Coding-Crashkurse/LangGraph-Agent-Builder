@@ -1,0 +1,417 @@
+{
+  "node_types": [
+    {
+      "type": "start",
+      "version": 1,
+      "label": "Start",
+      "icon": "play",
+      "category": "io",
+      "description": "Flow input; its input_schema properties become output ports.",
+      "config_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "input_schema": {
+            "additionalProperties": true,
+            "title": "Input Schema",
+            "type": "object"
+          }
+        },
+        "required": [
+          "input_schema"
+        ],
+        "title": "StartNodeConfig",
+        "type": "object"
+      },
+      "inputs": [],
+      "outputs": [],
+      "dynamic_inputs": null,
+      "dynamic_outputs": "input_schema_properties",
+      "ui": {
+        "input_schema": {
+          "widget": "schema",
+          "label": "Input Schema",
+          "help": "JSON Schema of the flow input. String properties become text ports; required for flows published as MCP tools.",
+          "placeholder": "",
+          "resource_kind": null,
+          "advanced": false
+        }
+      }
+    },
+    {
+      "type": "end",
+      "version": 1,
+      "label": "End",
+      "icon": "flag",
+      "category": "io",
+      "description": "Flow output; output_from selects the node.port to return.",
+      "config_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "output_from": {
+            "description": "Reference 'node_id.port' the flow output is read from",
+            "title": "Output From",
+            "type": "string"
+          }
+        },
+        "required": [
+          "output_from"
+        ],
+        "title": "EndNodeConfig",
+        "type": "object"
+      },
+      "inputs": [
+        {
+          "name": "input",
+          "type": "text",
+          "label": "Input"
+        }
+      ],
+      "outputs": [],
+      "dynamic_inputs": null,
+      "dynamic_outputs": null,
+      "ui": {
+        "output_from": {
+          "widget": "text",
+          "label": "Output From",
+          "help": "node_id.port reference the flow output is read from",
+          "placeholder": "call_1.text",
+          "resource_kind": null,
+          "advanced": false
+        }
+      }
+    },
+    {
+      "type": "llm_call",
+      "version": 1,
+      "label": "LLM Call",
+      "icon": "sparkles",
+      "category": "llm",
+      "description": "Single completion; {vars} in the prompt become input ports.",
+      "config_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "resource": {
+            "pattern": "^[a-z0-9][a-z0-9-]{1,62}$",
+            "title": "Resource",
+            "type": "string"
+          },
+          "model": {
+            "default": "",
+            "title": "Model",
+            "type": "string"
+          },
+          "prompt": {
+            "title": "Prompt",
+            "type": "string"
+          },
+          "system_prompt": {
+            "default": "",
+            "title": "System Prompt",
+            "type": "string"
+          },
+          "structured_output": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Structured Output"
+          },
+          "stream": {
+            "default": false,
+            "title": "Stream",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "resource",
+          "prompt"
+        ],
+        "title": "LlmCallNodeConfig",
+        "type": "object"
+      },
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "text",
+          "type": "text",
+          "label": "Text"
+        }
+      ],
+      "dynamic_inputs": "prompt_vars",
+      "dynamic_outputs": "structured_output_json",
+      "ui": {
+        "resource": {
+          "widget": "resource",
+          "label": "Model Provider",
+          "help": "",
+          "placeholder": "",
+          "resource_kind": "model_provider",
+          "advanced": false
+        },
+        "model": {
+          "widget": "text",
+          "label": "Model",
+          "help": "",
+          "placeholder": "provider default",
+          "resource_kind": null,
+          "advanced": false
+        },
+        "prompt": {
+          "widget": "prompt",
+          "label": "Prompt",
+          "help": "",
+          "placeholder": "",
+          "resource_kind": null,
+          "advanced": false
+        },
+        "system_prompt": {
+          "widget": "textarea",
+          "label": "System Prompt",
+          "help": "",
+          "placeholder": "",
+          "resource_kind": null,
+          "advanced": false
+        },
+        "structured_output": {
+          "widget": "schema",
+          "label": "Output Schema",
+          "help": "Optional JSON Schema; forces JSON mode and adds a json port.",
+          "placeholder": "",
+          "resource_kind": null,
+          "advanced": true
+        },
+        "stream": {
+          "widget": "switch",
+          "label": "Stream Tokens",
+          "help": "",
+          "placeholder": "",
+          "resource_kind": null,
+          "advanced": false
+        }
+      }
+    },
+    {
+      "type": "mcp_tool",
+      "version": 1,
+      "label": "MCP Tool",
+      "icon": "wrench",
+      "category": "tools",
+      "description": "Call one tool on an MCP server; args map input ports to arguments.",
+      "config_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "resource": {
+            "anyOf": [
+              {
+                "pattern": "^[a-z0-9][a-z0-9-]{1,62}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Resource"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Url"
+          },
+          "tool": {
+            "title": "Tool",
+            "type": "string"
+          },
+          "args": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "input port name -> tool argument name",
+            "title": "Args",
+            "type": "object"
+          }
+        },
+        "required": [
+          "tool"
+        ],
+        "title": "McpToolNodeConfig",
+        "type": "object"
+      },
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "result",
+          "type": "json",
+          "label": "Result"
+        }
+      ],
+      "dynamic_inputs": "arg_keys",
+      "dynamic_outputs": null,
+      "ui": {
+        "resource": {
+          "widget": "resource",
+          "label": "MCP Server",
+          "help": "Platform MCP server resource; alternatively set a URL below.",
+          "placeholder": "",
+          "resource_kind": "mcp_server",
+          "advanced": false
+        },
+        "url": {
+          "widget": "text",
+          "label": "Server URL",
+          "help": "Used when no resource is set.",
+          "placeholder": "",
+          "resource_kind": null,
+          "advanced": true
+        },
+        "tool": {
+          "widget": "text",
+          "label": "Tool Name",
+          "help": "",
+          "placeholder": "",
+          "resource_kind": null,
+          "advanced": false
+        },
+        "args": {
+          "widget": "dict",
+          "label": "Arguments",
+          "help": "input port name → tool argument name",
+          "placeholder": "",
+          "resource_kind": null,
+          "advanced": false
+        }
+      }
+    },
+    {
+      "type": "retrieval",
+      "version": 1,
+      "label": "Knowledge Base",
+      "icon": "database",
+      "category": "rag",
+      "description": "Similarity search on an existing vector DB (read-only).",
+      "config_schema": {
+        "$defs": {
+          "JsonValue": {}
+        },
+        "additionalProperties": false,
+        "properties": {
+          "resource": {
+            "pattern": "^[a-z0-9][a-z0-9-]{1,62}$",
+            "title": "Resource",
+            "type": "string"
+          },
+          "collection": {
+            "title": "Collection",
+            "type": "string"
+          },
+          "top_k": {
+            "default": 4,
+            "maximum": 100,
+            "minimum": 1,
+            "title": "Top K",
+            "type": "integer"
+          },
+          "filter": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/$defs/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Filter"
+          }
+        },
+        "required": [
+          "resource",
+          "collection"
+        ],
+        "title": "RetrievalNodeConfig",
+        "type": "object"
+      },
+      "inputs": [
+        {
+          "name": "query",
+          "type": "text",
+          "label": "Query"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "documents",
+          "type": "documents",
+          "label": "Documents"
+        }
+      ],
+      "dynamic_inputs": null,
+      "dynamic_outputs": null,
+      "ui": {
+        "resource": {
+          "widget": "resource",
+          "label": "Vector DB",
+          "help": "",
+          "placeholder": "",
+          "resource_kind": "vector_db",
+          "advanced": false
+        },
+        "collection": {
+          "widget": "text",
+          "label": "Collection",
+          "help": "",
+          "placeholder": "",
+          "resource_kind": null,
+          "advanced": false
+        },
+        "top_k": {
+          "widget": "number",
+          "label": "Top K",
+          "help": "",
+          "placeholder": "",
+          "resource_kind": null,
+          "advanced": false
+        },
+        "filter": {
+          "widget": "json",
+          "label": "Filter",
+          "help": "",
+          "placeholder": "",
+          "resource_kind": null,
+          "advanced": true
+        }
+      }
+    }
+  ],
+  "prompt_var_pattern": "(?<!\\{)\\{([a-z_][a-z0-9_]*)\\}(?!\\})",
+  "extra_compatible_ports": [
+    [
+      "documents",
+      "text"
+    ],
+    [
+      "json",
+      "text"
+    ],
+    [
+      "text",
+      "json"
+    ]
+  ]
+}

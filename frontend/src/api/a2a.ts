@@ -1,177 +1,117 @@
-/** Typed client for the PUBLISHED agent's A2A JSON-RPC surface (`/a2a/{slug}/`,
- * SPEC §7.5–§7.7). This is deliberately NOT part of the OpenAPI client: the A2A
- * mount speaks JSON-RPC (protocol v0.3.x), not the Studio REST contract. The
- * types below are structural mirrors of the wire JSON an external A2A client
- * sees. Streaming frames go through the shared SSE parser in `sse.ts`.
+/**
+ * Minimal A2A v1.0 REST client for the playground chat (SPEC §2.5).
+ *
+ * The chat talks to the ephemeral draft endpoint (`…/a2a/_draft/{name}`)
+ * THROUGH the gateway, with the user's token. Streaming uses
+ * `message:stream` (SSE); non-streaming falls back to `message:send`.
  */
 
+import { authHeaders } from "./auth";
 import { parseSseStream } from "./sse";
-import type { InterruptPayload } from "./types";
 
-// ------------------------------------------------------------------ wire types
-export interface A2ATextPart {
-  kind: "text";
-  text: string;
+export interface A2aPart {
+  text?: string;
+  data?: Record<string, unknown>;
 }
 
-export interface A2ADataPart {
-  kind: "data";
-  data: unknown;
-}
-
-export interface A2AFilePart {
-  kind: "file";
-  file: Record<string, unknown>;
-}
-
-export type A2APart = A2ATextPart | A2ADataPart | A2AFilePart;
-
-export interface A2AMessage {
+export interface A2aMessage {
   role: string;
   messageId: string;
-  parts: A2APart[];
+  parts: A2aPart[];
   taskId?: string;
   contextId?: string;
 }
 
-export interface A2ATaskStatus {
-  state: string; // submitted | working | input-required | completed | failed | canceled
-  message?: A2AMessage;
-  timestamp?: string;
-}
-
-export interface A2ATask {
-  kind: "task";
+export interface A2aTask {
   id: string;
-  contextId: string;
-  status: A2ATaskStatus;
+  contextId?: string;
+  status?: { state?: string; message?: A2aMessage };
+  artifacts?: { parts?: A2aPart[] }[];
 }
 
-export interface A2AStatusUpdate {
-  kind: "status-update";
-  taskId: string;
-  contextId: string;
-  status: A2ATaskStatus;
-  final: boolean;
+export function userMessage(text: string, extra: Partial<A2aMessage> = {}): A2aMessage {
+  return {
+    role: "ROLE_USER",
+    messageId: crypto.randomUUID(),
+    parts: [{ text }],
+    ...extra,
+  };
 }
 
-export interface A2AArtifact {
-  artifactId: string;
-  name?: string;
-  parts: A2APart[];
+export function taskText(task: A2aTask): string {
+  const parts = task.artifacts?.flatMap((a) => a.parts ?? []) ?? [];
+  const text = parts
+    .map((p) => p.text ?? "")
+    .join("")
+    .trim();
+  if (text) return text;
+  return (task.status?.message?.parts ?? [])
+    .map((p) => p.text ?? "")
+    .join("")
+    .trim();
 }
 
-export interface A2AArtifactUpdate {
-  kind: "artifact-update";
-  taskId: string;
-  artifact: A2AArtifact;
-  append?: boolean;
-  lastChunk?: boolean;
-}
-
-export interface A2ARpcError {
-  code: number;
-  message: string;
-  data?: unknown;
-}
-
-export interface A2AStreamHandlers {
-  onTask?: (task: A2ATask) => void;
-  onStatus?: (update: A2AStatusUpdate) => void;
-  onArtifact?: (update: A2AArtifactUpdate) => void;
-  onError?: (error: A2ARpcError) => void;
-}
-
-// ------------------------------------------------------------------ client
-const endpoint = (slug: string) => `/a2a/${slug}/`;
-
-let nextRpcId = 1;
-
-async function rpcPost(slug: string, method: string, params: unknown): Promise<Response> {
-  return fetch(endpoint(slug), {
+export async function sendMessage(endpoint: string, message: A2aMessage): Promise<A2aTask> {
+  const response = await fetch(`${endpoint.replace(/\/$/, "")}/message:send`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ jsonrpc: "2.0", id: nextRpcId++, method, params }),
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify({ message }),
   });
+  if (!response.ok) throw new Error(`A2A send failed: HTTP ${response.status}`);
+  const payload = (await response.json()) as { task?: A2aTask };
+  if (!payload.task) throw new Error("A2A response carried no task");
+  return payload.task;
 }
 
-/** GET the public agent card; `null` when the flow is not served over A2A. */
-export async function fetchAgentCard(
-  slug: string,
-): Promise<Record<string, unknown> | null> {
-  try {
-    const response = await fetch(`/a2a/${slug}/.well-known/agent-card.json`);
-    return response.ok ? ((await response.json()) as Record<string, unknown>) : null;
-  } catch {
-    return null;
-  }
+interface StreamFrame {
+  task?: A2aTask;
+  msg?: A2aMessage;
+  statusUpdate?: { taskId?: string; status?: { state?: string; message?: A2aMessage } };
+  artifactUpdate?: { artifact?: { parts?: A2aPart[] } };
+}
+
+export interface StreamCallbacks {
+  onDelta: (text: string) => void;
+  onTask?: (task: A2aTask) => void;
 }
 
 /**
- * `message/stream`: send a user message and consume the SSE stream of
- * Task → TaskStatusUpdateEvents → TaskArtifactUpdateEvents. Passing `taskId`
- * continues an open task (answering input-required); passing only `contextId`
- * starts a new task in the same conversation (multi-turn, SPEC §7.6).
- * Resolves when the server closes the stream.
+ * Stream a message; resolves with the final task (when the server sent one).
+ * Falls back to `message:send` when the endpoint rejects streaming.
  */
 export async function streamMessage(
-  slug: string,
-  message: { parts: A2APart[]; taskId?: string | null; contextId?: string | null },
-  handlers: A2AStreamHandlers,
-): Promise<void> {
-  const wire: Record<string, unknown> = {
-    role: "user",
-    messageId: crypto.randomUUID(),
-    parts: message.parts,
-  };
-  if (message.taskId) wire.taskId = message.taskId;
-  if (message.contextId) wire.contextId = message.contextId;
-
-  const response = await rpcPost(slug, "message/stream", { message: wire });
+  endpoint: string,
+  message: A2aMessage,
+  callbacks: StreamCallbacks,
+  signal?: AbortSignal,
+): Promise<A2aTask | null> {
+  const response = await fetch(`${endpoint.replace(/\/$/, "")}/message:stream`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify({ message }),
+    signal,
+  });
   if (!response.ok || !response.body) {
-    throw new Error(`A2A stream failed: HTTP ${response.status}`);
+    const task = await sendMessage(endpoint, message);
+    callbacks.onDelta(taskText(task));
+    callbacks.onTask?.(task);
+    return task;
   }
+  let finalTask: A2aTask | null = null;
   await parseSseStream(response.body, (payload) => {
-    const frame = payload as { result?: { kind?: string }; error?: A2ARpcError };
-    if (frame.error) {
-      handlers.onError?.(frame.error);
-      return;
+    const frame = payload as StreamFrame;
+    if (frame.artifactUpdate?.artifact?.parts) {
+      for (const part of frame.artifactUpdate.artifact.parts) {
+        if (part.text) callbacks.onDelta(part.text);
+      }
     }
-    const result = frame.result;
-    if (!result) return;
-    if (result.kind === "task") handlers.onTask?.(result as A2ATask);
-    else if (result.kind === "status-update") handlers.onStatus?.(result as A2AStatusUpdate);
-    else if (result.kind === "artifact-update") {
-      handlers.onArtifact?.(result as A2AArtifactUpdate);
+    if (frame.msg?.parts) {
+      for (const part of frame.msg.parts) if (part.text) callbacks.onDelta(part.text);
+    }
+    if (frame.task) {
+      finalTask = frame.task;
+      callbacks.onTask?.(frame.task);
     }
   });
-}
-
-/** `tasks/cancel` — request cancellation of an open task. */
-export async function cancelTask(slug: string, taskId: string): Promise<void> {
-  const response = await rpcPost(slug, "tasks/cancel", { id: taskId });
-  if (!response.ok) throw new Error(`A2A cancel failed: HTTP ${response.status}`);
-}
-
-// ------------------------------------------------------------------ helpers
-/** Concatenate the text parts of a message/artifact. */
-export function textFromParts(parts: A2APart[] | undefined): string {
-  return (parts ?? [])
-    .filter((part): part is A2ATextPart => part.kind === "text")
-    .map((part) => String(part.text ?? ""))
-    .join("");
-}
-
-/**
- * Extract the normative interrupt payload (§5.5) from an `input-required`
- * status — the DataPart carries the ApprovalRequest/InputRequest verbatim,
- * with the TextPart prompt as fallback. `null` for any other state.
- */
-export function interruptFromStatus(status: A2ATaskStatus): InterruptPayload | null {
-  if (status.state !== "input-required") return null;
-  const parts = status.message?.parts ?? [];
-  const data = parts.find((part): part is A2ADataPart => part.kind === "data")?.data;
-  if (data && typeof data === "object") return data as InterruptPayload;
-  const text = parts.find((part): part is A2ATextPart => part.kind === "text")?.text;
-  return { prompt: text ?? "input required" };
+  return finalTask;
 }

@@ -1,121 +1,76 @@
-/** ValidationPanel: severity grouping with counts, honest empty copy, and the
- * Update-all affordance for version drift (SPEC §11.6/§4.11). */
+import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { describe, expect, it, vi } from "vitest";
 
-import { fireEvent, render, screen } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { SourcedIssue } from "@/api/types";
 
-import type { ComponentDescriptor, Diagnostic } from "@/api/types";
-
-import type { CanvasNode } from "./convert";
-import { useBuilder } from "./store";
 import { ValidationPanel } from "./ValidationPanel";
+import { catalogFixture, definitionFixture } from "./fixtures";
+import { useBuilder } from "./store";
 
-const initialState = useBuilder.getState();
+const issues: SourcedIssue[] = [
+  {
+    code: "E010",
+    severity: "error",
+    path: "nodes/call_1/config/prompt",
+    message: "prompt must not be empty",
+    source: "local",
+  },
+  {
+    code: "E020",
+    severity: "error",
+    path: "nodes/call_1/config/resource",
+    message: "unknown resource",
+    source: "runtime",
+  },
+  {
+    code: "W003",
+    severity: "warning",
+    path: "nodes/call_1/config/stream",
+    message: "stream ignored for MCP",
+    source: "local",
+  },
+];
 
-beforeEach(() => {
-  useBuilder.setState(initialState, true);
-  useBuilder.setState({ diagnostics: [], nodes: [], descriptors: new Map() });
-});
-
-function diag(partial: Partial<Diagnostic> & { code: string }): Diagnostic {
-  return { severity: "error", message: "boom", ...partial };
+function setup(withIssues: SourcedIssue[]) {
+  useBuilder.getState().load(definitionFixture(), catalogFixture);
+  useBuilder.getState().setIssues(withIssues);
 }
 
 describe("ValidationPanel", () => {
-  it("groups diagnostics by severity with counts", () => {
-    useBuilder.setState({
-      diagnostics: [
-        diag({ code: "E020", severity: "error", node_id: "llm_1" }),
-        diag({ code: "E031", severity: "error" }),
-        diag({ code: "W201", severity: "warning", message: "ANY-typed edge" }),
-      ],
-    });
-    render(<ValidationPanel onFocusNode={() => {}} needsValidation={false} />);
-
-    expect(screen.getByText("2 errors")).toBeInTheDocument();
-    expect(screen.getByText("1 warning")).toBeInTheDocument();
-    expect(screen.getByText("Errors")).toBeInTheDocument();
-    expect(screen.getByText("Warnings")).toBeInTheDocument();
+  it("renders local and runtime issues identically with a source badge", () => {
+    setup(issues);
+    render(<ValidationPanel onFocusIssue={() => {}} />);
+    expect(screen.getByText("E010")).toBeInTheDocument();
     expect(screen.getByText("E020")).toBeInTheDocument();
-    expect(screen.getByText("W201")).toBeInTheDocument();
+    expect(screen.getByText("runtime")).toBeInTheDocument();
+    expect(screen.getAllByText("local")).toHaveLength(2);
+    expect(screen.getByText("2 errors")).toBeInTheDocument();
+    expect(screen.getByText("1 warnings")).toBeInTheDocument();
   });
 
-  it("clicking a diagnostic with a node focuses that node", () => {
-    const onFocusNode = vi.fn();
-    useBuilder.setState({
-      diagnostics: [diag({ code: "E020", node_id: "llm_1" })],
-    });
-    render(<ValidationPanel onFocusNode={onFocusNode} needsValidation={false} />);
-
-    fireEvent.click(screen.getByRole("button", { name: /E020/ }));
-    expect(onFocusNode).toHaveBeenCalledWith("llm_1");
+  it("click focuses the offending node via the issue path", async () => {
+    setup(issues);
+    const onFocus = vi.fn();
+    render(<ValidationPanel onFocusIssue={onFocus} />);
+    await userEvent.click(screen.getByText("E020"));
+    expect(onFocus).toHaveBeenCalledWith("call_1", "nodes/call_1/config/resource");
   });
 
-  it("shows honest empty copy: 'validate to refresh' while unvalidated", () => {
-    render(<ValidationPanel onFocusNode={() => {}} needsValidation={true} />);
-    expect(screen.getByText(/validate to refresh/i)).toBeInTheDocument();
-    expect(screen.queryByText(/No issues/)).not.toBeInTheDocument();
+  it("shows not-validated-yet before the first run and clean state after", () => {
+    useBuilder.getState().load(definitionFixture(), catalogFixture);
+    const { rerender } = render(<ValidationPanel onFocusIssue={() => {}} />);
+    expect(screen.getByText(/Not validated yet/)).toBeInTheDocument();
+    useBuilder.getState().setValidation({ valid: true, runtime_checked: true, issues: [] });
+    rerender(<ValidationPanel onFocusIssue={() => {}} />);
+    expect(screen.getByText(/No issues found/)).toBeInTheDocument();
+    expect(screen.getByText(/local \+ runtime/)).toBeInTheDocument();
   });
 
-  it("shows 'No issues' once the current graph validated clean", () => {
-    render(<ValidationPanel onFocusNode={() => {}} needsValidation={false} />);
-    expect(screen.getByText(/No issues/)).toBeInTheDocument();
-    expect(screen.queryByText(/validate to refresh/i)).not.toBeInTheDocument();
-  });
-
-  it("surfaces a (disabled) Update-all button when pinned versions are stale", () => {
-    const descriptor = {
-      component_id: "lab.llm.model",
-      version: "1.1.0",
-      legacy: false,
-    } as unknown as ComponentDescriptor;
-    const node: CanvasNode = {
-      id: "model_1",
-      type: "lab",
-      position: { x: 0, y: 0 },
-      data: {
-        componentId: "lab.llm.model",
-        componentVersion: "1.0.0",
-        label: "Model",
-        config: {},
-        notes: "",
-      },
-    };
-    useBuilder.setState({
-      nodes: [node],
-      descriptors: new Map([["lab.llm.model", descriptor]]),
-    });
-    render(<ValidationPanel onFocusNode={() => {}} needsValidation={false} />);
-
-    const button = screen.getByRole("button", { name: /Update all/ });
-    expect(button).toHaveTextContent("Update all (1)");
-    expect(button).toBeDisabled();
-  });
-
-  it("hides Update-all when every node matches the installed version", () => {
-    const descriptor = {
-      component_id: "lab.llm.model",
-      version: "1.0.0",
-      legacy: false,
-    } as unknown as ComponentDescriptor;
-    const node: CanvasNode = {
-      id: "model_1",
-      type: "lab",
-      position: { x: 0, y: 0 },
-      data: {
-        componentId: "lab.llm.model",
-        componentVersion: "1.0.0",
-        label: "Model",
-        config: {},
-        notes: "",
-      },
-    };
-    useBuilder.setState({
-      nodes: [node],
-      descriptors: new Map([["lab.llm.model", descriptor]]),
-    });
-    render(<ValidationPanel onFocusNode={() => {}} needsValidation={false} />);
-
-    expect(screen.queryByRole("button", { name: /Update all/ })).not.toBeInTheDocument();
+  it("flags local-only results when the runtime was not reachable", () => {
+    useBuilder.getState().load(definitionFixture(), catalogFixture);
+    useBuilder.getState().setValidation({ valid: true, runtime_checked: false, issues: [] });
+    render(<ValidationPanel onFocusIssue={() => {}} />);
+    expect(screen.getByText(/runtime not checked/)).toBeInTheDocument();
   });
 });

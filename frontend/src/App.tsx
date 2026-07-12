@@ -1,24 +1,17 @@
 import { AlertTriangle } from "lucide-react";
-import { Component, lazy, Suspense, type ErrorInfo, type ReactNode } from "react";
-import { Navigate, Route, Routes } from "react-router-dom";
+import { Component, lazy, Suspense, useEffect, useState, type ErrorInfo, type ReactNode } from "react";
+import { Navigate, Route, Routes, useNavigate } from "react-router-dom";
 
+import { api } from "@/api/client";
+import { beginLogin, completeLogin, getToken, setAuthConfig } from "@/api/auth";
 import { Button } from "@/components/ui/button";
 
 import { FlowsPage } from "./builder/FlowsPage";
 
 // Route-level code splitting: the flows list must not pay for the whole
-// react-flow builder bundle (or the settings page) on first paint.
+// react-flow builder bundle on first paint.
 const BuilderPage = lazy(() =>
   import("./builder/BuilderPage").then((m) => ({ default: m.BuilderPage })),
-);
-const SettingsPage = lazy(() =>
-  import("./settings/SettingsPage").then((m) => ({ default: m.SettingsPage })),
-);
-const ResourcesPage = lazy(() =>
-  import("./resources/ResourcesPage").then((m) => ({ default: m.ResourcesPage })),
-);
-const RunDetailPage = lazy(() =>
-  import("./builder/runs/RunDetail").then((m) => ({ default: m.RunDetailPage })),
 );
 
 /** Skeleton shown while a lazy route chunk loads (never a bare "loading…"). */
@@ -87,19 +80,73 @@ class ErrorBoundary extends Component<{ children: ReactNode }, ErrorBoundaryStat
   }
 }
 
+/** OIDC callback target: exchange the code, then return to where we were. */
+function AuthCallback() {
+  const navigate = useNavigate();
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    completeLogin()
+      .then((target) => navigate(target, { replace: true }))
+      .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)));
+  }, [navigate]);
+  if (error) {
+    return (
+      <div className="flex h-screen items-center justify-center text-sm text-danger">
+        Login failed: {error}
+      </div>
+    );
+  }
+  return <RouteFallback />;
+}
+
+/**
+ * Bootstrap gate (SPEC §2.7): load /config; with auth_mode=oidc and no token,
+ * redirect to the shared Keycloak realm (Code + PKCE) before rendering.
+ */
+function AuthGate({ children }: { children: ReactNode }) {
+  const [ready, setReady] = useState(false);
+  const [message, setMessage] = useState("Loading…");
+  const isCallback = window.location.pathname.startsWith("/auth/callback");
+  useEffect(() => {
+    api.config
+      .get()
+      .then(async (config) => {
+        setAuthConfig(config);
+        if (config.auth_mode === "oidc" && !getToken() && !isCallback) {
+          setMessage("Redirecting to sign-in…");
+          await beginLogin();
+          return;
+        }
+        setReady(true);
+      })
+      .catch(() => {
+        // config unreachable (backend down) — render anyway; queries will error visibly
+        setReady(true);
+      });
+  }, [isCallback]);
+  if (!ready) {
+    return (
+      <div className="flex h-screen items-center justify-center text-sm text-text-3">
+        {message}
+      </div>
+    );
+  }
+  return <>{children}</>;
+}
+
 export default function App() {
   return (
     <ErrorBoundary>
-      <Suspense fallback={<RouteFallback />}>
-        <Routes>
-          <Route path="/" element={<FlowsPage />} />
-          <Route path="/flows/:flowId" element={<BuilderPage />} />
-          <Route path="/runs/:runId" element={<RunDetailPage />} />
-          <Route path="/resources" element={<ResourcesPage />} />
-          <Route path="/settings" element={<SettingsPage />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </Suspense>
+      <AuthGate>
+        <Suspense fallback={<RouteFallback />}>
+          <Routes>
+            <Route path="/" element={<FlowsPage />} />
+            <Route path="/flows/:flowName" element={<BuilderPage />} />
+            <Route path="/auth/callback" element={<AuthCallback />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </Suspense>
+      </AuthGate>
     </ErrorBoundary>
   );
 }

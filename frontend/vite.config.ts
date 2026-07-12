@@ -6,6 +6,8 @@ import { defineConfig } from "vitest/config";
 
 // lab defaults to :8000; on this machine 8000 is occupied, so dev runs on 8010
 // (override with VITE_BACKEND_URL). The wheel serves the built frontend itself.
+// Only /api is proxied — the builder hosts no protocol endpoints; the
+// playground talks to the gateway URL returned by the ephemeral deploy.
 const BACKEND = process.env.VITE_BACKEND_URL ?? "http://localhost:8010";
 
 export default defineConfig({
@@ -17,9 +19,6 @@ export default defineConfig({
     port: 5173,
     proxy: {
       "/api": { target: BACKEND, changeOrigin: true },
-      "/a2a": { target: BACKEND, changeOrigin: true },
-      "/mcp": { target: BACKEND, changeOrigin: true },
-      "/.well-known": { target: BACKEND, changeOrigin: true },
     },
   },
   test: {

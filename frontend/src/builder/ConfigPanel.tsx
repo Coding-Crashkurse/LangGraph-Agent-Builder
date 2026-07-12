@@ -1,257 +1,446 @@
-/** Node inspector: renders purely from the component descriptor via the
- * FieldWidgetRegistry; dynamic fields round-trip to /components/{cid}/config.
- *
- * The inner <Inspector> is keyed by node id so per-node UI state (liveFields
- * from dynamic refreshes, the Advanced disclosure, pending debounce timers)
- * can never leak from one node into another. */
+/**
+ * Inspector panel. Node config forms render from the JSON Schema served by
+ * GET /node-types plus its UI metadata — no hardcoded per-node forms
+ * (SPEC §3, UI rules). With no node selected it shows the flow settings
+ * (display name, expose config incl. flow-level MCP tool fields).
+ */
 
-import {
-  BookOpen,
-  Boxes,
-  ChevronDown,
-  ChevronRight,
-  FlaskConical,
-  GitBranch,
-  MousePointerClick,
-  Sparkles,
-  Wrench,
-  Zap,
-  type LucideIcon,
-} from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { ExternalLink } from "lucide-react";
+import { useEffect, useState } from "react";
 
 import { api } from "@/api/client";
-import type { ComponentDescriptor, FieldDescriptor } from "@/api/types";
+import type {
+  FieldUI,
+  NodeTypeInfo,
+  ResourceGroup,
+  SourcedIssue,
+  WidgetKind,
+} from "@/api/types";
 import { Badge } from "@/components/ui/badge";
-import { toast } from "@/components/ui/toast";
+import { Select, Switch } from "@/components/ui/controls";
+import { Input, Label, Textarea } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
 
-import type { CanvasNode } from "./convert";
-import { defaultConfig } from "./convert";
-import { widgetFor } from "./forms/registry";
-import { useBuilder } from "./store";
+import type { FlowMeta } from "./convert";
+import { issueNodeId, useBuilder } from "./store";
 
-const CATEGORY_ICONS: Record<string, LucideIcon> = {
-  llm: Sparkles,
-  rag: BookOpen,
-  flow_control: GitBranch,
-  tools: Wrench,
-  io: Zap,
-  data: Boxes,
-  testing: FlaskConical,
-};
+// ------------------------------------------------------------------ widgets
 
-/** Conditional field visibility: a field with `show_when: {field, equals}` is
- * hidden unless the sibling field's current value equals the target. */
-function showWhenSatisfied(
-  field: FieldDescriptor,
-  config: Record<string, unknown>,
-): boolean {
-  const sw = field.show_when as { field: string; equals: unknown } | undefined;
-  if (!sw || typeof sw !== "object") return true;
-  return config[sw.field] === sw.equals;
-}
-
-export function ConfigPanel() {
-  const selectedNodeId = useBuilder((s) => s.selectedNodeId);
-  const nodes = useBuilder((s) => s.nodes);
-  const descriptors = useBuilder((s) => s.descriptors);
-
-  const node = nodes.find((n) => n.id === selectedNodeId);
-  const descriptor = node ? descriptors.get(node.data.componentId) : undefined;
-
-  if (!node || !descriptor) {
-    return (
-      <div className="flex h-full flex-col items-center justify-center gap-1.5 px-6 py-10 text-center">
-        <MousePointerClick size={22} strokeWidth={1.75} className="text-text-3" aria-hidden />
-        <p className="text-[13px] text-text-2">Select a node to configure</p>
-        <p className="text-xs text-text-3">
-          Fields are generated from the component descriptor — adding a
-          component never needs frontend changes.
-        </p>
-      </div>
-    );
-  }
-
-  return <Inspector key={node.id} node={node} descriptor={descriptor} />;
-}
-
-function Inspector({ node, descriptor }: { node: CanvasNode; descriptor: ComponentDescriptor }) {
-  const updateNodeConfig = useBuilder((s) => s.updateNodeConfig);
-  const diagnostics = useBuilder((s) => s.diagnostics);
-
-  const [showAdvanced, setShowAdvanced] = useState(false);
-  const [liveFields, setLiveFields] = useState<FieldDescriptor[] | null>(null);
-  const debounce = useRef<number | null>(null);
-  useEffect(
-    () => () => {
-      // never let a pending dynamic refresh outlive this node's inspector
-      if (debounce.current) window.clearTimeout(debounce.current);
-    },
-    [],
+function JsonEditor({
+  value,
+  onCommit,
+  placeholder,
+  rows = 6,
+}: {
+  value: unknown;
+  onCommit: (parsed: unknown) => void;
+  placeholder?: string;
+  rows?: number;
+}) {
+  const [text, setText] = useState(() =>
+    value == null ? "" : JSON.stringify(value, null, 2),
   );
-
-  // descriptor defaults materialize through convert.ts's defaultConfig — the
-  // single source shared with node creation (inline widgets read the same map).
-  const effectiveConfig = useMemo(
-    () => ({ ...defaultConfig(descriptor), ...node.data.config }),
-    [descriptor, node.data.config],
-  );
-
-  const fields = useMemo(() => {
-    const list = liveFields ?? descriptor.fields;
-    return list.filter(
-      (f) => !f.port_only && f.show && !f.deprecated && showWhenSatisfied(f, effectiveConfig),
-    );
-  }, [descriptor, liveFields, effectiveConfig]);
-
-  const nodeDiags = diagnostics.filter((d) => d.node_id === node.id);
-
-  const refresh = async (changedField: string, value: unknown) => {
-    try {
-      const result = await api.components.configChange(descriptor.component_id, {
-        config: { ...node.data.config, [changedField]: value },
-        changed_field: changedField,
-        value,
-      });
-      setLiveFields(result.fields);
-      updateNodeConfig(node.id, result.config);
-    } catch (error) {
-      toast.error(`refresh failed: ${(error as Error).message}`);
-    }
-  };
-
-  const setValue = (field: FieldDescriptor, value: unknown) => {
-    updateNodeConfig(node.id, { ...node.data.config, [field.name]: value });
-    if (field.real_time_refresh || field.dynamic) {
-      if (debounce.current) window.clearTimeout(debounce.current);
-      debounce.current = window.setTimeout(() => refresh(field.name, value), 300);
-    }
-  };
-
-  const visible = fields.filter((f) => !f.advanced);
-  const advanced = fields.filter((f) => f.advanced);
-  const HeaderIcon = CATEGORY_ICONS[descriptor.category] ?? Boxes;
-
+  const [invalid, setInvalid] = useState(false);
+  useEffect(() => {
+    setText(value == null ? "" : JSON.stringify(value, null, 2));
+    setInvalid(false);
+  }, [value]);
   return (
-    <div className="flex h-full flex-col overflow-y-auto">
-      <div className="border-b border-border px-4 py-3">
-        <div className="flex items-center gap-2">
-          <span
-            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-surface-2 text-text-2"
-            aria-hidden
-          >
-            <HeaderIcon size={14} strokeWidth={1.75} />
-          </span>
-          <h2 className="truncate text-[13px] font-semibold text-text-1">
-            {node.data.label || descriptor.display_name}
-          </h2>
-          <Badge tone="muted">{descriptor.node_kind}</Badge>
-          {descriptor.beta && <Badge tone="accent">beta</Badge>}
-        </div>
-        <p className="mt-1.5 text-xs leading-relaxed text-text-3">{descriptor.description}</p>
-        <p className="mt-1 truncate font-mono text-[10.5px] text-text-3">
-          {descriptor.component_id} @ {descriptor.version} · {node.id}
-        </p>
-      </div>
-
-      {nodeDiags.length > 0 && (
-        <div className="space-y-1 border-b border-border border-l-2 border-l-danger px-4 py-2">
-          {nodeDiags.map((d, i) => (
-            <p
-              key={i}
-              className={
-                d.severity === "error"
-                  ? "text-xs text-danger"
-                  : d.severity === "warning"
-                    ? "text-xs text-warning"
-                    : "text-xs text-port-toolset"
-              }
-            >
-              <span className="font-mono">{d.code}</span> {d.message}
-              {d.fix_hint ? <span className="text-text-3"> — {d.fix_hint}</span> : null}
-            </p>
-          ))}
-        </div>
-      )}
-
-      <div className="flex-1 px-4 py-3">
-        <div className="space-y-4">
-          {visible.map((field) => (
-            <FieldRow
-              key={field.name}
-              field={field}
-              value={effectiveConfig[field.name]}
-              setValue={setValue}
-              refresh={refresh}
-            />
-          ))}
-        </div>
-        {advanced.length > 0 && (
-          <div className="mt-4 border-t border-border pt-3">
-            <button
-              type="button"
-              aria-expanded={showAdvanced}
-              className="flex items-center gap-1 rounded text-xs font-medium text-text-2 hover:text-text-1 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent"
-              onClick={() => setShowAdvanced((v) => !v)}
-            >
-              {showAdvanced ? (
-                <ChevronDown size={14} strokeWidth={1.75} aria-hidden />
-              ) : (
-                <ChevronRight size={14} strokeWidth={1.75} aria-hidden />
-              )}
-              Advanced · {advanced.length}
-            </button>
-            {showAdvanced && (
-              <div className="mt-3 space-y-4 border-l border-border pl-3">
-                {advanced.map((field) => (
-                  <FieldRow
-                    key={field.name}
-                    field={field}
-                    value={effectiveConfig[field.name]}
-                    setValue={setValue}
-                    refresh={refresh}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
+    <div>
+      <Textarea
+        rows={rows}
+        value={text}
+        placeholder={placeholder ?? "{ }"}
+        className={cn(invalid && "border-danger focus-visible:outline-danger")}
+        onChange={(e) => setText(e.target.value)}
+        onBlur={() => {
+          const trimmed = text.trim();
+          if (!trimmed) {
+            setInvalid(false);
+            onCommit(null);
+            return;
+          }
+          try {
+            onCommit(JSON.parse(trimmed));
+            setInvalid(false);
+          } catch {
+            setInvalid(true);
+          }
+        }}
+      />
+      {invalid && <p className="mt-1 text-[11px] text-danger">Not valid JSON — not saved.</p>}
     </div>
   );
 }
 
-function FieldRow({
-  field,
+function DictEditor({
   value,
-  setValue,
-  refresh,
+  onCommit,
 }: {
-  field: FieldDescriptor;
   value: unknown;
-  setValue: (field: FieldDescriptor, value: unknown) => void;
-  refresh: (changedField: string, value: unknown) => void;
+  onCommit: (next: Record<string, string>) => void;
 }) {
-  const Widget = widgetFor(field);
+  const entries = Object.entries(
+    typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {},
+  ).map(([k, v]) => [k, String(v)] as [string, string]);
+  const commit = (next: [string, string][]) => onCommit(Object.fromEntries(next));
   return (
-    <label className="block">
-      <span className="mb-1 flex items-center gap-1 text-xs font-medium text-text-2">
-        {field.display_name}
-        {field.required && (
-          <span className="text-danger" aria-label="required">
-            *
-          </span>
-        )}
-      </span>
-      <Widget
-        field={field}
-        value={value}
-        onChange={(v) => setValue(field, v)}
-        onRefresh={() => refresh(field.name, value)}
-      />
-      {field.info ? (
-        <span className="mt-1 block text-[11px] leading-relaxed text-text-3">{field.info}</span>
-      ) : null}
-    </label>
+    <div className="flex flex-col gap-1.5">
+      {entries.map(([key, val], index) => (
+        <div key={index} className="flex items-center gap-1.5">
+          <Input
+            value={key}
+            aria-label="port name"
+            placeholder="port"
+            className="h-7 font-mono text-xs"
+            onChange={(e) => {
+              const next = [...entries];
+              next[index] = [e.target.value, val];
+              commit(next);
+            }}
+          />
+          <span className="text-text-3">→</span>
+          <Input
+            value={val}
+            aria-label="argument name"
+            placeholder="argument"
+            className="h-7 font-mono text-xs"
+            onChange={(e) => {
+              const next = [...entries];
+              next[index] = [key, e.target.value];
+              commit(next);
+            }}
+          />
+          <button
+            type="button"
+            aria-label="remove entry"
+            className="text-text-3 hover:text-danger"
+            onClick={() => commit(entries.filter((_, i) => i !== index))}
+          >
+            ×
+          </button>
+        </div>
+      ))}
+      <button
+        type="button"
+        className="self-start text-[11px] text-accent hover:underline"
+        onClick={() => commit([...entries, ["", ""]])}
+      >
+        + add mapping
+      </button>
+    </div>
   );
 }
+
+function ResourcePicker({
+  value,
+  kind,
+  onChange,
+}: {
+  value: string;
+  kind: ResourceGroup | null;
+  onChange: (name: string | null) => void;
+}) {
+  const config = useQuery({ queryKey: ["config"], queryFn: api.config.get });
+  const resources = useQuery({
+    queryKey: ["resources", kind],
+    queryFn: () => api.resources.list(kind ?? undefined),
+    retry: false,
+  });
+  const options = resources.data ?? [];
+  return (
+    <div>
+      <Select
+        value={value}
+        aria-label="resource"
+        onChange={(e) => onChange(e.target.value || null)}
+      >
+        <option value="">— select resource —</option>
+        {value && !options.some((r) => r.name === value) && (
+          <option value={value}>{value}</option>
+        )}
+        {options.map((r) => (
+          <option key={r.name} value={r.name}>
+            {r.display_name || r.name} ({r.kind})
+          </option>
+        ))}
+      </Select>
+      {resources.isError && (
+        <p className="mt-1 text-[11px] text-warning">
+          Runtime resources unavailable — enter the name manually below.
+        </p>
+      )}
+      {resources.isError && (
+        <Input
+          className="mt-1 h-7 font-mono text-xs"
+          value={value}
+          placeholder="resource-name"
+          onChange={(e) => onChange(e.target.value || null)}
+        />
+      )}
+      {config.data?.resources_ui_url && (
+        <a
+          href={config.data.resources_ui_url}
+          target="_blank"
+          rel="noreferrer"
+          className="mt-1 inline-flex items-center gap-1 text-[11px] text-accent hover:underline"
+        >
+          Manage in Resources <ExternalLink size={11} />
+        </a>
+      )}
+    </div>
+  );
+}
+
+// ------------------------------------------------------------------ field
+
+interface SchemaProperty {
+  type?: string;
+  description?: string;
+  default?: unknown;
+  minimum?: number;
+  maximum?: number;
+}
+
+function widgetFor(ui: FieldUI | undefined, prop: SchemaProperty): WidgetKind {
+  if (ui) return ui.widget;
+  if (prop.type === "boolean") return "switch";
+  if (prop.type === "integer" || prop.type === "number") return "number";
+  if (prop.type === "object") return "json";
+  return "text";
+}
+
+function FieldRow({
+  name,
+  prop,
+  ui,
+  value,
+  onChange,
+  issues,
+}: {
+  name: string;
+  prop: SchemaProperty;
+  ui: FieldUI | undefined;
+  value: unknown;
+  onChange: (value: unknown) => void;
+  issues: SourcedIssue[];
+}) {
+  const widget = widgetFor(ui, prop);
+  const label = ui?.label || name;
+  const help = ui?.help || prop.description || "";
+  const fieldIssues = issues.filter((i) => i.path.endsWith(`/${name}`));
+  return (
+    <div>
+      <Label hint={help}>{label}</Label>
+      {widget === "switch" && (
+        <Switch checked={value === true} onCheckedChange={onChange} label={label} />
+      )}
+      {widget === "number" && (
+        <Input
+          type="number"
+          value={value == null ? "" : String(value)}
+          min={prop.minimum}
+          max={prop.maximum}
+          onChange={(e) =>
+            onChange(e.target.value === "" ? null : Number(e.target.value))
+          }
+        />
+      )}
+      {(widget === "text" || widget === "prompt" || widget === "textarea") &&
+        (widget === "text" ? (
+          <Input
+            value={typeof value === "string" ? value : ""}
+            placeholder={ui?.placeholder}
+            onChange={(e) => onChange(e.target.value)}
+          />
+        ) : (
+          <Textarea
+            rows={widget === "prompt" ? 6 : 3}
+            value={typeof value === "string" ? value : ""}
+            placeholder={ui?.placeholder}
+            onChange={(e) => onChange(e.target.value)}
+          />
+        ))}
+      {(widget === "schema" || widget === "json") && (
+        <JsonEditor value={value} onCommit={onChange} />
+      )}
+      {widget === "dict" && (
+        <DictEditor value={value} onCommit={(next) => onChange(next)} />
+      )}
+      {widget === "resource" && (
+        <ResourcePicker
+          value={typeof value === "string" ? value : ""}
+          kind={ui?.resource_kind ?? null}
+          onChange={onChange}
+        />
+      )}
+      {fieldIssues.map((issue) => (
+        <p
+          key={`${issue.code}-${issue.path}`}
+          className={cn(
+            "mt-1 text-[11px]",
+            issue.severity === "error" ? "text-danger" : "text-warning",
+          )}
+        >
+          <span className="font-mono">{issue.code}</span> {issue.message}
+        </p>
+      ))}
+    </div>
+  );
+}
+
+// ------------------------------------------------------------------ panels
+
+function NodeConfigForm({ nodeId, info }: { nodeId: string; info: NodeTypeInfo }) {
+  const node = useBuilder((s) => s.nodes.find((n) => n.id === nodeId));
+  const issues = useBuilder((s) => s.issues);
+  const updateNodeConfig = useBuilder((s) => s.updateNodeConfig);
+  if (!node) return null;
+  const nodeIssues = issues.filter((i) => issueNodeId(i.path) === nodeId);
+  const properties = (info.config_schema.properties ?? {}) as Record<string, SchemaProperty>;
+  const fields = Object.entries(properties);
+  const visible = fields.filter(([name]) => !(info.ui[name]?.advanced ?? false));
+  const advanced = fields.filter(([name]) => info.ui[name]?.advanced ?? false);
+  const render = ([name, prop]: [string, SchemaProperty]) => (
+    <FieldRow
+      key={name}
+      name={name}
+      prop={prop}
+      ui={info.ui[name]}
+      value={node.data.def.config[name] ?? prop.default ?? null}
+      onChange={(value) => updateNodeConfig(nodeId, { [name]: value })}
+      issues={nodeIssues}
+    />
+  );
+  return (
+    <div className="flex flex-col gap-3">
+      <div>
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-semibold text-text-1">{info.label}</span>
+          <Badge>v{info.version}</Badge>
+          <span className="ml-auto font-mono text-[11px] text-text-3">{nodeId}</span>
+        </div>
+        <p className="mt-1 text-[11px] leading-relaxed text-text-3">{info.description}</p>
+      </div>
+      {visible.map(render)}
+      {advanced.length > 0 && (
+        <details>
+          <summary className="cursor-pointer text-[11px] font-medium uppercase tracking-wide text-text-3">
+            Advanced
+          </summary>
+          <div className="mt-2 flex flex-col gap-3">{advanced.map(render)}</div>
+        </details>
+      )}
+    </div>
+  );
+}
+
+function FlowSettingsForm() {
+  const meta = useBuilder((s) => s.meta);
+  const updateMeta = useBuilder((s) => s.updateMeta);
+  const expose = meta.expose;
+  return (
+    <div className="flex flex-col gap-3">
+      <div>
+        <span className="text-sm font-semibold text-text-1">Flow settings</span>
+        <p className="mt-1 text-[11px] text-text-3">
+          Name <span className="font-mono">{meta.name}</span> · rename via export → import
+        </p>
+      </div>
+      <div>
+        <Label>Display name</Label>
+        <Input
+          value={meta.display_name}
+          onChange={(e) => updateMeta({ display_name: e.target.value })}
+        />
+      </div>
+      <div>
+        <Label>Description</Label>
+        <Textarea
+          rows={3}
+          value={meta.description}
+          onChange={(e) => updateMeta({ description: e.target.value })}
+        />
+      </div>
+      <div>
+        <Label hint="comma separated">Tags</Label>
+        <Input
+          value={meta.tags.join(", ")}
+          onChange={(e) =>
+            updateMeta({
+              tags: e.target.value
+                .split(",")
+                .map((t) => t.trim())
+                .filter(Boolean),
+            })
+          }
+        />
+      </div>
+      <div>
+        <Label hint="How the runtime serves this flow after publish.">Expose as</Label>
+        <div className="flex gap-1.5">
+          {(["a2a", "mcp"] as const).map((kind) => (
+            <button
+              key={kind}
+              type="button"
+              onClick={() => updateMeta({ expose: { ...expose, kind } })}
+              className={cn(
+                "flex-1 rounded-lg border px-2 py-1.5 text-xs font-medium transition-colors",
+                expose.kind === kind
+                  ? "border-accent bg-accent/10 text-accent"
+                  : "border-border bg-surface-2 text-text-2 hover:border-border-strong",
+              )}
+            >
+              {kind === "a2a" ? "A2A agent" : "MCP tool"}
+            </button>
+          ))}
+        </div>
+      </div>
+      {expose.kind === "mcp" && (
+        <>
+          <div>
+            <Label hint="^[a-z][a-z0-9_]*$">Tool name</Label>
+            <Input
+              className="font-mono"
+              value={expose.tool_name ?? ""}
+              placeholder="search_support_kb"
+              onChange={(e) =>
+                updateMeta({ expose: { ...expose, tool_name: e.target.value || null } })
+              }
+            />
+          </div>
+          <div>
+            <Label>Tool description</Label>
+            <Textarea
+              rows={2}
+              value={expose.tool_description ?? ""}
+              onChange={(e) =>
+                updateMeta({ expose: { ...expose, tool_description: e.target.value } })
+              }
+            />
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+export function ConfigPanel() {
+  const selectedNodeId = useBuilder((s) => s.selectedNodeId);
+  const infoByType = useBuilder((s) => s.infoByType);
+  const node = useBuilder((s) => s.nodes.find((n) => n.id === s.selectedNodeId));
+  const info = node ? infoByType().get(node.data.def.type) : undefined;
+  return (
+    <aside className="flex w-80 shrink-0 flex-col overflow-y-auto border-l border-border bg-surface-1 p-3">
+      {selectedNodeId && info ? (
+        <NodeConfigForm nodeId={selectedNodeId} info={info} />
+      ) : (
+        <FlowSettingsForm />
+      )}
+    </aside>
+  );
+}
+
+export { FieldRow, JsonEditor };
+export type { FlowMeta };

@@ -1,2 +1,4 @@
 allowBuilds:
   esbuild: true
+  # msw postinstall only prints a support banner; not needed for msw/node
+  msw: false

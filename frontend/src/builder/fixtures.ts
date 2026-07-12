@@ -1,0 +1,44 @@
+/** Shared test helpers: the generated /node-types fixture + a small flow. */
+
+import type { FlowDefinition, NodeCatalog } from "@/api/types";
+
+import rawCatalog from "./__fixtures__/node-types.json";
+
+export const catalogFixture = rawCatalog as unknown as NodeCatalog;
+
+export function definitionFixture(): FlowDefinition {
+  return {
+    schema_version: 1,
+    name: "hello-agent",
+    display_name: "Hello Agent",
+    description: "test flow",
+    tags: ["demo"],
+    expose: { kind: "a2a" },
+    nodes: [
+      {
+        id: "start_1",
+        type: "start",
+        version: 1,
+        config: {
+          input_schema: {
+            type: "object",
+            properties: { message: { type: "string" } },
+            required: ["message"],
+          },
+        },
+      },
+      {
+        id: "call_1",
+        type: "llm_call",
+        version: 1,
+        config: { resource: "default-llm", prompt: "{message}" },
+      },
+      { id: "end_1", type: "end", version: 1, config: { output_from: "call_1.text" } },
+    ],
+    edges: [
+      { from: "start_1.message", to: "call_1.message" },
+      { from: "call_1.text", to: "end_1.input" },
+    ],
+    layout: { nodes: { start_1: { x: 10, y: 20 } } },
+  };
+}

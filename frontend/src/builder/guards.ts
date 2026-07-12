@@ -1,206 +1,139 @@
-/** Client-side edge guards (SPEC §11.3): family-level compat while dragging;
- * the exact structural verdict comes from /validate on drop. */
+/**
+ * Port derivation and connection guards — driven entirely by GET /node-types.
+ *
+ * The backend catalog carries the prompt-var pattern and the extra
+ * compatibility pairs, so the client-side verdict matches
+ * `agentplane_core.validation` exactly; POST /flows/validate stays the
+ * authoritative check.
+ */
 
-import type { ComponentDescriptor, PortFamily, PortSpec } from "@/api/types";
+import type {
+  DefinitionNode,
+  NodeCatalog,
+  NodeTypeInfo,
+  PortDecl,
+  PortType,
+} from "@/api/types";
 
-const COERCIBLE: ReadonlySet<string> = new Set([
-  "MESSAGE>DATA", // message_to_text
-  "DATA>MESSAGE", // text_to_message
-  "DOCUMENTS>DATA", // documents_to_text
-]);
-
-export function familiesCompatible(source: PortFamily, target: PortFamily): boolean {
-  if (source === "ANY" || target === "ANY") return true;
-  if (source === target) return source !== "ROUTE"; // ROUTE is control-only
-  return COERCIBLE.has(`${source}>${target}`);
+export interface NodePorts {
+  inputs: PortDecl[];
+  outputs: PortDecl[];
 }
 
-export interface PortIndex {
-  outputs: Map<string, PortSpec>; // handle id → port
-  inputs: Map<string, PortSpec>;
-  routeLabels: Set<string>;
-}
-
-export function indexPorts(
-  descriptor: ComponentDescriptor,
-  config: Record<string, unknown>,
-): PortIndex {
-  const outputs = new Map<string, PortSpec>();
-  const routeLabels = new Set<string>();
-  for (const output of descriptor.outputs) {
-    outputs.set(output.name, output.port);
-    if (output.port.family === "ROUTE") routeLabels.add(output.name);
-  }
-  // dynamic router labels regenerate outputs client-side
-  if (descriptor.dynamic_outputs_from) {
-    const labels = config[descriptor.dynamic_outputs_from];
-    if (Array.isArray(labels) && labels.length > 0) {
-      outputs.clear();
-      routeLabels.clear();
-      for (const label of labels as string[]) {
-        outputs.set(label, {
-          schema_ref: "lab:Route",
-          json_schema: { type: "string" },
-          family: "ROUTE",
-          is_list: false,
-        });
-        routeLabels.add(label);
-      }
-      // keep non-route outputs (e.g. implicit toolset)
-      for (const output of descriptor.outputs) {
-        if (output.port.family !== "ROUTE") outputs.set(output.name, output.port);
-      }
+function promptVariables(pattern: string, ...templates: unknown[]): string[] {
+  const re = new RegExp(pattern, "g");
+  const seen: string[] = [];
+  for (const template of templates) {
+    if (typeof template !== "string") continue;
+    for (const match of template.matchAll(re)) {
+      const name = match[1];
+      if (name && !seen.includes(name)) seen.push(name);
     }
   }
-  const inputs = new Map<string, PortSpec>(Object.entries(descriptor.input_ports));
-  // PromptInput {vars} spawn input ports LIVE while typing — mirror of the
-  // backend's Component.input_ports_for_config (SPEC §4.2 PromptInput)
-  for (const field of descriptor.fields) {
-    if (field.type !== "PromptInput") continue;
-    const template = String(config[field.name] ?? field.default ?? "");
-    for (const variable of extractPromptVars(template)) {
-      if (!inputs.has(variable)) {
-        inputs.set(variable, TEXT_PORT);
-      }
+  return seen;
+}
+
+function schemaPropertyPorts(inputSchema: unknown): PortDecl[] {
+  if (typeof inputSchema !== "object" || inputSchema === null) return [];
+  const props = (inputSchema as { properties?: unknown }).properties;
+  if (typeof props !== "object" || props === null) return [];
+  return Object.entries(props as Record<string, unknown>).map(([name, schema]) => {
+    const type =
+      typeof schema === "object" &&
+      schema !== null &&
+      (schema as { type?: unknown }).type === "string"
+        ? ("text" as const)
+        : ("json" as const);
+    return { name, type, label: name };
+  });
+}
+
+/** Typed ports of one node, config-dependent ports included. */
+export function nodePorts(
+  node: DefinitionNode,
+  info: NodeTypeInfo | undefined,
+  catalog: NodeCatalog,
+): NodePorts {
+  if (!info) return { inputs: [], outputs: [] };
+  let inputs = [...info.inputs];
+  let outputs = [...info.outputs];
+  if (info.dynamic_inputs === "prompt_vars") {
+    inputs = promptVariables(
+      catalog.prompt_var_pattern,
+      node.config.prompt,
+      node.config.system_prompt,
+    ).map((name) => ({ name, type: "text" as const, label: name }));
+  } else if (info.dynamic_inputs === "arg_keys") {
+    const args = node.config.args;
+    const keys = typeof args === "object" && args !== null ? Object.keys(args) : [];
+    inputs = keys.map((name) => ({ name, type: "text" as const, label: name }));
+  }
+  if (info.dynamic_outputs === "input_schema_properties") {
+    outputs = schemaPropertyPorts(node.config.input_schema);
+  } else if (info.dynamic_outputs === "structured_output_json") {
+    outputs = [...outputs];
+    if (node.config.structured_output != null) {
+      outputs.push({ name: "json", type: "json", label: "JSON" });
     }
   }
-  applyDynamicPortMirrors(descriptor, config, outputs, inputs, routeLabels);
-  return { outputs, inputs, routeLabels };
+  return { inputs, outputs };
 }
 
-const TEXT_PORT: PortSpec = {
-  schema_ref: "lab:Text",
-  json_schema: { type: "string" },
-  family: "DATA",
-  is_list: false,
-};
-const ROUTE_PORT: PortSpec = {
-  schema_ref: "lab:Route",
-  json_schema: { type: "string" },
-  family: "ROUTE",
-  is_list: false,
-};
-const TOOLSET_PORT: PortSpec = {
-  schema_ref: "lab:Toolset",
-  json_schema: {},
-  family: "TOOLSET",
-  is_list: true,
-};
-/** Live mirrors of server-side `outputs_for_config`/`input_ports_for_config`
- * overrides so ports update while typing. Built-ins only — custom components
- * fall back to the on_field_change round-trip (SPEC §4.6). */
-function applyDynamicPortMirrors(
-  descriptor: ComponentDescriptor,
-  config: Record<string, unknown>,
-  outputs: Map<string, PortSpec>,
-  _inputs: Map<string, PortSpec>,
-  routeLabels: Set<string>,
-): void {
-  // Tool Mode toggle (§4.7/§18): toolset output only while enabled
-  if (descriptor.tool_mode_supported) {
-    const enabled = Boolean(config.tool_mode ?? descriptor.tool_mode_default);
-    if (enabled) outputs.set("toolset", TOOLSET_PORT);
-    else outputs.delete("toolset");
-  }
-
-  // The merged Router in rules mode derives ROUTE outputs from the rules table;
-  // its llm mode uses dynamic_outputs_from="labels" (handled generically upstream).
-  const isRulesRouter =
-    descriptor.component_id === "lab.flow.router" && String(config.mode ?? "rules") === "rules";
-  if (isRulesRouter) {
-    outputs.clear();
-    routeLabels.clear();
-    const rows = Array.isArray(config.rules) ? (config.rules as { label?: string }[]) : [];
-    const labels = rows.map((r) => String(r.label ?? "").trim()).filter(Boolean);
-    const fallback = String(config.default_label ?? "default");
-    if (!labels.includes(fallback)) labels.push(fallback);
-    for (const label of labels) {
-      outputs.set(label, ROUTE_PORT);
-      routeLabels.add(label);
-    }
-  }
-
+export function portsCompatible(src: PortType, dst: PortType, catalog: NodeCatalog): boolean {
+  if (src === dst) return true;
+  return catalog.extra_compatible_ports.some(([a, b]) => a === src && b === dst);
 }
 
-// same rule as the backend PROMPT_VAR_RE: {var}, but not {{escaped}}
-const PROMPT_VAR_RE = /(?<!\{)\{([a-zA-Z_][a-zA-Z0-9_]*)\}(?!\})/g;
-
-export function extractPromptVars(template: string): string[] {
-  const seen = new Set<string>();
-  for (const match of template.matchAll(PROMPT_VAR_RE)) {
-    seen.add(match[1]);
-  }
-  return [...seen];
+export interface ConnectionVerdict {
+  ok: boolean;
+  reason?: string;
 }
 
-export type ConnectionVerdict =
-  | { ok: true; kind: "data" | "tool" | "router" }
-  | { ok: false; reason: string };
-
-const ALL_FAMILIES: PortFamily[] = [
-  "MESSAGE",
-  "DATA",
-  "DOCUMENTS",
-  "EMBEDDING",
-  "MODEL",
-  "TOOLSET",
-  "ROUTE",
-  "FILE",
-  "ANY",
-];
-
-/** §11.4 [MUST]: screen-readable port label — `"output message, type lab:Message"`.
- * Applied as aria-label on every canvas handle. */
-export function portAriaLabel(name: string, port: PortSpec, side: "in" | "out"): string {
-  const list = port.is_list ? " list" : "";
-  return `${side === "in" ? "input" : "output"} ${name}, type ${port.schema_ref}${list}`;
-}
-
-/** Human-readable "connects to …" line for port tooltips. */
-export function compatSummary(port: PortSpec, side: "in" | "out"): string {
-  if (port.family === "ROUTE") {
-    return side === "out"
-      ? "control branch → drop on any node (amber top handle)"
-      : "accepts router branches only";
-  }
-  if (port.family === "TOOLSET") {
-    return side === "out"
-      ? "→ Tools input of an agent (dashed edge)"
-      : "← Toolset outputs (dashed edge)";
-  }
-  const partners = ALL_FAMILIES.filter((family) =>
-    side === "out"
-      ? familiesCompatible(port.family, family)
-      : familiesCompatible(family, port.family),
-  ).filter((family) => family !== "ROUTE" && family !== "TOOLSET");
-  return (side === "out" ? "→ " : "← ") + partners.join(", ");
-}
-
+/** Client-side verdict for a drag; the authoritative answer is /flows/validate. */
 export function judgeConnection(
-  sourcePort: PortSpec | undefined,
-  targetPort: PortSpec | undefined,
-  targetIsRouterSink: boolean,
+  source: { node: DefinitionNode; port: string },
+  target: { node: DefinitionNode; port: string },
+  infoByType: Map<string, NodeTypeInfo>,
+  catalog: NodeCatalog,
 ): ConnectionVerdict {
-  if (!sourcePort) return { ok: false, reason: "unknown output port" };
-  if (sourcePort.family === "ROUTE") {
-    // router branches connect to any node's control-in (the amber top handle)
-    return { ok: true, kind: "router" };
+  const srcPorts = nodePorts(source.node, infoByType.get(source.node.type), catalog);
+  const dstPorts = nodePorts(target.node, infoByType.get(target.node.type), catalog);
+  const srcDecl = srcPorts.outputs.find((p) => p.name === source.port);
+  const dstDecl = dstPorts.inputs.find((p) => p.name === target.port);
+  if (!srcDecl) return { ok: false, reason: `no output port ${source.port}` };
+  if (!dstDecl) return { ok: false, reason: `no input port ${target.port}` };
+  if (!portsCompatible(srcDecl.type, dstDecl.type, catalog)) {
+    return { ok: false, reason: `${srcDecl.type} → ${dstDecl.type} is not connectable` };
   }
-  if (targetIsRouterSink) {
-    return { ok: false, reason: "the control-in handle only accepts router branches" };
+  return { ok: true };
+}
+
+/** Port refs ("node.port") that no longer exist after a config change. */
+export function danglingEdgeIds(
+  nodes: DefinitionNode[],
+  edges: { from: string; to: string }[],
+  infoByType: Map<string, NodeTypeInfo>,
+  catalog: NodeCatalog,
+): Set<string> {
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  const gone = new Set<string>();
+  for (const edge of edges) {
+    const [srcId, srcPort] = splitRef(edge.from);
+    const [dstId, dstPort] = splitRef(edge.to);
+    const src = byId.get(srcId);
+    const dst = byId.get(dstId);
+    const srcOk =
+      src !== undefined &&
+      nodePorts(src, infoByType.get(src.type), catalog).outputs.some((p) => p.name === srcPort);
+    const dstOk =
+      dst !== undefined &&
+      nodePorts(dst, infoByType.get(dst.type), catalog).inputs.some((p) => p.name === dstPort);
+    if (!srcOk || !dstOk) gone.add(`${edge.from}->${edge.to}`);
   }
-  if (!targetPort) return { ok: false, reason: "unknown input port" };
-  if (sourcePort.family === "TOOLSET" || targetPort.family === "TOOLSET") {
-    if (sourcePort.family === "TOOLSET" && targetPort.family === "TOOLSET") {
-      return { ok: true, kind: "tool" };
-    }
-    return { ok: false, reason: "toolset edges connect Toolset → Tools only" };
-  }
-  if (!familiesCompatible(sourcePort.family, targetPort.family)) {
-    return {
-      ok: false,
-      reason: `${sourcePort.schema_ref} → ${targetPort.schema_ref} is incompatible`,
-    };
-  }
-  return { ok: true, kind: "data" };
+  return gone;
+}
+
+export function splitRef(ref: string): [string, string] {
+  const dot = ref.indexOf(".");
+  return dot === -1 ? [ref, ""] : [ref.slice(0, dot), ref.slice(dot + 1)];
 }
