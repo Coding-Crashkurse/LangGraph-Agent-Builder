@@ -575,21 +575,14 @@ export function BuilderPage() {
               Save
             </Button>
             <Button
-              variant="ghost"
               onClick={() => setShareOpen(true)}
-              title="A2A / MCP / API access"
-            >
-              Share
-            </Button>
-            <Button
-              onClick={() => setPublishOpen(true)}
               disabled={publishBlocked}
               title={
                 hasErrors
                   ? "fix validation errors first"
                   : needsValidation
                     ? "validating…"
-                    : "publish a version"
+                    : "choose a door (MCP / A2A / API), then publish a version"
               }
             >
               Publish
@@ -618,7 +611,15 @@ export function BuilderPage() {
               flow={flow}
               beforePublish={saveDraft}
             />
-            <ShareDialog open={shareOpen} onClose={() => setShareOpen(false)} flow={flow} />
+            <ShareDialog
+              open={shareOpen}
+              onClose={() => setShareOpen(false)}
+              flow={flow}
+              onProceedToPublish={() => {
+                setShareOpen(false);
+                setPublishOpen(true);
+              }}
+            />
           </>
         )}
       </div>

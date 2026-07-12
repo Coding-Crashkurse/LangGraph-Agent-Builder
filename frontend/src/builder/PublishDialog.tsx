@@ -266,10 +266,12 @@ export function ShareDialog({
   open,
   onClose,
   flow,
+  onProceedToPublish,
 }: {
   open: boolean;
   onClose: () => void;
   flow: FlowInfo;
+  onProceedToPublish: () => void;
 }) {
   const baseSpec = useBuilder((s) => s.baseSpec);
   const nodes = useBuilder((s) => s.nodes);
@@ -396,10 +398,10 @@ export function ShareDialog({
   };
 
   return (
-    <Dialog open={open} onClose={onClose} title={`Share · ${flow.name}`} className="w-[760px]">
+    <Dialog open={open} onClose={onClose} title={`Publish · ${flow.name}`} className="w-[760px]">
       <div className="space-y-4">
         <p className="text-[11px] uppercase tracking-widest text-text-3">
-          Step {step} of 2 · {step === 1 ? "Choose the door" : DOOR_LABEL[mode]}
+          Step {step} of 3 · {step === 1 ? "Choose the door" : DOOR_LABEL[mode]}
         </p>
 
         {step === 1 && (
@@ -699,9 +701,9 @@ export function ShareDialog({
               </Button>
               <div className="flex items-center gap-2">
                 <span className="text-[11px] text-text-3">
-                  Settings save into the FlowSpec — Save, then Publish.
+                  These settings save into the flow on publish.
                 </span>
-                <Button onClick={onClose}>Done</Button>
+                <Button onClick={onProceedToPublish}>Publish →</Button>
               </div>
             </div>
           </div>

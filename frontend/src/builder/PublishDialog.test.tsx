@@ -72,7 +72,7 @@ const next = () => fireEvent.click(screen.getByRole("button", { name: /Next/ }))
 describe("ShareDialog publish wizard", () => {
   it("picking a door writes serving.mode and the derived a2a/mcp booleans", () => {
     useBuilder.setState({ baseSpec: makeSpec({ serving: { mode: "api" } }) });
-    render(<ShareDialog open onClose={() => {}} flow={flow} />);
+    render(<ShareDialog open onClose={() => {}} flow={flow} onProceedToPublish={() => {}} />);
 
     fireEvent.click(screen.getByRole("button", { name: /A2A Agent/ }));
 
@@ -86,7 +86,7 @@ describe("ShareDialog publish wizard", () => {
     useBuilder.setState({
       baseSpec: makeSpec({ serving: { mode: "a2a" }, a2a: { enabled: true } }),
     });
-    render(<ShareDialog open onClose={() => {}} flow={flow} />);
+    render(<ShareDialog open onClose={() => {}} flow={flow} onProceedToPublish={() => {}} />);
 
     fireEvent.click(screen.getByRole("button", { name: /MCP Tool/ }));
 
@@ -101,7 +101,7 @@ describe("ShareDialog publish wizard", () => {
     useBuilder.setState({
       baseSpec: makeSpec({ serving: { mode: "a2a" }, a2a: { enabled: true, examples: ["ex"] } }),
     });
-    render(<ShareDialog open onClose={() => {}} flow={flow} />);
+    render(<ShareDialog open onClose={() => {}} flow={flow} onProceedToPublish={() => {}} />);
     next();
 
     expect(screen.getByRole("dialog").textContent).toContain(
@@ -121,7 +121,7 @@ describe("ShareDialog publish wizard", () => {
     useBuilder.setState({
       baseSpec: makeSpec({ serving: { mode: "mcp" }, mcp: { enabled: true } }),
     });
-    render(<ShareDialog open onClose={() => {}} flow={flow} />);
+    render(<ShareDialog open onClose={() => {}} flow={flow} onProceedToPublish={() => {}} />);
     next();
 
     expect(screen.getByRole("dialog").textContent).toContain("An MCP tool description is required");
@@ -134,7 +134,7 @@ describe("ShareDialog publish wizard", () => {
         a2a: { enabled: true, description: "d", examples: ["ex"] },
       }),
     });
-    render(<ShareDialog open onClose={() => {}} flow={flow} />);
+    render(<ShareDialog open onClose={() => {}} flow={flow} onProceedToPublish={() => {}} />);
     next();
 
     expect(screen.getByRole("radio", { name: /gRPC/ })).toBeDisabled();
@@ -149,7 +149,7 @@ describe("ShareDialog publish wizard", () => {
         a2a: { enabled: true, description: "d", examples: ["ex"] },
       }),
     });
-    render(<ShareDialog open onClose={() => {}} flow={flow} />);
+    render(<ShareDialog open onClose={() => {}} flow={flow} onProceedToPublish={() => {}} />);
     next();
 
     expect(screen.getByRole("radio", { name: /gRPC/ })).not.toBeDisabled();
@@ -164,7 +164,7 @@ describe("ShareDialog publish wizard", () => {
       }),
       nodes: [interruptNode("appr_1", "lab.flow.human_approval")],
     });
-    render(<ShareDialog open onClose={() => {}} flow={flow} />);
+    render(<ShareDialog open onClose={() => {}} flow={flow} onProceedToPublish={() => {}} />);
     next();
 
     const text = screen.getByRole("dialog").textContent ?? "";
