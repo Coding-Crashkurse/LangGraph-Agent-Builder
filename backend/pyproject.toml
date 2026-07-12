@@ -46,11 +46,13 @@ dev = [
     "asgi-lifespan>=2.1",
 ]
 
-# Local path pins while agentplane is unreleased; replaced by PyPI pins on the
-# first platform release. Both repos live side by side.
+# Deliberate pin (CLAUDE.md invariant 7): vendored wheels built from the
+# agentplane repo until the platform ships to PyPI. Upgrading = rebuild the
+# wheels (uv build --package … --out-dir backend/vendor), refresh
+# schemas/flow-definition.schema.json, and let the contract tests gate the PR.
 [tool.uv.sources]
-agentplane-core = { path = "../../agentplane/packages/core", editable = true }
-agentplane-sdk = { path = "../../agentplane/packages/sdk", editable = true }
+agentplane-core = { path = "vendor/agentplane_core-0.1.0-py3-none-any.whl" }
+agentplane-sdk = { path = "vendor/agentplane_sdk-0.1.0-py3-none-any.whl" }
 
 [build-system]
 requires = ["hatchling"]

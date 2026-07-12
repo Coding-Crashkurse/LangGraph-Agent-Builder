@@ -7,30 +7,18 @@ on:
 
 jobs:
   backend:
-    name: backend (py${{ matrix.python }}, ${{ matrix.tier }})
+    name: backend (py${{ matrix.python }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         python: ["3.12", "3.13"]
-        tier: [sqlite, postgres]
-    services:
-      postgres:
-        image: pgvector/pgvector:pg17
-        env:
-          POSTGRES_USER: lab
-          POSTGRES_PASSWORD: lab
-          POSTGRES_DB: lab
-        ports: ["55432:5432"]
-        options: >-
-          --health-cmd "pg_isready -U lab"
-          --health-interval 5s --health-timeout 5s --health-retries 20
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
         with:
           python-version: ${{ matrix.python }}
-      - name: sync
+      - name: sync (vendored agentplane wheels — pinned platform contract)
         working-directory: backend
         run: uv sync
       - name: lint
@@ -38,24 +26,17 @@ jobs:
         run: |
           uv run ruff check
           uv run ruff format --check
-      - name: no eval/exec of user code (SPEC §17)
+      - name: no eval/exec of user input
         run: |
           ! grep -rnE '(^|[^.a-zA-Z_])(eval|exec)\(' backend/src/langgraph_agent_builder \
             --include='*.py' \
             | grep -v 'exec_module' | grep -v '# grep-ok'
-      - name: import-linter (sdk stays lightweight)
+      - name: import-linter (design-time only — no execution frameworks)
         working-directory: backend
         run: uv run lint-imports
-      - name: tests
+      - name: tests (runtime API mocked via respx; round-trip + golden + contract)
         working-directory: backend
-        env:
-          # the suite parametrizes tiers itself when 55432 is reachable;
-          # the sqlite job simply has no postgres service exposed
-          LAB_TEST_TIER: ${{ matrix.tier }}
         run: uv run pytest tests -q
-      - name: example matrix
-        working-directory: backend
-        run: uv run pytest ../examples -q
 
   quality:
     name: quality (mypy --strict + coverage)
@@ -68,10 +49,10 @@ jobs:
       - name: sync
         working-directory: backend
         run: uv sync
-      - name: mypy --strict (REFACTOR.md §2/§8)
+      - name: mypy --strict
         working-directory: backend
         run: uv run mypy
-      - name: coverage >= 85% on core (REFACTOR.md §4)
+      - name: coverage >= 85%
         working-directory: backend
         run: uv run pytest tests -q --cov=langgraph_agent_builder --cov-report=term-missing
 
@@ -125,20 +106,19 @@ jobs:
           wheel = glob.glob('backend/dist/*.whl')[0]
           names = zipfile.ZipFile(wheel).namelist()
           assert any(n.endswith('langgraph_agent_builder/_static/index.html') for n in names), names[:20]
-          print('wheel bundles the frontend ✔')
+          print('wheel bundles the frontend')
           "
-      - name: install into a fresh venv WITHOUT Node and smoke it (SPEC §15.6)
+      - name: install into a fresh venv WITHOUT Node and smoke it
         run: |
           uv venv /tmp/fresh
-          uv pip install --python /tmp/fresh/bin/python backend/dist/*.whl
+          uv pip install --python /tmp/fresh/bin/python \
+            backend/vendor/agentplane_core-0.1.0-py3-none-any.whl \
+            backend/vendor/agentplane_sdk-0.1.0-py3-none-any.whl \
+            backend/dist/*.whl
           /tmp/fresh/bin/lab version
-          /tmp/fresh/bin/lab init /tmp/ws
-          test -f /tmp/ws/.env
-          /tmp/fresh/bin/lab flow validate examples/01_hello_flow/flow.json
-          LAB_HOME=/tmp/lab-home timeout 40 /tmp/fresh/bin/lab run --port 8765 --no-open &
+          BUILDER_HOME=/tmp/builder-home timeout 40 /tmp/fresh/bin/lab serve --port 8765 &
           for i in $(seq 1 60); do
             curl -sf http://127.0.0.1:8765/api/v1/health && break || sleep 1
           done
           curl -sf http://127.0.0.1:8765/api/v1/health | grep '"status":"ok"'
-      - name: uvx from wheel
-        run: uvx --from backend/dist/*.whl lab version
+          curl -sf http://127.0.0.1:8765/api/v1/node-types | grep -q llm_call

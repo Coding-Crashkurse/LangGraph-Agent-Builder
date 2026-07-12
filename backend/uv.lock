@@ -35,10 +35,13 @@ wheels = [
 [[package]]
 name = "agentplane-core"
 version = "0.1.0"
-source = { editable = "../../agentplane/packages/core" }
+source = { path = "vendor/agentplane_core-0.1.0-py3-none-any.whl" }
 dependencies = [
     { name = "a2a-sdk" },
     { name = "pydantic" },
+]
+wheels = [
+    { filename = "agentplane_core-0.1.0-py3-none-any.whl", hash = "sha256:40b19bcf7f6897ded34e1aa7fef96174186bb0d7f710770071a2edfa451b09e9" },
 ]
 
 [package.metadata]
@@ -50,17 +53,20 @@ requires-dist = [
 [[package]]
 name = "agentplane-sdk"
 version = "0.1.0"
-source = { editable = "../../agentplane/packages/sdk" }
+source = { path = "vendor/agentplane_sdk-0.1.0-py3-none-any.whl" }
 dependencies = [
     { name = "agentplane-core" },
     { name = "httpx" },
     { name = "pyyaml" },
     { name = "typer" },
 ]
+wheels = [
+    { filename = "agentplane_sdk-0.1.0-py3-none-any.whl", hash = "sha256:60cdea4b9585560c6c9c3da8dc6c24e8b6597bbd4cd2c6bc151001a964cf099b" },
+]
 
 [package.metadata]
 requires-dist = [
-    { name = "agentplane-core", editable = "../../agentplane/packages/core" },
+    { name = "agentplane-core" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "typer", specifier = ">=0.12" },
@@ -887,8 +893,8 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "agentplane-core", editable = "../../agentplane/packages/core" },
-    { name = "agentplane-sdk", editable = "../../agentplane/packages/sdk" },
+    { name = "agentplane-core", path = "vendor/agentplane_core-0.1.0-py3-none-any.whl" },
+    { name = "agentplane-sdk", path = "vendor/agentplane_sdk-0.1.0-py3-none-any.whl" },
     { name = "aiosqlite", specifier = ">=0.20" },
     { name = "fastapi", specifier = ">=0.115" },
     { name = "greenlet", specifier = ">=3.0" },
