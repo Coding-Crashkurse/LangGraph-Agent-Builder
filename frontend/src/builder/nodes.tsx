@@ -145,11 +145,23 @@ function PortTooltip({ name, port, side }: { name: string; port: PortSpec; side:
   );
 }
 
-/** The visible 12px diamond/circle inside a 16px invisible hit area (§11.2).
+/** Shape encodes the connection PLANE, so same shape ⇒ can connect (§11.1):
+ * the data plane (all mutually coercible — message/text/json/documents/table/file/
+ * any) is a circle; capability (toolset, dashed edges §4) a square; control (route,
+ * branches) a diamond. Color still names the specific family; is_list is the inner
+ * dot. The exact structural verdict comes from /validate on drop. */
+function portShape(family: PortSpec["family"]): "circle" | "square" | "diamond" {
+  if (family === "TOOLSET") return "square";
+  if (family === "ROUTE") return "diamond";
+  return "circle";
+}
+
+/** The visible 12px handle inside a 16px invisible hit area (§11.2).
  * Pointer events stay on the parent Handle. */
 function HandleDot({ port, active }: { port: PortSpec; active: boolean }) {
   const color = PORT_FAMILY_COLORS[port.family] ?? "var(--color-port-any)";
-  const isDiamond = port.is_list; // §11.1 [MUST]: list = diamond, scalar = circle
+  const shape = portShape(port.family);
+  const isAny = port.family === "ANY";
   return (
     <span
       aria-hidden
@@ -157,15 +169,29 @@ function HandleDot({ port, active }: { port: PortSpec; active: boolean }) {
       style={{
         width: 12,
         height: 12,
-        background: port.family === "ANY" ? "var(--color-surface-1)" : color,
-        border: `2px ${port.family === "ANY" ? "dashed" : "solid"} ${color}`,
-        borderRadius: isDiamond ? 2 : 999,
-        transform: `translate(-50%, -50%)${isDiamond ? " rotate(45deg)" : ""}${
+        background: isAny ? "var(--color-surface-1)" : color,
+        border: `2px ${isAny ? "dashed" : "solid"} ${color}`,
+        borderRadius: shape === "circle" ? 999 : shape === "square" ? 3 : 2,
+        transform: `translate(-50%, -50%)${shape === "diamond" ? " rotate(45deg)" : ""}${
           active ? " scale(1.15)" : ""
         }`,
         transition: "transform 120ms",
       }}
-    />
+    >
+      {port.is_list && (
+        <span
+          aria-hidden
+          className="absolute left-1/2 top-1/2 block"
+          style={{
+            width: 4,
+            height: 4,
+            borderRadius: 999,
+            background: "var(--color-surface-1)",
+            transform: "translate(-50%, -50%)",
+          }}
+        />
+      )}
+    </span>
   );
 }
 
