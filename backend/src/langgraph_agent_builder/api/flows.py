@@ -141,9 +141,7 @@ async def validate_flow(
     """
     local = validate_structure(definition)
     issues = [SourcedIssue.wrap(i, "local") for i in local]
-    runtime_result = (
-        await svc.gateway.validate(definition, principal.token) if runtime else None
-    )
+    runtime_result = await svc.gateway.validate(definition, principal.token) if runtime else None
     if runtime_result is not None:
         seen = {(i.code, i.path) for i in local}
         issues += [

@@ -105,5 +105,9 @@ export const api = {
   resources: {
     list: (kind?: ResourceGroup) =>
       request<ResourceSummary[]>(`/resources${kind ? `?kind=${kind}` : ""}`),
+    /** Thin proxy to the runtime — credentials pass through write-only. */
+    create: (payload: Record<string, unknown>) =>
+      request<ResourceSummary>("/resources", jsonBody(payload)),
+    delete: (name: string) => request<void>(`/resources/${name}`, { method: "DELETE" }),
   },
 };

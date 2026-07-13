@@ -10,7 +10,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any, Literal
 
-from agentplane_core import DeploymentInfo, FlowDefinition, ValidationResult
+from agentplane_core import DeploymentInfo, FlowDefinition, Resource, ValidationResult
 from agentplane_sdk import (
     AuthError,
     NotFoundError,
@@ -18,10 +18,21 @@ from agentplane_sdk import (
     TransportError,
     ValidationFailedError,
 )
-from pydantic import BaseModel, ConfigDict
+from agentplane_sdk import ConflictError as RuntimeConflictError
+from pydantic import BaseModel, ConfigDict, TypeAdapter, ValidationError
 
-from langgraph_agent_builder.errors import RuntimeRejectedError, RuntimeUnavailableError
+from langgraph_agent_builder.errors import (
+    ConflictError,
+    InvalidDefinitionError,
+    RuntimeRejectedError,
+    RuntimeUnavailableError,
+)
+from langgraph_agent_builder.errors import (
+    NotFoundError as BuilderNotFoundError,
+)
 from langgraph_agent_builder.services.settings import Settings
+
+_RESOURCE_ADAPTER: TypeAdapter[Resource] = TypeAdapter(Resource)
 
 ResourceGroup = Literal["model_provider", "vector_db", "mcp_server"]
 
@@ -125,6 +136,50 @@ class RuntimeGateway:
         if group is None:
             return summaries
         return [s for s in summaries if s.group == group]
+
+    async def create_resource(self, raw: Mapping[str, Any], token: str | None) -> ResourceSummary:
+        """Create a resource ON THE RUNTIME (thin proxy, SPEC §3).
+
+        Credentials in the payload pass through write-only: the runtime stores
+        them Fernet-encrypted; the builder never persists or returns them.
+        """
+        self._require_configured()
+        try:
+            resource = _RESOURCE_ADAPTER.validate_python(dict(raw))
+        except ValidationError as exc:
+            raise InvalidDefinitionError(
+                f"invalid resource: {'; '.join(e['msg'] for e in exc.errors()[:3])}"
+            ) from exc
+        async with self._client(token) as client:
+            try:
+                created = await client.create_resource(resource)
+            except ValidationFailedError as exc:
+                raise RuntimeRejectedError(
+                    "runtime rejected the resource", list(exc.result.issues)
+                ) from exc
+            except RuntimeConflictError as exc:
+                raise ConflictError(str(exc)) from exc
+            except TransportError as exc:
+                raise RuntimeUnavailableError(f"runtime unreachable: {exc}") from exc
+        return ResourceSummary(
+            name=created.name,
+            kind=created.kind,
+            group=_GROUP_BY_KIND.get(created.kind, "mcp_server"),
+            display_name=created.display_name,
+        )
+
+    async def delete_resource(self, name: str, token: str | None) -> None:
+        """Delete a resource on the runtime (refused there while referenced)."""
+        self._require_configured()
+        async with self._client(token) as client:
+            try:
+                await client.delete_resource(name)
+            except NotFoundError as exc:
+                raise BuilderNotFoundError(f"resource {name!r} not found") from exc
+            except RuntimeConflictError as exc:
+                raise ConflictError(str(exc)) from exc
+            except TransportError as exc:
+                raise RuntimeUnavailableError(f"runtime unreachable: {exc}") from exc
 
     def _require_configured(self) -> None:
         if not self.configured:

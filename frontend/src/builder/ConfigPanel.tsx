@@ -5,8 +5,8 @@
  * (display name, expose config incl. flow-level MCP tool fields).
  */
 
-import { useQuery } from "@tanstack/react-query";
-import { ExternalLink } from "lucide-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { ExternalLink, Plus } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { api } from "@/api/client";
@@ -22,6 +22,7 @@ import { Select, Switch } from "@/components/ui/controls";
 import { Input, Label, Textarea } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 
+import { ResourceDialog } from "./ResourceDialog";
 import { TagsInput } from "./TagsInput";
 import type { FlowMeta } from "./convert";
 import { issueNodeId, useBuilder } from "./store";
@@ -144,6 +145,8 @@ function ResourcePicker({
   onChange: (name: string | null) => void;
 }) {
   const config = useQuery({ queryKey: ["config"], queryFn: api.config.get });
+  const queryClient = useQueryClient();
+  const [creating, setCreating] = useState(false);
   const resources = useQuery({
     queryKey: ["resources", kind],
     queryFn: () => api.resources.list(kind ?? undefined),
@@ -192,16 +195,34 @@ function ResourcePicker({
           onChange={(e) => onChange(e.target.value || null)}
         />
       )}
-      {config.data?.resources_ui_url && (
-        <a
-          href={config.data.resources_ui_url}
-          target="_blank"
-          rel="noreferrer"
-          className="mt-1 inline-flex items-center gap-1 text-[11px] text-accent hover:underline"
+      <div className="mt-1 flex items-center gap-3">
+        <button
+          type="button"
+          className="inline-flex items-center gap-1 text-[11px] text-accent hover:underline"
+          onClick={() => setCreating(true)}
         >
-          Manage in Resources <ExternalLink size={11} />
-        </a>
-      )}
+          <Plus size={11} /> New resource…
+        </button>
+        {config.data?.resources_ui_url && (
+          <a
+            href={config.data.resources_ui_url}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1 text-[11px] text-accent hover:underline"
+          >
+            Manage in Resources <ExternalLink size={11} />
+          </a>
+        )}
+      </div>
+      <ResourceDialog
+        open={creating}
+        group={kind}
+        onClose={() => setCreating(false)}
+        onCreated={(name) => {
+          void queryClient.invalidateQueries({ queryKey: ["resources"] });
+          onChange(name);
+        }}
+      />
     </div>
   );
 }
