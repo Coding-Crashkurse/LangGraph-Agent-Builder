@@ -19,9 +19,9 @@ uv run lab serve        # design-time API + bundled frontend
   FlowDefinition YAML/JSON (deterministic order, canvas positions confined to
   the `layout` block). Files are git-safe: resources by name, never secrets.
 - **Types come from the platform.** `FlowDefinition`, node config models,
-  `ValidationIssue` and `validate_structure()` are imported from the pinned
-  `agentplane-core`/`agentplane-sdk` wheels in `vendor/` — the builder defines
-  zero contract types of its own.
+  `ValidationIssue` and `validate_structure()` are imported from
+  `agentplane-core`/`agentplane-sdk`, pinned exactly from PyPI — the builder
+  defines zero contract types of its own.
 - **Validate** merges instant local checks with the runtime's authoritative
   answer (`POST /definitions/validate`), each issue marked `local`/`runtime`.
 - **Publish** = update the runtime draft + deploy (returns the endpoint URL;
@@ -45,6 +45,6 @@ uv run lab serve        # design-time API + bundled frontend
 uv run pytest && uv run ruff format . && uv run ruff check --fix . && uv run mypy
 ```
 
-The pinned platform contract lives in `vendor/*.whl` +
+The platform contract is the exact PyPI pin in `pyproject.toml` plus
 `../schemas/flow-definition.schema.json`; upgrading it is a deliberate PR
-gated by the round-trip and contract tests.
+(bump the pin, refresh the schema) gated by the round-trip and contract tests.

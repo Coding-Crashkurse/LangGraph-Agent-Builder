@@ -1,9 +1,10 @@
 name: release
 
-# NOTE (agentplane pivot): the wheel depends on agentplane-core/-sdk ==0.1.0.
-# A PyPI release of the builder requires those platform packages on PyPI
-# first — until then this workflow can only publish to an index that also
-# carries the agentplane wheels.
+# The wheel depends on agentplane-core/-sdk (exact pins in backend/pyproject);
+# those platform packages are on PyPI since agentplane 0.0.1. Publishes the
+# WHEEL ONLY: an sdist cannot rebuild the bundled frontend on user machines
+# (the hatch hook needs the Node toolchain), so shipping one would break
+# `pip install --no-binary` — the universal wheel is the installable artifact.
 
 # Manueller Trigger = die "Release-Flag". Es wird NUR gebaut/veröffentlicht,
 # wenn du in GitHub → Actions → "release" → "Run workflow" klickst.
@@ -57,9 +58,9 @@ jobs:
         working-directory: frontend
         run: pnpm install --frozen-lockfile && pnpm build
 
-      - name: build wheel + sdist
+      - name: build wheel (bundles the frontend; built from the source tree)
         working-directory: backend
-        run: uv build
+        run: uv build --wheel
 
       - name: publish to PyPI (Trusted Publishing)
         working-directory: backend

@@ -11,9 +11,10 @@ dependencies = [
     "uvicorn[standard]>=0.32",
     "httpx>=0.27",
     # platform contract — pinned deliberately (CLAUDE.md invariant 7); upgrades
-    # are their own PR gated by the contract tests.
-    "agentplane-core==0.1.0",
-    "agentplane-sdk==0.1.0",
+    # are their own PR gated by the contract tests (and refresh
+    # schemas/flow-definition.schema.json alongside the pin).
+    "agentplane-core==0.0.1",
+    "agentplane-sdk==0.0.1",
     # persistence (builder-local drafts only)
     "sqlalchemy[asyncio]>=2.0",
     "aiosqlite>=0.20",
@@ -45,14 +46,6 @@ dev = [
     "types-pyyaml>=6.0",
     "asgi-lifespan>=2.1",
 ]
-
-# Deliberate pin (CLAUDE.md invariant 7): vendored wheels built from the
-# agentplane repo until the platform ships to PyPI. Upgrading = rebuild the
-# wheels (uv build --package … --out-dir backend/vendor), refresh
-# schemas/flow-definition.schema.json, and let the contract tests gate the PR.
-[tool.uv.sources]
-agentplane-core = { path = "vendor/agentplane_core-0.1.0-py3-none-any.whl" }
-agentplane-sdk = { path = "vendor/agentplane_sdk-0.1.0-py3-none-any.whl" }
 
 [build-system]
 requires = ["hatchling"]

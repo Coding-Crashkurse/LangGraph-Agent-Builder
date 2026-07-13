@@ -18,7 +18,7 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           python-version: ${{ matrix.python }}
-      - name: sync (vendored agentplane wheels — pinned platform contract)
+      - name: sync (agentplane contract pinned from PyPI)
         working-directory: backend
         run: uv sync
       - name: lint
@@ -111,10 +111,7 @@ jobs:
       - name: install into a fresh venv WITHOUT Node and smoke it
         run: |
           uv venv /tmp/fresh
-          uv pip install --python /tmp/fresh/bin/python \
-            backend/vendor/agentplane_core-0.1.0-py3-none-any.whl \
-            backend/vendor/agentplane_sdk-0.1.0-py3-none-any.whl \
-            backend/dist/*.whl
+          uv pip install --python /tmp/fresh/bin/python backend/dist/*.whl
           /tmp/fresh/bin/lab version
           BUILDER_HOME=/tmp/builder-home timeout 40 /tmp/fresh/bin/lab serve --port 8765 &
           for i in $(seq 1 60); do

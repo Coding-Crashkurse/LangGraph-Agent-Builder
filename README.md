@@ -38,7 +38,7 @@ frontend (React Flow) ──► builder backend ──► agentplane runtime API
 
 ```
 backend/    # FastAPI design-time API (Python ≥3.12, uv) — drafts, validation,
-            # publish/playground, resources proxy; agentplane wheels in vendor/
+            # publish/playground, resources proxy; agentplane pinned from PyPI
 frontend/   # React + React Flow canvas; panels render from GET /node-types
 examples/   # canonical FlowDefinition YAML files (round-trip + contract tested)
 schemas/    # pinned flow-definition.schema.json from the targeted agentplane release
