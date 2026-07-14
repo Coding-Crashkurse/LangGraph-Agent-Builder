@@ -281,6 +281,15 @@ NODE_TYPES: list[NodeTypeInfo] = [
             "resource": FieldUI(widget="resource", label="Vector DB", resource_kind="vector_db"),
             "collection": FieldUI(widget="text", label="Collection"),
             "top_k": FieldUI(widget="number", label="Top K"),
+            "min_score": FieldUI(
+                widget="number",
+                label="Min Score",
+                help=(
+                    "Similarity threshold — hits below it are dropped, so an "
+                    "empty-result router branch can actually fire (cosine: 1.0 = identical)."
+                ),
+                advanced=True,
+            ),
             "filter": FieldUI(widget="json", label="Filter", advanced=True),
         },
     ),

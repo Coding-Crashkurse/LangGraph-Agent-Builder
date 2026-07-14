@@ -198,11 +198,12 @@ function BuilderInner({ flowName }: { flowName: string }) {
     }
   }, [currentDefinition, setValidation]);
 
-  const runPublish = useCallback(async (): Promise<PublishResponse | null> => {
+  const runPublish = useCallback(
+    async (versionLabel: string | null): Promise<PublishResponse | null> => {
     if (!(await save())) return null;
     setBusy("publish");
     try {
-      const published = await api.flows.publish(flowName);
+      const published = await api.flows.publish(flowName, { version_label: versionLabel });
       toast.success("Deployed to the runtime");
       return published;
     } catch (err) {

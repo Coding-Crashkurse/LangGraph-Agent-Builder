@@ -515,6 +515,19 @@
             ],
             "default": null,
             "title": "Filter"
+          },
+          "min_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Similarity score threshold. Hits below it are dropped, so a filled collection can still yield zero documents — which is what makes an empty-result router branch fire. Score semantics follow the collection's distance metric (cosine: 1.0 = identical).",
+            "title": "Min Score"
           }
         },
         "required": [
@@ -566,6 +579,15 @@
           "placeholder": "",
           "resource_kind": null,
           "advanced": false,
+          "toggleable": false
+        },
+        "min_score": {
+          "widget": "number",
+          "label": "Min Score",
+          "help": "Similarity threshold — hits below it are dropped, so an empty-result router branch can actually fire (cosine: 1.0 = identical).",
+          "placeholder": "",
+          "resource_kind": null,
+          "advanced": true,
           "toggleable": false
         },
         "filter": {

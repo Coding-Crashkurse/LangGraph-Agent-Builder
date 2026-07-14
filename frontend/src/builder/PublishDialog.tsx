@@ -17,7 +17,7 @@ import {
   Rocket,
   Wrench,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { api } from "@/api/client";
 import type { PublishResponse } from "@/api/types";
@@ -59,10 +59,13 @@ function SuccessView({
 }) {
   const [copied, setCopied] = useState(false);
   const cardUrl = `${result.endpoint_url.replace(/\/$/, "")}/.well-known/agent-card.json`;
+  const versionText = result.version_label
+    ? `${result.version_label} (deploy #${result.version})`
+    : `Version ${result.version}`;
   return (
     <div>
       <p className="inline-flex items-center gap-1.5 text-sm text-success">
-        <CircleCheck size={15} /> Version {result.version} is live on the runtime.
+        <CircleCheck size={15} /> {versionText} is live on the runtime.
       </p>
       <div className="mt-3 rounded-lg border border-border bg-canvas p-2.5">
         <p className="text-[11px] uppercase tracking-wide text-text-3">Endpoint</p>
@@ -122,6 +125,46 @@ function SuccessView({
   );
 }
 
+const VERSION_LABEL_RE =
+  /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z-.]+)?(?:\+[0-9A-Za-z-.]+)?$/;
+
+function parseLines(raw: string): string[] {
+  return raw
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+/** Newline-separated list editor; keeps raw text locally so typing Enter is
+ * not eaten by the parse→join round-trip (same pattern as TagsInput). */
+function ExamplesInput({
+  value,
+  onChange,
+}: {
+  value: string[];
+  onChange: (examples: string[]) => void;
+}) {
+  const [text, setText] = useState(() => value.join("\n"));
+  useEffect(() => {
+    setText((current) => {
+      const parsed = parseLines(current);
+      const same = parsed.length === value.length && parsed.every((v, i) => v === value[i]);
+      return same ? current : value.join("\n");
+    });
+  }, [value]);
+  return (
+    <Textarea
+      rows={2}
+      value={text}
+      placeholder={"What is the refund policy?\nSummarize the latest ticket"}
+      onChange={(e) => {
+        setText(e.target.value);
+        onChange(parseLines(e.target.value));
+      }}
+    />
+  );
+}
+
 export function PublishDialog({
   flowName,
   open,
@@ -131,17 +174,19 @@ export function PublishDialog({
   flowName: string;
   open: boolean;
   onClose: () => void;
-  onPublish: () => Promise<PublishResponse | null>;
+  onPublish: (versionLabel: string | null) => Promise<PublishResponse | null>;
 }) {
   const meta = useBuilder((s) => s.meta);
   const updateMeta = useBuilder((s) => s.updateMeta);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<PublishResponse | null>(null);
+  const [versionLabel, setVersionLabel] = useState("");
   const config = useQuery({ queryKey: ["config"], queryFn: api.config.get });
 
   const expose = meta.expose;
   const isMcp = expose.kind === "mcp";
   const toolNameOk = !isMcp || TOOL_NAME_RE.test(expose.tool_name ?? "");
+  const labelOk = versionLabel === "" || VERSION_LABEL_RE.test(versionLabel);
   const cardSparse = !isMcp && !meta.description && !meta.display_name;
 
   const close = () => {
@@ -152,7 +197,7 @@ export function PublishDialog({
   const publish = async () => {
     setBusy(true);
     try {
-      const published = await onPublish();
+      const published = await onPublish(versionLabel.trim() || null);
       if (published) setResult(published);
       else onClose(); // rejection details are in the validation panel
     } finally {
@@ -232,6 +277,17 @@ export function PublishDialog({
               onChange={(tags) => updateMeta({ tags })}
             />
           </div>
+          {!isMcp && (
+            <div>
+              <Label hint="one per line — become skill.examples on the card">
+                Example prompts
+              </Label>
+              <ExamplesInput
+                value={expose.examples ?? []}
+                onChange={(examples) => updateMeta({ expose: { ...expose, examples } })}
+              />
+            </div>
+          )}
           {isMcp && (
             <>
               <div>
@@ -266,11 +322,31 @@ export function PublishDialog({
               </p>
             </>
           )}
+          <div>
+            <Label hint="optional — unique per flow; deploy counter stays the identity">
+              Version label
+            </Label>
+            <Input
+              className="font-mono"
+              value={versionLabel}
+              placeholder="1.2.0"
+              onChange={(e) => setVersionLabel(e.target.value)}
+            />
+            {!labelOk && (
+              <p className="mt-1 text-[11px] text-danger">
+                Must be a semantic version (e.g. 1.2.0, 2.0.0-rc.1).
+              </p>
+            )}
+          </div>
           <div className="mt-1 flex items-center justify-end gap-2">
             <Button size="sm" variant="ghost" onClick={close}>
               Cancel
             </Button>
-            <Button size="sm" disabled={busy || !toolNameOk} onClick={() => void publish()}>
+            <Button
+              size="sm"
+              disabled={busy || !toolNameOk || !labelOk}
+              onClick={() => void publish()}
+            >
               {busy ? <Loader2 size={13} className="animate-spin" /> : <Rocket size={13} />}
               Publish
             </Button>

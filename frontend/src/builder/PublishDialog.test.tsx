@@ -32,6 +32,7 @@ afterAll(() => server.close());
 const published: PublishResponse = {
   name: "hello-agent",
   version: 3,
+  version_label: null,
   endpoint_url: "http://gateway.test/a2a/hello-agent",
   registry_id: "abc-123",
 };
@@ -84,6 +85,27 @@ describe("PublishDialog", () => {
       "href",
       "http://registry.test/entries/abc-123",
     );
+  });
+
+  it("passes the version label to publish and blocks invalid ones", async () => {
+    const onPublish = renderDialog();
+    const label = screen.getByPlaceholderText("1.2.0");
+    await userEvent.type(label, "not-semver");
+    expect(screen.getByRole("button", { name: /Publish/ })).toBeDisabled();
+    await userEvent.clear(label);
+    await userEvent.type(label, "1.2.0");
+    await userEvent.click(screen.getByRole("button", { name: /Publish/ }));
+    expect(onPublish).toHaveBeenCalledWith("1.2.0");
+  });
+
+  it("collects example prompts for the agent card (one per line)", async () => {
+    renderDialog();
+    const examples = screen.getByPlaceholderText(/What is the refund policy/);
+    await userEvent.type(examples, "Wie ist die Rückgaberegel?{enter}Fasse Ticket 12 zusammen");
+    expect(useBuilder.getState().meta.expose.examples).toEqual([
+      "Wie ist die Rückgaberegel?",
+      "Fasse Ticket 12 zusammen",
+    ]);
   });
 
   it("tags input accepts commas while typing", async () => {

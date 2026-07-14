@@ -13,8 +13,8 @@ dependencies = [
     # platform contract — pinned deliberately (CLAUDE.md invariant 7); upgrades
     # are their own PR gated by the contract tests (and refresh
     # schemas/flow-definition.schema.json alongside the pin).
-    "agentplane-core==0.0.1",
-    "agentplane-sdk==0.0.1",
+    "agentplane-core==0.0.2",
+    "agentplane-sdk==0.0.2",
     # persistence (builder-local drafts only)
     "sqlalchemy[asyncio]>=2.0",
     "aiosqlite>=0.20",
@@ -124,12 +124,6 @@ module = [
     "google.protobuf.*",  # protobuf runtime ships no stubs
 ]
 ignore_missing_imports = true
-
-# The platform packages are fully typed but do not ship a py.typed marker yet
-# (tracked upstream); type-check them anyway instead of ignoring.
-[[tool.mypy.overrides]]
-module = ["agentplane_core.*", "agentplane_sdk.*"]
-follow_untyped_imports = true
 
 [tool.coverage.run]
 source = ["langgraph_agent_builder"]

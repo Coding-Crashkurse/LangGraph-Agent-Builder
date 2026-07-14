@@ -82,8 +82,11 @@ export const api = {
         `/flows/validate${opts?.runtime === false ? "?runtime=false" : ""}`,
         jsonBody(definition),
       ),
-    publish: (name: string) =>
-      request<PublishResponse>(`/flows/${name}/publish`, { method: "POST" }),
+    publish: (name: string, opts?: { version_label?: string | null }) =>
+      request<PublishResponse>(
+        `/flows/${name}/publish`,
+        opts?.version_label ? jsonBody({ version_label: opts.version_label }) : { method: "POST" },
+      ),
     playground: (name: string) =>
       request<PlaygroundResponse>(`/flows/${name}/playground`, { method: "POST" }),
     exportUrl: (name: string, format: "yaml" | "json" = "yaml") =>

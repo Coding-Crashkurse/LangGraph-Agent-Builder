@@ -14,6 +14,8 @@ export interface ExposeConfig {
   kind: ExposeKind;
   tool_name?: string | null;
   tool_description?: string;
+  /** Example prompts — served as skill.examples on the A2A agent card. */
+  examples?: string[];
 }
 
 export interface DefinitionNode {
@@ -147,6 +149,8 @@ export interface FlowDetail {
 export interface PublishResponse {
   name: string;
   version: number;
+  /** Author-chosen semver label (unique per definition), when provided. */
+  version_label: string | null;
   endpoint_url: string;
   registry_id: string | null;
 }

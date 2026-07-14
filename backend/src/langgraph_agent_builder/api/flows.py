@@ -74,9 +74,18 @@ class FlowDetail(BaseModel):
     updated_at: datetime
 
 
+class PublishBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    # Author-chosen semantic label for this deploy (unique per definition);
+    # the integer deploy counter stays the version's identity.
+    version_label: str | None = None
+
+
 class PublishResponse(BaseModel):
     name: str
     version: int
+    version_label: str | None = None
     endpoint_url: str
     registry_id: str | None = None
 
@@ -174,14 +183,22 @@ async def delete_flow(name: str, svc: Services, principal: CurrentPrincipal) -> 
 
 
 @router.post("/{name}/publish")
-async def publish_flow(name: str, svc: Services, principal: CurrentPrincipal) -> PublishResponse:
+async def publish_flow(
+    name: str,
+    svc: Services,
+    principal: CurrentPrincipal,
+    payload: Annotated[PublishBody | None, Body()] = None,
+) -> PublishResponse:
     """Update the runtime draft + deploy; registration happens platform-side."""
     stored = await svc.store.get(name, principal.sub)
     defn = parse_definition(stored.definition)
-    deployment = await svc.gateway.publish(defn, principal.token)
+    deployment = await svc.gateway.publish(
+        defn, principal.token, version_label=payload.version_label if payload else None
+    )
     return PublishResponse(
         name=deployment.name,
         version=deployment.version,
+        version_label=deployment.version_label,
         endpoint_url=deployment.endpoint_url,
         registry_id=str(deployment.registry_id) if deployment.registry_id else None,
     )

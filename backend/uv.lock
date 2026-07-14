@@ -34,20 +34,20 @@ wheels = [
 
 [[package]]
 name = "agentplane-core"
-version = "0.0.1"
+version = "0.0.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "a2a-sdk" },
     { name = "pydantic" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/f2/3d/36234cb2293bad56307a8d449e90287e21cd73bcd236cb52d8e588844d8e/agentplane_core-0.0.1.tar.gz", hash = "sha256:e306d4b234469a4cab250b742927c246813257a2ac20fae05f53997cfaf263d9", size = 18642, upload-time = "2026-07-13T18:20:44.61Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/24/05/299446ce3906ad64afc60eca55422abfe36a24fa298a15648311cbf7161b/agentplane_core-0.0.2.tar.gz", hash = "sha256:1f26f05d85abaabd16d294964f32124c61a9648b713a152276d05e59fec1b16a", size = 19589, upload-time = "2026-07-14T17:56:16.635Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/47/c7/36cd91ca41f493fe4c9475b5e16491a3664da5e2d67102f977fb62a8ba4b/agentplane_core-0.0.1-py3-none-any.whl", hash = "sha256:fffa4d87f8d812905122c9b53389995c06bb8c0a12e00550ac0d8e17b29d558e", size = 18519, upload-time = "2026-07-13T18:20:43.544Z" },
+    { url = "https://files.pythonhosted.org/packages/33/d1/8bfd409822701ad73b624f7133adf4a6a68b862ec8c1718c55ae768022a2/agentplane_core-0.0.2-py3-none-any.whl", hash = "sha256:213270081b52b1563f304808026e477172cf9c322b50423042c5be6757948988", size = 19241, upload-time = "2026-07-14T17:56:15.503Z" },
 ]
 
 [[package]]
 name = "agentplane-sdk"
-version = "0.0.1"
+version = "0.0.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "agentplane-core" },
@@ -55,9 +55,9 @@ dependencies = [
     { name = "pyyaml" },
     { name = "typer" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/79/d2/b29de906129cbc2991f700ff5daaaaad5334b77087f3e99b23f658ed1e91/agentplane_sdk-0.0.1.tar.gz", hash = "sha256:8c79b70ac4eb83debc3ea9df53720a6b9762cd2947f1b50c09c890ed4f7a6472", size = 11238, upload-time = "2026-07-13T18:20:44.088Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/b7/cf/66848b9fb745c32164009deb9d2c18e9a258c0fe0a40b3b08e56221e51cb/agentplane_sdk-0.0.2.tar.gz", hash = "sha256:6e0466cce7ab58698900398bb8a46c900ef2ca5c2554331d0c9259c2c3055007", size = 11512, upload-time = "2026-07-14T17:56:15.146Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/d2/8f/24db93baa5defe2970909c1297aa15fdb2ba3390a825d25fc9afd859cfe7/agentplane_sdk-0.0.1-py3-none-any.whl", hash = "sha256:d829ebf63fd7ecfac4162d6b61abd5cda641c8baf25568d8365391761410ed59", size = 11379, upload-time = "2026-07-13T18:20:43.072Z" },
+    { url = "https://files.pythonhosted.org/packages/53/0d/e76804e9b10a4ad8a9b0ac29585e9493d2988e361b4da10826b57b2b95f9/agentplane_sdk-0.0.2-py3-none-any.whl", hash = "sha256:e6c1eea2a49fe8dee0278eb4ed710b321b5ea372b7e5724cf056a559e387b7ee", size = 11787, upload-time = "2026-07-14T17:56:14.007Z" },
 ]
 
 [[package]]
@@ -881,8 +881,8 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "agentplane-core", specifier = "==0.0.1" },
-    { name = "agentplane-sdk", specifier = "==0.0.1" },
+    { name = "agentplane-core", specifier = "==0.0.2" },
+    { name = "agentplane-sdk", specifier = "==0.0.2" },
     { name = "aiosqlite", specifier = ">=0.20" },
     { name = "fastapi", specifier = ">=0.115" },
     { name = "greenlet", specifier = ">=3.0" },

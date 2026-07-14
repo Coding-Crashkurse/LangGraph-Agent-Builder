@@ -90,6 +90,24 @@ async def test_publish_surfaces_runtime_rejection(runtime_client: AsyncClient) -
     assert issues[0]["source"] == "runtime"
 
 
+@respx.mock
+async def test_publish_forwards_version_label(runtime_client: AsyncClient) -> None:
+    """Author-chosen semver label travels to the runtime deploy (0.0.2)."""
+    await runtime_client.post("/api/v1/flows", json=definition())
+    respx.put(f"{RUNTIME_URL}/api/v1/definitions/hello-agent").mock(
+        return_value=Response(200, json=definition_info())
+    )
+    deploy_route = respx.post(f"{RUNTIME_URL}/api/v1/definitions/hello-agent/deploy").mock(
+        return_value=Response(200, json={**_deployment(), "version_label": "1.2.0"})
+    )
+    resp = await runtime_client.post(
+        "/api/v1/flows/hello-agent/publish", json={"version_label": "1.2.0"}
+    )
+    assert resp.status_code == 200
+    assert resp.json()["version_label"] == "1.2.0"
+    assert deploy_route.calls.last.request.url.params["version_label"] == "1.2.0"
+
+
 async def test_publish_without_runtime_is_503(client: AsyncClient) -> None:
     await client.post("/api/v1/flows", json=definition())
     resp = await client.post("/api/v1/flows/hello-agent/publish")

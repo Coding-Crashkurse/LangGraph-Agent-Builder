@@ -81,7 +81,9 @@ class RuntimeGateway:
             except (TransportError, AuthError):
                 return None
 
-    async def publish(self, defn: FlowDefinition, token: str | None) -> DeploymentInfo:
+    async def publish(
+        self, defn: FlowDefinition, token: str | None, *, version_label: str | None = None
+    ) -> DeploymentInfo:
         """Update the runtime draft (create when missing) and deploy it."""
         self._require_configured()
         async with self._client(token) as client:
@@ -90,7 +92,7 @@ class RuntimeGateway:
                     await client.update_draft(defn.name, defn)
                 except NotFoundError:
                     await client.create_draft(defn)
-                return await client.deploy(defn.name)
+                return await client.deploy(defn.name, version_label=version_label)
             except ValidationFailedError as exc:
                 raise RuntimeRejectedError(
                     "runtime rejected the definition", list(exc.result.issues)
