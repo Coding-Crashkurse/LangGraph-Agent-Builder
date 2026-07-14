@@ -50,6 +50,7 @@ backend/src/langgraph_agent_builder/_static/
 # Kept local, OUT of the published repo. SPEC.md stays the authoritative spec for
 # local development but is deliberately not shipped to the public GitHub repo.
 /SPEC.md
+/PROJECT.md
 /SPEC2.md
 /REFACTOR.md
 /CLAUDE.md
