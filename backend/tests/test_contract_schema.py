@@ -30,6 +30,25 @@ def test_schema_is_pinned() -> None:
     assert SCHEMA_PATH.exists(), "schemas/flow-definition.schema.json must be committed"
 
 
+def test_pinned_schema_matches_the_installed_agentplane_release() -> None:
+    """The committed schema must equal the installed agentplane's exported schema.
+
+    Validating examples (below) only catches drift on fields an example happens
+    to exercise. This pins the whole contract: if a future ``agentplane-core``
+    bump changes the schema, this fails until the pin and this file are
+    refreshed together — the deliberate-upgrade gate (CLAUDE.md invariant 7),
+    not a silent divergence.
+    """
+    from agentplane_core.schema_export import export_schema_json
+
+    committed = SCHEMA_PATH.read_text(encoding="utf-8")
+    assert committed == export_schema_json(), (
+        "schemas/flow-definition.schema.json is out of sync with the installed "
+        "agentplane-core. Refresh it alongside the version pin:\n"
+        "  uv run python -m agentplane_core.schema_export > schemas/flow-definition.schema.json"
+    )
+
+
 @pytest.mark.parametrize("path", EXAMPLES, ids=lambda p: p.stem)
 def test_exported_examples_validate_against_pinned_schema(
     path: Path, validator: Draft202012Validator

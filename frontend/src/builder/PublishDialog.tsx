@@ -125,8 +125,14 @@ function SuccessView({
   );
 }
 
+// Mirrors agentplane-core VERSION_LABEL_PATTERN (the `VersionLabel` type). The
+// runtime is authoritative and 422s any label it rejects, so this must accept
+// exactly the same language: semver with dot-separated pre-release / build
+// identifiers (each `[0-9A-Za-z-]+`, no empty or doubled dots). A single
+// `[0-9A-Za-z-.]+` class here would let `1.2.0-.` / `1.2.0-rc..1` through the
+// local check only to fail on publish (CLAUDE.md invariant 3).
 const VERSION_LABEL_RE =
-  /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z-.]+)?(?:\+[0-9A-Za-z-.]+)?$/;
+  /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
 
 function parseLines(raw: string): string[] {
   return raw

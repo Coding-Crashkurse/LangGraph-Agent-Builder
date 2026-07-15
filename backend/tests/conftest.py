@@ -127,6 +127,7 @@ def definition_info(name: str = "hello-agent", **overrides: Any) -> dict[str, An
         "status": "draft",
         "latest_version": None,
         "deployed_version": None,
+        "deployed_version_label": None,
         "endpoint_url": None,
         "owner": "tester",
         "created_at": "2026-07-12T10:00:00Z",

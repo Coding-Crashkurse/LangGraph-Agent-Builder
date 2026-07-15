@@ -98,6 +98,18 @@ describe("PublishDialog", () => {
     expect(onPublish).toHaveBeenCalledWith("1.2.0");
   });
 
+  // Labels the runtime's VersionLabel pattern rejects (E-free 422 on publish)
+  // must be blocked locally too — the local regex must not be more permissive
+  // than agentplane-core's.
+  it.each(["1.2.0-.", "1.2.0-rc..1", "1.2.0-a.", "1.2.0+."])(
+    "blocks version label %s that the runtime would reject",
+    async (bad) => {
+      renderDialog();
+      await userEvent.type(screen.getByPlaceholderText("1.2.0"), bad);
+      expect(screen.getByRole("button", { name: /Publish/ })).toBeDisabled();
+    },
+  );
+
   it("collects example prompts for the agent card (one per line)", async () => {
     renderDialog();
     const examples = screen.getByPlaceholderText(/What is the refund policy/);
