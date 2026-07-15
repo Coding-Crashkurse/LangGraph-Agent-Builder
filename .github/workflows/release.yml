@@ -1,37 +1,26 @@
 name: release
 
-# The wheel depends on agentplane-core/-sdk (exact pins in backend/pyproject);
-# those platform packages are on PyPI since agentplane 0.0.1. Publishes the
-# WHEEL ONLY: an sdist cannot rebuild the bundled frontend on user machines
-# (the hatch hook needs the Node toolchain), so shipping one would break
-# `pip install --no-binary` — the universal wheel is the installable artifact.
+# Works like the agentplane release: the version that gets published is exactly
+# the `version` in backend/pyproject.toml — bump it there, commit, then push a
+# `v*` tag (or run this workflow manually). Versions already on PyPI are skipped
+# (skip-existing), so re-running a tag is a no-op instead of an error.
+#
+# The wheel BUNDLES the built frontend (hatch hook needs the Node toolchain), so
+# an sdist is never published — the universal wheel is the installable artifact.
+# Auth is PyPI Trusted Publishing (OIDC): no token. The trusted-publisher config
+# is keyed to (repo, this workflow filename, environment `pypi`) — do not rename
+# either without updating the pending publisher on PyPI.
 
-# Manueller Trigger = die "Release-Flag". Es wird NUR gebaut/veröffentlicht,
-# wenn du in GitHub → Actions → "release" → "Run workflow" klickst.
-#   bump = none   → veröffentlicht die AKTUELLE Version unverändert (z. B. erster Release)
-#   bump = patch (Standard)  → x.y.Z+1   (automatisch)
-#   bump = minor  → x.Y+1.0  (manuell wählen)
-#   bump = major  → X+1.0.0  (manuell wählen)
 on:
   workflow_dispatch:
-    inputs:
-      bump:
-        description: "Version bump"
-        type: choice
-        default: patch
-        options: [none, patch, minor, major]
+  push:
+    tags: ["v*"]
 
 jobs:
-  release:
+  gates:
     runs-on: ubuntu-latest
-    environment: pypi
-    permissions:
-      id-token: write # PyPI Trusted Publishing (kein Token nötig) — SPEC §2.5
-      contents: write # Version-Commit + Tag + GitHub-Release zurückpushen
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0 # volle History für Changelog + Tags
 
       - uses: astral-sh/setup-uv@v5
         with:
@@ -43,44 +32,57 @@ jobs:
         with:
           node-version: 22
 
-      - name: bump version
-        id: bump
+      - name: backend gates (ruff, mypy, import-linter, pytest)
         working-directory: backend
         run: |
-          if [ "${{ inputs.bump }}" != "none" ]; then
-            uv version --bump "${{ inputs.bump }}" --no-sync
-          fi
-          NEW="$(uv version --short)"
-          echo "version=$NEW" >> "$GITHUB_OUTPUT"
-          echo "Neue Version: $NEW"
+          uv sync
+          uv run ruff format --check
+          uv run ruff check
+          uv run lint-imports
+          uv run mypy
+          uv run pytest tests -q
 
-      - name: build frontend (wird in die Wheel gebündelt)
+      - name: frontend gates (lint, test, build)
+        working-directory: frontend
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm lint
+          pnpm test
+          pnpm build
+
+  publish:
+    needs: gates
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write # PyPI Trusted Publishing (no token needed)
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: build frontend (bundled into the wheel)
         working-directory: frontend
         run: pnpm install --frozen-lockfile && pnpm build
 
-      - name: build wheel (bundles the frontend; built from the source tree)
+      - name: build wheel (from backend/pyproject version)
         working-directory: backend
-        run: uv build --wheel
-
-      - name: publish to PyPI (Trusted Publishing)
-        working-directory: backend
-        run: uv publish
-
-      - name: commit version bump + tag
         run: |
-          git config user.name  "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add backend/pyproject.toml backend/uv.lock 2>/dev/null || git add backend/pyproject.toml
-          git commit -m "release: v${{ steps.bump.outputs.version }}" || echo "no version change to commit"
-          git tag "v${{ steps.bump.outputs.version }}"
-          git push origin "HEAD:${{ github.ref_name }}" --follow-tags
+          VERSION="$(uv version --short)"
+          echo "publishing langgraph-agent-builder $VERSION (from pyproject.toml)"
+          uv build --wheel
 
-      - name: changelog aus conventional commits
-        run: |
-          PREV=$(git describe --tags --abbrev=0 "v${{ steps.bump.outputs.version }}^" 2>/dev/null || echo "")
-          git log ${PREV:+$PREV..}HEAD --pretty='- %s' > RELEASE_NOTES.md
-
-      - uses: softprops/action-gh-release@v2
+      - name: publish to PyPI (trusted publishing)
+        uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          tag_name: "v${{ steps.bump.outputs.version }}"
-          body_path: RELEASE_NOTES.md
+          packages-dir: backend/dist
+          skip-existing: true
