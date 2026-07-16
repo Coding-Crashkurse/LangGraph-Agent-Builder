@@ -1,0 +1,60 @@
+# VCS / CI
+.git
+.github
+.agents
+
+# Python
+**/__pycache__
+**/*.py[cod]
+**/*.egg-info
+**/.venv
+**/.pytest_cache
+**/.ruff_cache
+**/.mypy_cache*
+**/.import_linter_cache
+**/.hypothesis
+backend/dist
+backend/build
+
+# Coverage / test artifacts
+**/.coverage
+**/.coverage.*
+**/coverage.xml
+**/htmlcov
+**/playwright-report
+**/test-results
+
+# Node / frontend build output (rebuilt inside the image)
+**/node_modules
+frontend/dist
+**/*.tsbuildinfo
+
+# Bundled frontend from local wheel builds (regenerated per image build)
+backend/src/langgraph_agent_builder/_static
+
+# Env & local state — never bake into the image
+**/.env
+**/.env.*
+!**/.env.example
+**/*.db
+**/*.sqlite
+**/*.sqlite3
+.langgraph-agent-builder
+
+# Internal working docs (gitignored, not for the image)
+SPEC.md
+SPEC2.md
+PROJECT.md
+REFACTOR.md
+CLAUDE.md
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea
+.vscode
+
+# Docker itself
+Dockerfile
+.dockerignore
+docker-compose.yml
