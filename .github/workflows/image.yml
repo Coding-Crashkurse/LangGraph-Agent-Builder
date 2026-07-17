@@ -1,0 +1,44 @@
+name: image
+
+# Publishes the builder service image (root Dockerfile: pnpm frontend build ->
+# uv backend) to ghcr, so the compose stack can PULL it instead of building
+# from the sibling checkout. Decoupled from release.yml (the PyPI wheel):
+# pushes to main publish `:latest`; a `v*` tag additionally publishes the semver.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - "frontend/**"
+      - "Dockerfile"
+      - ".github/workflows/image.yml"
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: compute tags
+        run: |
+          IMG="ghcr.io/coding-crashkurse/agentplane-builder"
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            echo "TAGS=${IMG}:${GITHUB_REF_NAME#v}"$'\n'"${IMG}:latest" >> "$GITHUB_ENV"
+          else
+            echo "TAGS=${IMG}:latest"$'\n'"${IMG}:sha-${GITHUB_SHA::7}" >> "$GITHUB_ENV"
+          fi
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ env.TAGS }}
