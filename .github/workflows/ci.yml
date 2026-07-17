@@ -71,6 +71,11 @@ jobs:
       - name: install
         working-directory: frontend
         run: pnpm install --frozen-lockfile
+      - name: generated types drift check (schema bump or hand-edit without gen:types)
+        working-directory: frontend
+        run: |
+          pnpm gen:types
+          git diff --exit-code -- src/api/generated/
       - name: lint + test + build
         working-directory: frontend
         run: |
