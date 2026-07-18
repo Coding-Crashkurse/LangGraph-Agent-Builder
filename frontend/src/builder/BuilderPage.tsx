@@ -254,7 +254,7 @@ function BuilderInner({ flowName }: { flowName: string }) {
   if (flowQuery.isError) {
     return (
       <div className="flex h-full items-center justify-center text-sm text-text-2">
-        Flow not found. <Link className="ml-1 text-accent hover:underline" to="/">Back</Link>
+        Flow not found. <Link className="ml-1 text-accent hover:underline" to="/flows">Back</Link>
       </div>
     );
   }
@@ -270,7 +270,7 @@ function BuilderInner({ flowName }: { flowName: string }) {
   return (
     <div className="flex h-screen flex-col bg-canvas">
       <header className="flex h-12 shrink-0 items-center gap-3 border-b border-border bg-surface-1 px-3">
-        <Link to="/" aria-label="Back to flows" className="text-text-2 hover:text-text-1">
+        <Link to="/flows" aria-label="Back to flows" className="text-text-2 hover:text-text-1">
           <ArrowLeft size={16} />
         </Link>
         <span className="text-sm font-semibold text-text-1">{flowName}</span>
@@ -310,11 +310,13 @@ function BuilderInner({ flowName }: { flowName: string }) {
             size="sm"
             variant="secondary"
             onClick={() => void playground()}
-            disabled={busy !== null || !configQuery.data?.runtime_configured}
+            disabled={busy !== null || !configQuery.data?.runtime_configured || blocked}
             title={
-              configQuery.data?.runtime_configured
-                ? "Ephemeral deploy + chat"
-                : "No runtime configured"
+              blocked
+                ? "Fix the validation errors first"
+                : configQuery.data?.runtime_configured
+                  ? "Ephemeral deploy + chat"
+                  : "No runtime configured"
             }
           >
             {busy === "playground" ? (
@@ -324,17 +326,25 @@ function BuilderInner({ flowName }: { flowName: string }) {
             )}
             Playground
           </Button>
-          <Button size="sm" variant="secondary" onClick={() => setShareOpen(true)}>
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => setShareOpen(true)}
+            disabled={blocked}
+            title={blocked ? "Fix the validation errors first" : "Export canonical YAML"}
+          >
             <Share2 size={13} /> Share
           </Button>
           <Button
             size="sm"
             onClick={() => setPublishOpen(true)}
-            disabled={busy !== null || !configQuery.data?.runtime_configured}
+            disabled={busy !== null || !configQuery.data?.runtime_configured || blocked}
             title={
-              configQuery.data?.runtime_configured
-                ? "Choose the door, then update runtime draft + deploy"
-                : "No runtime configured"
+              blocked
+                ? "Fix the validation errors first"
+                : configQuery.data?.runtime_configured
+                  ? "Choose the door, then update runtime draft + deploy"
+                  : "No runtime configured"
             }
           >
             {busy === "publish" ? <Loader2 size={13} className="animate-spin" /> : <Rocket size={13} />}

@@ -4,11 +4,14 @@ import { Navigate, Route, Routes, useNavigate } from "react-router-dom";
 
 import { api } from "@/api/client";
 import { beginLogin, completeLogin, getToken, setAuthConfig } from "@/api/auth";
+import { AppShell } from "@/components/AppShell";
 import { Button } from "@/components/ui/button";
 
 import { FlowsPage } from "./builder/FlowsPage";
+import { HomePage } from "./builder/HomePage";
+import { ResourcesPage } from "./builder/ResourcesPage";
 
-// Route-level code splitting: the flows list must not pay for the whole
+// Route-level code splitting: the shell pages must not pay for the whole
 // react-flow builder bundle on first paint.
 const BuilderPage = lazy(() =>
   import("./builder/BuilderPage").then((m) => ({ default: m.BuilderPage })),
@@ -69,7 +72,7 @@ class ErrorBoundary extends Component<{ children: ReactNode }, ErrorBoundaryStat
                 Try again
               </Button>
               <Button size="sm" variant="ghost" onClick={() => window.location.assign("/")}>
-                Back to flows
+                Back to home
               </Button>
             </div>
           </div>
@@ -140,7 +143,13 @@ export default function App() {
       <AuthGate>
         <Suspense fallback={<RouteFallback />}>
           <Routes>
-            <Route path="/" element={<FlowsPage />} />
+            <Route element={<AppShell />}>
+              <Route path="/" element={<HomePage />} />
+              <Route path="/flows" element={<FlowsPage />} />
+              <Route path="/models" element={<ResourcesPage group="model_provider" />} />
+              <Route path="/knowledge-bases" element={<ResourcesPage group="vector_db" />} />
+              <Route path="/tools" element={<ResourcesPage group="mcp_server" />} />
+            </Route>
             <Route path="/flows/:flowName" element={<BuilderPage />} />
             <Route path="/auth/callback" element={<AuthCallback />} />
             <Route path="*" element={<Navigate to="/" replace />} />

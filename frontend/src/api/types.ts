@@ -181,3 +181,8 @@ export interface FrontendConfig {
   resources_ui_url: string;
   registry_ui_url: string;
 }
+
+export interface RuntimeHealth {
+  configured: boolean;
+  reachable: boolean;
+}

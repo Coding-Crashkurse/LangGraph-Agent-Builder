@@ -6,7 +6,8 @@ from fastapi import APIRouter
 from pydantic import BaseModel
 
 import langgraph_agent_builder
-from langgraph_agent_builder.api.deps import Services
+from langgraph_agent_builder.api.deps import CurrentPrincipal, Services
+from langgraph_agent_builder.services.runtime import RuntimeHealth
 
 router = APIRouter(tags=["config"])
 
@@ -38,3 +39,9 @@ async def get_config(svc: Services) -> FrontendConfig:
 @router.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@router.get("/runtime/health")
+async def runtime_health(svc: Services, principal: CurrentPrincipal) -> RuntimeHealth:
+    """Liveness of the configured agentplane runtime (drives the status dot)."""
+    return await svc.gateway.health(principal.token)
