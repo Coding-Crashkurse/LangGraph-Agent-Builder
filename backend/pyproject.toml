@@ -13,8 +13,8 @@ dependencies = [
     # platform contract — pinned deliberately (CLAUDE.md invariant 7); upgrades
     # are their own PR gated by the contract tests (and refresh
     # schemas/flow-definition.schema.json alongside the pin).
-    "agentplane-core==0.0.2",
-    "agentplane-sdk==0.0.2",
+    "agentplane-core>=0.0.3,<0.1.0",
+    "agentplane-sdk>=0.0.3,<0.1.0",
     # persistence (builder-local drafts only)
     "sqlalchemy[asyncio]>=2.0",
     "aiosqlite>=0.20",
