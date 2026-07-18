@@ -128,6 +128,20 @@
             "default": false,
             "title": "Stream",
             "type": "boolean"
+          },
+          "history": {
+            "default": false,
+            "description": "Prepend the conversation history as chat messages. The history is the prior turns of the caller's conversation (A2A contextId), loaded by the runtime from its task store; with history disabled or no persistence the node sees only the current prompt.",
+            "title": "History",
+            "type": "boolean"
+          },
+          "history_max_turns": {
+            "default": 20,
+            "description": "Cap on prior exchanges (user + assistant pairs) fed to the model.",
+            "maximum": 200,
+            "minimum": 1,
+            "title": "History Max Turns",
+            "type": "integer"
           }
         },
         "required": [
@@ -602,6 +616,117 @@
       },
       "default_config": {
         "top_k": 4
+      }
+    },
+    {
+      "type": "rerank",
+      "version": 1,
+      "label": "Rerank",
+      "icon": "arrow-down-up",
+      "category": "rag",
+      "description": "Rerank retrieved documents by relevance to the query; keep the best top_n.",
+      "config_schema": {
+        "additionalProperties": false,
+        "description": "Reorder retrieved documents by relevance to the query (v1.1).\n\nThe retrieval node returns a similarity top-k; a reranker (cross-encoder)\nthen scores each document against the query directly and keeps the best\n``top_n`` — the standard quality step between retrieval and the LLM. Reuses\na ``model_provider`` resource whose ``base_url`` serves a ``/rerank``\nendpoint (Cohere/Jina/TEI-style); no new resource kind.",
+        "properties": {
+          "resource": {
+            "pattern": "^[a-z0-9][a-z0-9-]{1,62}$",
+            "title": "Resource",
+            "type": "string"
+          },
+          "model": {
+            "default": "",
+            "title": "Model",
+            "type": "string"
+          },
+          "top_n": {
+            "default": 4,
+            "maximum": 100,
+            "minimum": 1,
+            "title": "Top N",
+            "type": "integer"
+          },
+          "min_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Rerank score threshold; documents scoring below it are dropped, so a reranked set can be empty (which lets an empty-result router branch fire). Score scale is the reranker's own relevance score, not the retrieval metric.",
+            "title": "Min Score"
+          }
+        },
+        "required": [
+          "resource"
+        ],
+        "title": "RerankNodeConfig",
+        "type": "object"
+      },
+      "inputs": [
+        {
+          "name": "query",
+          "type": "text",
+          "label": "Query"
+        },
+        {
+          "name": "documents",
+          "type": "documents",
+          "label": "Documents"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "documents",
+          "type": "documents",
+          "label": "Documents"
+        }
+      ],
+      "dynamic_inputs": null,
+      "dynamic_outputs": null,
+      "ui": {
+        "resource": {
+          "widget": "resource",
+          "label": "Reranker",
+          "help": "Model provider whose base_url serves a /rerank endpoint (Cohere/Jina/TEI).",
+          "placeholder": "",
+          "resource_kind": "model_provider",
+          "advanced": false,
+          "toggleable": false
+        },
+        "model": {
+          "widget": "text",
+          "label": "Model",
+          "help": "",
+          "placeholder": "e.g. rerank-english-v3.0",
+          "resource_kind": null,
+          "advanced": false,
+          "toggleable": false
+        },
+        "top_n": {
+          "widget": "number",
+          "label": "Top N",
+          "help": "",
+          "placeholder": "",
+          "resource_kind": null,
+          "advanced": false,
+          "toggleable": false
+        },
+        "min_score": {
+          "widget": "number",
+          "label": "Min Score",
+          "help": "Rerank score threshold — documents scoring below it are dropped.",
+          "placeholder": "",
+          "resource_kind": null,
+          "advanced": true,
+          "toggleable": false
+        }
+      },
+      "default_config": {
+        "top_n": 4
       }
     }
   ],

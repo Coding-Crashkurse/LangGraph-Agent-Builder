@@ -26,6 +26,8 @@ async def test_config_schemas_come_from_core_models(client: AsyncClient) -> None
         "system_prompt",
         "structured_output",
         "stream",
+        "history",
+        "history_max_turns",
     }
     assert llm["dynamic_inputs"] == "prompt_vars"
     assert llm["ui"]["resource"]["widget"] == "resource"
@@ -34,6 +36,12 @@ async def test_config_schemas_come_from_core_models(client: AsyncClient) -> None
     retrieval = by_type["retrieval"]
     assert retrieval["inputs"] == [{"name": "query", "type": "text", "label": "Query"}]
     assert retrieval["outputs"][0]["type"] == "documents"
+
+    rerank = by_type["rerank"]
+    assert set(rerank["config_schema"]["properties"]) == {"resource", "model", "top_n", "min_score"}
+    assert {p["name"] for p in rerank["inputs"]} == {"query", "documents"}
+    assert rerank["outputs"][0]["type"] == "documents"
+    assert rerank["ui"]["resource"]["resource_kind"] == "model_provider"
 
 
 async def test_port_rules_exported_for_client_guards(client: AsyncClient) -> None:

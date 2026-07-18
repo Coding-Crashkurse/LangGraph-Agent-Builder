@@ -30,6 +30,14 @@ export type OutputFrom = string;
 export type Id1 = string;
 export type Type1 = "end";
 export type Version1 = number;
+/**
+ * Prepend the conversation history as chat messages. The history is the prior turns of the caller's conversation (A2A contextId), loaded by the runtime from its task store; with history disabled or no persistence the node sees only the current prompt.
+ */
+export type History = boolean;
+/**
+ * Cap on prior exchanges (user + assistant pairs) fed to the model.
+ */
+export type HistoryMaxTurns = number;
 export type Model = string;
 export type Prompt = string;
 export type Resource = string;
@@ -61,6 +69,16 @@ export type TopK = number;
 export type Id4 = string;
 export type Type4 = "retrieval";
 export type Version4 = number;
+/**
+ * Rerank score threshold; documents scoring below it are dropped, so a reranked set can be empty (which lets an empty-result router branch fire). Score scale is the reranker's own relevance score, not the retrieval metric.
+ */
+export type MinScore1 = number | null;
+export type Model1 = string;
+export type Resource3 = string;
+export type TopN = number;
+export type Id5 = string;
+export type Type5 = "rerank";
+export type Version5 = number;
 export type DefaultBranch = string;
 export type InputType = "text" | "json" | "documents";
 /**
@@ -69,15 +87,22 @@ export type InputType = "text" | "json" | "documents";
 export type Rules = [RouterRule, ...RouterRule[]];
 export type Branch = string;
 export type When = "not_empty" | "empty";
-export type Id5 = string;
-export type Type5 = "router";
-export type Version5 = number;
-export type Text = string;
 export type Id6 = string;
-export type Type6 = "template";
+export type Type6 = "router";
 export type Version6 = number;
+export type Text = string;
+export type Id7 = string;
+export type Type7 = "template";
+export type Version7 = number;
 export type Nodes1 = (
-  StartNode | EndNode | LlmCallNode | McpToolNode | RetrievalNode | RouterNode | TemplateNode
+  | StartNode
+  | EndNode
+  | LlmCallNode
+  | McpToolNode
+  | RetrievalNode
+  | RerankNode
+  | RouterNode
+  | TemplateNode
 )[];
 export type SchemaVersion = number;
 export type Tags = string[];
@@ -158,6 +183,8 @@ export interface LlmCallNode {
   version: Version2;
 }
 export interface LlmCallNodeConfig {
+  history?: History;
+  history_max_turns?: HistoryMaxTurns;
   model?: Model;
   prompt: Prompt;
   resource: Resource;
@@ -196,11 +223,32 @@ export interface RetrievalNodeConfig {
   resource: Resource2;
   top_k?: TopK;
 }
-export interface RouterNode {
-  config: RouterNodeConfig;
+export interface RerankNode {
+  config: RerankNodeConfig;
   id: Id5;
   type: Type5;
   version: Version5;
+}
+/**
+ * Reorder retrieved documents by relevance to the query (v1.1).
+ *
+ * The retrieval node returns a similarity top-k; a reranker (cross-encoder)
+ * then scores each document against the query directly and keeps the best
+ * ``top_n`` — the standard quality step between retrieval and the LLM. Reuses
+ * a ``model_provider`` resource whose ``base_url`` serves a ``/rerank``
+ * endpoint (Cohere/Jina/TEI-style); no new resource kind.
+ */
+export interface RerankNodeConfig {
+  min_score?: MinScore1;
+  model?: Model1;
+  resource: Resource3;
+  top_n?: TopN;
+}
+export interface RouterNode {
+  config: RouterNodeConfig;
+  id: Id6;
+  type: Type6;
+  version: Version6;
 }
 /**
  * Conditional branching (v1.1): routes the input value to one branch.
@@ -223,9 +271,9 @@ export interface RouterRule {
 }
 export interface TemplateNode {
   config: TemplateNodeConfig;
-  id: Id6;
-  type: Type6;
-  version: Version6;
+  id: Id7;
+  type: Type7;
+  version: Version7;
 }
 /**
  * Static/interpolated text (v1.1): `{vars}` become input ports.
