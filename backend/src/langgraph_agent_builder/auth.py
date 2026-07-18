@@ -53,8 +53,14 @@ class OidcVerifier:
         keys: dict[str, Any] = {}
         for entry in jwks.json().get("keys", []):
             kid = entry.get("kid")
-            if isinstance(kid, str):
+            # Keycloak publishes an encryption key (use=enc, e.g. RSA-OAEP)
+            # alongside the signing key; only signing keys can build a verifier.
+            if not isinstance(kid, str) or entry.get("use") == "enc":
+                continue
+            try:
                 keys[kid] = jwt.PyJWK(entry).key
+            except jwt.PyJWKError:
+                continue
         self._keys = keys
         self._fetched_at = time.monotonic()
         return keys
