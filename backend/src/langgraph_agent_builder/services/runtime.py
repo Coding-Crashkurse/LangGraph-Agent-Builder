@@ -10,6 +10,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any, Literal
 
+import httpx
 from agentplane_core import DeploymentInfo, FlowDefinition, Resource, ValidationResult
 from agentplane_sdk import (
     AuthError,
@@ -53,6 +54,15 @@ class ResourceSummary(BaseModel):
     kind: str
     group: ResourceGroup
     display_name: str = ""
+
+
+class RuntimeHealth(BaseModel):
+    """Liveness of the configured agentplane runtime (for the status indicator)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    configured: bool
+    reachable: bool
 
 
 class RuntimeGateway:
@@ -170,6 +180,28 @@ class RuntimeGateway:
             display_name=created.display_name,
         )
 
+    async def remove_from_platform(self, name: str, token: str | None) -> None:
+        """Undeploy the flow (deregisters it) and delete the runtime definition.
+
+        Best-effort semantics: "not deployed" and "not found" count as success —
+        the goal is absence. The runtime enforces authorization; an unreachable
+        runtime raises so the caller's local delete does not proceed silently.
+        """
+        self._require_configured()
+        async with self._client(token) as client:
+            try:
+                await client.undeploy(name)
+            except (BuilderNotFoundError, NotFoundError, RuntimeConflictError):
+                pass  # never published, already gone, or not deployed
+            except TransportError as exc:
+                raise RuntimeUnavailableError(f"runtime unreachable: {exc}") from exc
+            try:
+                await client.delete(name)
+            except (BuilderNotFoundError, NotFoundError):
+                pass
+            except TransportError as exc:
+                raise RuntimeUnavailableError(f"runtime unreachable: {exc}") from exc
+
     async def delete_resource(self, name: str, token: str | None) -> None:
         """Delete a resource on the runtime (refused there while referenced)."""
         self._require_configured()
@@ -182,6 +214,23 @@ class RuntimeGateway:
                 raise ConflictError(str(exc)) from exc
             except TransportError as exc:
                 raise RuntimeUnavailableError(f"runtime unreachable: {exc}") from exc
+
+    async def health(self, token: str | None) -> RuntimeHealth:
+        """Probe the runtime's unauthenticated ``/healthz`` (short timeout).
+
+        Advisory only — a red dot never blocks editing; it just tells the user
+        upfront whether publish and resource management can work right now.
+        """
+        if not self.configured:
+            return RuntimeHealth(configured=False, reachable=False)
+        headers = {"Authorization": f"Bearer {token}"} if token else {}
+        url = self._settings.runtime_url.rstrip("/") + "/healthz"
+        try:
+            async with httpx.AsyncClient(timeout=3.0) as client:
+                response = await client.get(url, headers=headers)
+        except httpx.HTTPError:
+            return RuntimeHealth(configured=True, reachable=False)
+        return RuntimeHealth(configured=True, reachable=response.is_success)
 
     def _require_configured(self) -> None:
         if not self.configured:

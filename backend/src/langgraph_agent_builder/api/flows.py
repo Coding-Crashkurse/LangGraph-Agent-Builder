@@ -178,7 +178,25 @@ async def save_flow(
 
 
 @router.delete("/{name}", status_code=204)
-async def delete_flow(name: str, svc: Services, principal: CurrentPrincipal) -> None:
+async def delete_flow(
+    name: str,
+    svc: Services,
+    principal: CurrentPrincipal,
+    undeploy: Annotated[
+        bool,
+        Query(
+            description=(
+                "Also remove the flow from the platform: undeploy the served "
+                "agent (which deregisters it) and delete the runtime "
+                "definition. Default: the builder-local draft only."
+            )
+        ),
+    ] = False,
+) -> None:
+    if undeploy:
+        # Platform first: if the runtime is unreachable the local draft stays,
+        # so nothing keeps running without its source silently.
+        await svc.gateway.remove_from_platform(name, principal.token)
     await svc.store.delete(name, principal.sub)
 
 

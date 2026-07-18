@@ -1,9 +1,10 @@
 /**
  * Flows list: builder-local drafts. New flows start as start+end
- * FlowDefinitions; import accepts canonical YAML/JSON files.
+ * FlowDefinitions; import accepts canonical YAML/JSON files. Rendered inside
+ * the app shell — the flow canvas itself lives at /flows/:name, full-screen.
  */
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { FileUp, Loader2, Plus, Trash2, Workflow } from "lucide-react";
 import { useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
@@ -13,53 +14,9 @@ import type { FlowSummary } from "@/api/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
-import { Input, Label } from "@/components/ui/input";
 import { toast } from "@/components/ui/toast";
 
-import { emptyDefinition } from "./convert";
-
-const NAME_RE = /^[a-z0-9][a-z0-9-]{1,62}$/;
-
-function NewFlowDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const [name, setName] = useState("");
-  const navigate = useNavigate();
-  const queryClient = useQueryClient();
-  const valid = NAME_RE.test(name);
-  const create = useMutation({
-    mutationFn: () => api.flows.create(emptyDefinition(name)),
-    onSuccess: async (flow) => {
-      await queryClient.invalidateQueries({ queryKey: ["flows"] });
-      navigate(`/flows/${flow.name}`);
-    },
-    onError: (err) => toast.error(err instanceof Error ? err.message : "create failed"),
-  });
-  return (
-    <Dialog open={open} onClose={onClose} title="New flow">
-      <Label hint="^[a-z0-9][a-z0-9-]{1,62}$">Name</Label>
-      <Input
-        autoFocus
-        value={name}
-        placeholder="support-rag"
-        className="font-mono"
-        onChange={(e) => setName(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" && valid) create.mutate();
-        }}
-      />
-      <p className="mt-1 text-[11px] text-text-3">
-        The name is the platform-wide identity of the flow (unique per owner).
-      </p>
-      <div className="mt-3 flex justify-end gap-2">
-        <Button size="sm" variant="ghost" onClick={onClose}>
-          Cancel
-        </Button>
-        <Button size="sm" disabled={!valid || create.isPending} onClick={() => create.mutate()}>
-          {create.isPending && <Loader2 size={13} className="animate-spin" />} Create
-        </Button>
-      </div>
-    </Dialog>
-  );
-}
+import { NewFlowDialog } from "./NewFlowDialog";
 
 function FlowCard({ flow, onDelete }: { flow: FlowSummary; onDelete: () => void }) {
   return (
@@ -70,9 +27,7 @@ function FlowCard({ flow, onDelete }: { flow: FlowSummary; onDelete: () => void 
           <span className="truncate text-sm font-semibold text-text-1">
             {flow.display_name || flow.name}
           </span>
-          <Badge tone={flow.expose_kind === "mcp" ? "toolset" : "accent"}>
-            {flow.expose_kind}
-          </Badge>
+          <Badge tone={flow.expose_kind === "mcp" ? "accent" : "muted"}>{flow.expose_kind}</Badge>
         </div>
         <p className="mt-0.5 truncate text-xs text-text-3">
           <span className="font-mono">{flow.name}</span>
@@ -95,11 +50,11 @@ function FlowCard({ flow, onDelete }: { flow: FlowSummary; onDelete: () => void 
 export function FlowsPage() {
   const [creating, setCreating] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
+  const [alsoUndeploy, setAlsoUndeploy] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const flows = useQuery({ queryKey: ["flows"], queryFn: api.flows.list });
-  const config = useQuery({ queryKey: ["config"], queryFn: api.config.get });
 
   const importFile = async (file: File) => {
     try {
@@ -118,24 +73,26 @@ export function FlowsPage() {
 
   const remove = async (name: string) => {
     try {
-      await api.flows.delete(name);
+      await api.flows.delete(name, { undeploy: alsoUndeploy });
       await queryClient.invalidateQueries({ queryKey: ["flows"] });
-      toast.info(`Deleted ${name}`);
+      toast.info(
+        alsoUndeploy ? `Deleted ${name} and removed it from the platform` : `Deleted ${name}`,
+      );
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "delete failed");
     } finally {
       setPendingDelete(null);
+      setAlsoUndeploy(false);
     }
   };
 
   return (
-    <div className="mx-auto flex h-screen max-w-3xl flex-col px-6 py-8">
+    <div className="mx-auto max-w-3xl px-8 py-8">
       <header className="mb-6 flex items-center gap-3">
         <div>
           <h1 className="text-lg font-semibold text-text-1">Flows</h1>
           <p className="text-xs text-text-3">
             Design-time drafts — published flows are served by the agentplane runtime
-            {config.data && !config.data.runtime_configured && " (no runtime configured)"}
           </p>
         </div>
         <span className="ml-auto flex items-center gap-2">
@@ -167,7 +124,7 @@ export function FlowsPage() {
       {flows.isError && (
         <p className="text-sm text-danger">Could not load flows: {String(flows.error)}</p>
       )}
-      <div className="flex flex-col gap-2 overflow-y-auto">
+      <div className="flex flex-col gap-2">
         {(flows.data ?? []).map((flow) => (
           <FlowCard key={flow.name} flow={flow} onDelete={() => setPendingDelete(flow.name)} />
         ))}
@@ -181,15 +138,37 @@ export function FlowsPage() {
       <NewFlowDialog open={creating} onClose={() => setCreating(false)} />
       <Dialog
         open={pendingDelete !== null}
-        onClose={() => setPendingDelete(null)}
+        onClose={() => {
+          setPendingDelete(null);
+          setAlsoUndeploy(false);
+        }}
         title={`Delete ${pendingDelete}?`}
       >
-        <p className="text-xs text-text-2">
-          Deletes the builder-local draft only. Anything already published keeps running on the
-          runtime.
+        <p className="rounded border border-border border-l-2 border-l-warning bg-surface-1 px-2 py-1.5 text-xs text-text-1">
+          This deletes the <strong>builder draft only</strong>. If the flow was published, the
+          agent keeps running on the platform and stays listed in the registry.
         </p>
+        <label className="mt-3 flex items-start gap-2 text-xs text-text-2">
+          <input
+            type="checkbox"
+            className="mt-0.5"
+            checked={alsoUndeploy}
+            onChange={(event) => setAlsoUndeploy(event.target.checked)}
+          />
+          <span>
+            Also remove it from the platform: undeploy the agent (drops the registry entry) and
+            delete the runtime definition.
+          </span>
+        </label>
         <div className="mt-3 flex justify-end gap-2">
-          <Button size="sm" variant="ghost" onClick={() => setPendingDelete(null)}>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              setPendingDelete(null);
+              setAlsoUndeploy(false);
+            }}
+          >
             Cancel
           </Button>
           <Button
@@ -197,7 +176,7 @@ export function FlowsPage() {
             variant="danger"
             onClick={() => pendingDelete && void remove(pendingDelete)}
           >
-            Delete
+            {alsoUndeploy ? "Delete draft + undeploy" : "Delete draft"}
           </Button>
         </div>
       </Dialog>

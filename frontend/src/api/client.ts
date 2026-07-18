@@ -16,6 +16,7 @@ import type {
   PublishResponse,
   ResourceGroup,
   ResourceSummary,
+  RuntimeHealth,
   SourcedIssue,
   ValidationResponse,
 } from "./types";
@@ -67,6 +68,9 @@ export const api = {
   config: {
     get: () => request<FrontendConfig>("/config"),
   },
+  runtime: {
+    health: () => request<RuntimeHealth>("/runtime/health"),
+  },
   catalog: {
     get: () => request<NodeCatalog>("/node-types"),
   },
@@ -76,7 +80,10 @@ export const api = {
     create: (definition: FlowDefinition) => request<FlowDetail>("/flows", jsonBody(definition)),
     save: (name: string, definition: FlowDefinition) =>
       request<FlowDetail>(`/flows/${name}`, { ...jsonBody(definition), method: "PUT" }),
-    delete: (name: string) => request<void>(`/flows/${name}`, { method: "DELETE" }),
+    delete: (name: string, opts?: { undeploy?: boolean }) =>
+      request<void>(`/flows/${name}${opts?.undeploy ? "?undeploy=true" : ""}`, {
+        method: "DELETE",
+      }),
     validate: (definition: FlowDefinition, opts?: { runtime?: boolean }) =>
       request<ValidationResponse>(
         `/flows/validate${opts?.runtime === false ? "?runtime=false" : ""}`,

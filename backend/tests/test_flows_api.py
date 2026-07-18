@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import httpx
+import respx
 from httpx import AsyncClient
 
-from tests.conftest import definition
+from tests.conftest import RUNTIME_URL, definition
 
 
 async def test_create_get_list_delete(client: AsyncClient) -> None:
@@ -75,3 +77,39 @@ async def test_incomplete_draft_is_saveable(client: AsyncClient) -> None:
     stored = created.json()["definition"]
     node = next(n for n in stored["nodes"] if n["id"] == "call_1")
     assert node["config"] == {}  # stored verbatim, no silent fix-up
+
+
+@respx.mock
+async def test_delete_with_undeploy_removes_the_flow_from_the_platform(
+    runtime_client: AsyncClient,
+) -> None:
+    await runtime_client.post("/api/v1/flows", json=definition())
+    undeploy_route = respx.post(f"{RUNTIME_URL}/api/v1/definitions/hello-agent/undeploy").mock(
+        return_value=httpx.Response(204)
+    )
+    delete_route = respx.delete(f"{RUNTIME_URL}/api/v1/definitions/hello-agent").mock(
+        return_value=httpx.Response(204)
+    )
+
+    deleted = await runtime_client.delete("/api/v1/flows/hello-agent", params={"undeploy": "true"})
+    assert deleted.status_code == 204
+    assert undeploy_route.called
+    assert delete_route.called
+    assert (await runtime_client.get("/api/v1/flows/hello-agent")).status_code == 404
+
+
+@respx.mock
+async def test_delete_with_undeploy_tolerates_a_never_published_flow(
+    runtime_client: AsyncClient,
+) -> None:
+    await runtime_client.post("/api/v1/flows", json=definition())
+    # Runtime never saw this flow: undeploy 404s, delete 404s - still success.
+    respx.post(f"{RUNTIME_URL}/api/v1/definitions/hello-agent/undeploy").mock(
+        return_value=httpx.Response(404, json={"detail": "not found"})
+    )
+    respx.delete(f"{RUNTIME_URL}/api/v1/definitions/hello-agent").mock(
+        return_value=httpx.Response(404, json={"detail": "not found"})
+    )
+
+    deleted = await runtime_client.delete("/api/v1/flows/hello-agent", params={"undeploy": "true"})
+    assert deleted.status_code == 204
