@@ -8,7 +8,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { Loader2, Plus } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { api, ApiError } from "@/api/client";
 import type { ResourceGroup } from "@/api/types";
@@ -31,6 +31,19 @@ const DEFAULT_KIND: Record<ResourceGroup, ConcreteKind> = {
   model_provider: "model_provider",
   vector_db: "qdrant",
   mcp_server: "mcp_server",
+};
+
+// Concrete kinds selectable within each group (only vector_db has a choice).
+const GROUP_KINDS: Record<ResourceGroup, ConcreteKind[]> = {
+  model_provider: ["model_provider"],
+  vector_db: ["qdrant", "pgvector"],
+  mcp_server: ["mcp_server"],
+};
+
+const GROUP_TITLE: Record<ResourceGroup, string> = {
+  model_provider: "New model provider",
+  vector_db: "New knowledge base",
+  mcp_server: "New tool (MCP server)",
 };
 
 const NAME_RE = /^[a-z0-9][a-z0-9-]{1,62}$/;
@@ -109,7 +122,19 @@ export function ResourceDialog({
     retry: false,
   });
 
+  // Sync the concrete kind to the group the user picked (New model / knowledge
+  // base / tool) each time the dialog opens; useState only reads its initial
+  // value once, so without this every button showed the model-provider form.
+  useEffect(() => {
+    if (open && group) {
+      setKind(DEFAULT_KIND[group]);
+      setValues(EMPTY);
+      setError(null);
+    }
+  }, [open, group]);
+
   const set = (patch: Partial<Values>) => setValues((prev) => ({ ...prev, ...patch }));
+  const kinds = GROUP_KINDS[group ?? "model_provider"];
   const isVectorDb = kind === "qdrant" || kind === "pgvector";
   const nameOk = NAME_RE.test(values.name);
   const embeddingOk =
@@ -145,26 +170,28 @@ export function ResourceDialog({
   };
 
   return (
-    <Dialog open={open} onClose={close} title="New resource" className="max-w-md">
+    <Dialog open={open} onClose={close} title={group ? GROUP_TITLE[group] : "New resource"} className="max-w-md">
       <p className="text-[11px] leading-relaxed text-text-3">
         Created on the platform runtime — credentials are stored encrypted there and never
         kept in the builder. Flows reference the resource by name only.
       </p>
       <div className="mt-3 flex flex-col gap-3">
-        <div>
-          <Label>Type</Label>
-          <Select
-            value={kind}
-            aria-label="resource type"
-            onChange={(e) => setKind(e.target.value as ConcreteKind)}
-          >
-            {(Object.keys(KIND_LABEL) as ConcreteKind[]).map((k) => (
-              <option key={k} value={k}>
-                {KIND_LABEL[k]}
-              </option>
-            ))}
-          </Select>
-        </div>
+        {kinds.length > 1 && (
+          <div>
+            <Label>Type</Label>
+            <Select
+              value={kind}
+              aria-label="resource type"
+              onChange={(e) => setKind(e.target.value as ConcreteKind)}
+            >
+              {kinds.map((k) => (
+                <option key={k} value={k}>
+                  {KIND_LABEL[k]}
+                </option>
+              ))}
+            </Select>
+          </div>
+        )}
         <div>
           <Label hint="^[a-z0-9][a-z0-9-]{1,62}$">Name</Label>
           <Input
