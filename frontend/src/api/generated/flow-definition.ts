@@ -49,12 +49,43 @@ export type SystemPrompt = string;
 export type Id2 = string;
 export type Type2 = "llm_call";
 export type Version2 = number;
-export type Resource1 = string | null;
+/**
+ * Registry card name of a deployed A2A agent
+ */
+export type Name1 = string;
+/**
+ * A2A agents (registry card names) the model may delegate to; resolved through the registry, called through the gateway.
+ */
+export type Agents = A2AAgentRef[];
+/**
+ * Cap on tool-call turns before forcing a final answer.
+ */
+export type MaxIterations = number;
+export type Model1 = string;
+export type Prompt1 = string;
+/**
+ * ModelProvider resource
+ */
+export type Resource1 = string;
+export type SystemPrompt1 = string;
+/**
+ * McpServer resource the tool(s) live on
+ */
+export type Resource2 = string;
+/**
+ * Specific tool name; empty = every tool the server exposes
+ */
 export type Tool = string;
-export type Url = string | null;
+export type Tools = AgentToolRef[];
 export type Id3 = string;
-export type Type3 = "mcp_tool";
+export type Type3 = "agent";
 export type Version3 = number;
+export type Resource3 = string | null;
+export type Tool1 = string;
+export type Url = string | null;
+export type Id4 = string;
+export type Type4 = "mcp_tool";
+export type Version4 = number;
 export type Collection = string;
 export type Filter = {
   [k: string]: JsonValue;
@@ -64,21 +95,21 @@ export type JsonValue = unknown;
  * Similarity score threshold. Hits below it are dropped, so a filled collection can still yield zero documents — which is what makes an empty-result router branch fire. Score semantics follow the collection's distance metric (cosine: 1.0 = identical).
  */
 export type MinScore = number | null;
-export type Resource2 = string;
+export type Resource4 = string;
 export type TopK = number;
-export type Id4 = string;
-export type Type4 = "retrieval";
-export type Version4 = number;
+export type Id5 = string;
+export type Type5 = "retrieval";
+export type Version5 = number;
 /**
  * Rerank score threshold; documents scoring below it are dropped, so a reranked set can be empty (which lets an empty-result router branch fire). Score scale is the reranker's own relevance score, not the retrieval metric.
  */
 export type MinScore1 = number | null;
-export type Model1 = string;
-export type Resource3 = string;
+export type Model2 = string;
+export type Resource5 = string;
 export type TopN = number;
-export type Id5 = string;
-export type Type5 = "rerank";
-export type Version5 = number;
+export type Id6 = string;
+export type Type6 = "rerank";
+export type Version6 = number;
 export type DefaultBranch = string;
 export type InputType = "text" | "json" | "documents";
 /**
@@ -86,18 +117,24 @@ export type InputType = "text" | "json" | "documents";
  */
 export type Rules = [RouterRule, ...RouterRule[]];
 export type Branch = string;
-export type When = "not_empty" | "empty";
-export type Id6 = string;
-export type Type6 = "router";
-export type Version6 = number;
-export type Text = string;
+/**
+ * Dot path into a JSON input selecting the value under test; empty = input.
+ */
+export type Path = string;
+export type When =
+  "not_empty" | "empty" | "equals" | "not_equals" | "contains" | "gt" | "gte" | "lt" | "lte";
 export type Id7 = string;
-export type Type7 = "template";
+export type Type7 = "router";
 export type Version7 = number;
+export type Text = string;
+export type Id8 = string;
+export type Type8 = "template";
+export type Version8 = number;
 export type Nodes1 = (
   | StartNode
   | EndNode
   | LlmCallNode
+  | AgentNode
   | McpToolNode
   | RetrievalNode
   | RerankNode
@@ -192,16 +229,61 @@ export interface LlmCallNodeConfig {
   structured_output?: StructuredOutput;
   system_prompt?: SystemPrompt;
 }
-export interface McpToolNode {
-  config: McpToolNodeConfig;
+export interface AgentNode {
+  config: AgentNodeConfig;
   id: Id3;
   type: Type3;
   version: Version3;
 }
+/**
+ * LLM + tool loop (v1.1): the model calls MCP tools until it answers.
+ *
+ * The prompt's ``{vars}`` become input ports (like ``llm_call``). Each turn the
+ * model may emit tool calls (OpenAI tool-calling); the runtime runs them via
+ * MCP and feeds the results back, up to ``max_iterations``, then returns the
+ * final assistant text.
+ *
+ * ``agents`` turns the node into an orchestrator: each referenced registry
+ * agent is offered to the model as an additional tool whose description comes
+ * from the agent's card; a call is delegated over A2A through the gateway.
+ */
+export interface AgentNodeConfig {
+  agents?: Agents;
+  max_iterations?: MaxIterations;
+  model?: Model1;
+  prompt: Prompt1;
+  resource: Resource1;
+  system_prompt?: SystemPrompt1;
+  tools?: Tools;
+}
+/**
+ * One sub-agent an orchestrator may call, referenced by registry card name.
+ *
+ * Only A2A agents already registered in the platform registry can be
+ * referenced — the runtime resolves the name to the agent's gateway URL, so
+ * delegated calls stay authenticated, rate-limited, and traced. URLs never
+ * appear in definitions (they are environment-specific; names are not).
+ */
+export interface A2AAgentRef {
+  name: Name1;
+}
+/**
+ * One tool an agent may call: an MCP server resource, optionally narrowed.
+ */
+export interface AgentToolRef {
+  resource: Resource2;
+  tool?: Tool;
+}
+export interface McpToolNode {
+  config: McpToolNodeConfig;
+  id: Id4;
+  type: Type4;
+  version: Version4;
+}
 export interface McpToolNodeConfig {
   args?: Args;
-  resource?: Resource1;
-  tool: Tool;
+  resource?: Resource3;
+  tool: Tool1;
   url?: Url;
 }
 /**
@@ -212,22 +294,22 @@ export interface Args {
 }
 export interface RetrievalNode {
   config: RetrievalNodeConfig;
-  id: Id4;
-  type: Type4;
-  version: Version4;
+  id: Id5;
+  type: Type5;
+  version: Version5;
 }
 export interface RetrievalNodeConfig {
   collection: Collection;
   filter?: Filter;
   min_score?: MinScore;
-  resource: Resource2;
+  resource: Resource4;
   top_k?: TopK;
 }
 export interface RerankNode {
   config: RerankNodeConfig;
-  id: Id5;
-  type: Type5;
-  version: Version5;
+  id: Id6;
+  type: Type6;
+  version: Version6;
 }
 /**
  * Reorder retrieved documents by relevance to the query (v1.1).
@@ -240,15 +322,15 @@ export interface RerankNode {
  */
 export interface RerankNodeConfig {
   min_score?: MinScore1;
-  model?: Model1;
-  resource: Resource3;
+  model?: Model2;
+  resource: Resource5;
   top_n?: TopN;
 }
 export interface RouterNode {
   config: RouterNodeConfig;
-  id: Id6;
-  type: Type6;
-  version: Version6;
+  id: Id7;
+  type: Type7;
+  version: Version7;
 }
 /**
  * Conditional branching (v1.1): routes the input value to one branch.
@@ -264,16 +346,29 @@ export interface RouterNodeConfig {
 }
 /**
  * One branch condition, evaluated in order; first match wins.
+ *
+ * ``path`` (dot notation, JSON inputs only) selects the value under test —
+ * empty means the whole input. ``equals``/``not_equals`` compare it to
+ * ``value``; ``contains`` is substring/membership/key test; ``gt``/``gte``/
+ * ``lt``/``lte`` compare numerically. A missing path resolves to null: it
+ * matches ``empty`` and never matches a comparison.
  */
 export interface RouterRule {
   branch: Branch;
+  path?: Path;
+  /**
+   * Comparison operand; required for every condition except empty/not_empty.
+   */
+  value?: {
+    [k: string]: unknown;
+  };
   when: When;
 }
 export interface TemplateNode {
   config: TemplateNodeConfig;
-  id: Id7;
-  type: Type7;
-  version: Version7;
+  id: Id8;
+  type: Type8;
+  version: Version8;
 }
 /**
  * Static/interpolated text (v1.1): `{vars}` become input ports.

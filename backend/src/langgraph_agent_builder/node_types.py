@@ -12,6 +12,7 @@ from __future__ import annotations
 from typing import Literal
 
 from agentplane_core import (
+    AgentNodeConfig,
     EndNodeConfig,
     JsonSchema,
     LlmCallNodeConfig,
@@ -176,6 +177,50 @@ NODE_TYPES: list[NodeTypeInfo] = [
                 toggleable=True,
             ),
             "stream": FieldUI(widget="switch", label="Stream Tokens"),
+        },
+    ),
+    NodeTypeInfo(
+        type="agent",
+        version=1,
+        label="Agent",
+        icon="bot",
+        category="llm",
+        description="LLM that calls MCP tools and A2A sub-agents in a loop until it answers.",
+        config_schema=AgentNodeConfig.model_json_schema(),
+        outputs=[PortDecl(name="text", type="text", label="Text")],
+        dynamic_inputs="prompt_vars",
+        default_config={"prompt": "{message}", "max_iterations": 6},
+        ui={
+            "resource": FieldUI(
+                widget="resource",
+                label="Model Provider",
+                resource_kind="model_provider",
+            ),
+            "model": FieldUI(widget="text", label="Model", placeholder="provider default"),
+            "prompt": FieldUI(
+                widget="prompt",
+                label="Prompt",
+                help="{vars} become input ports; keep {message} to pass the message through.",
+            ),
+            "system_prompt": FieldUI(
+                widget="prompt",
+                label="System Prompt",
+                help="Behavior/instructions; {vars} become input ports here too.",
+            ),
+            "tools": FieldUI(
+                widget="json",
+                label="MCP Tools",
+                help='MCP tools to offer: [{"resource": "kb-tools"}] (all) or '
+                '{"resource": "srv", "tool": "search"} (one).',
+                advanced=True,
+            ),
+            "agents": FieldUI(
+                widget="json",
+                label="Sub-agents (A2A)",
+                help='Registered A2A agents to delegate to, by name: [{"name": "billing-agent"}].',
+                advanced=True,
+            ),
+            "max_iterations": FieldUI(widget="number", label="Max Iterations", advanced=True),
         },
     ),
     NodeTypeInfo(

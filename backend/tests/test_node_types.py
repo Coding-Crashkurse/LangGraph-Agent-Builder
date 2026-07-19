@@ -43,6 +43,20 @@ async def test_config_schemas_come_from_core_models(client: AsyncClient) -> None
     assert rerank["outputs"][0]["type"] == "documents"
     assert rerank["ui"]["resource"]["resource_kind"] == "model_provider"
 
+    agent = by_type["agent"]
+    assert set(agent["config_schema"]["properties"]) == {
+        "resource",
+        "model",
+        "prompt",
+        "system_prompt",
+        "tools",
+        "agents",
+        "max_iterations",
+    }
+    assert agent["outputs"][0]["type"] == "text"
+    assert agent["dynamic_inputs"] == "prompt_vars"
+    assert agent["ui"]["resource"]["resource_kind"] == "model_provider"
+
 
 async def test_port_rules_exported_for_client_guards(client: AsyncClient) -> None:
     body = (await client.get("/api/v1/node-types")).json()

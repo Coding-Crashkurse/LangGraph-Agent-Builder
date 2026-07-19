@@ -223,6 +223,190 @@
       }
     },
     {
+      "type": "agent",
+      "version": 1,
+      "label": "Agent",
+      "icon": "bot",
+      "category": "llm",
+      "description": "LLM that calls MCP tools and A2A sub-agents in a loop until it answers.",
+      "config_schema": {
+        "$defs": {
+          "A2aAgentRef": {
+            "additionalProperties": false,
+            "description": "One sub-agent an orchestrator may call, referenced by registry card name.\n\nOnly A2A agents already registered in the platform registry can be\nreferenced — the runtime resolves the name to the agent's gateway URL, so\ndelegated calls stay authenticated, rate-limited, and traced. URLs never\nappear in definitions (they are environment-specific; names are not).",
+            "properties": {
+              "name": {
+                "description": "Registry card name of a deployed A2A agent",
+                "pattern": "^[a-z0-9][a-z0-9-]{1,62}$",
+                "title": "Name",
+                "type": "string"
+              }
+            },
+            "required": [
+              "name"
+            ],
+            "title": "A2aAgentRef",
+            "type": "object"
+          },
+          "AgentToolRef": {
+            "additionalProperties": false,
+            "description": "One tool an agent may call: an MCP server resource, optionally narrowed.",
+            "properties": {
+              "resource": {
+                "description": "McpServer resource the tool(s) live on",
+                "pattern": "^[a-z0-9][a-z0-9-]{1,62}$",
+                "title": "Resource",
+                "type": "string"
+              },
+              "tool": {
+                "default": "",
+                "description": "Specific tool name; empty = every tool the server exposes",
+                "title": "Tool",
+                "type": "string"
+              }
+            },
+            "required": [
+              "resource"
+            ],
+            "title": "AgentToolRef",
+            "type": "object"
+          }
+        },
+        "additionalProperties": false,
+        "description": "LLM + tool loop (v1.1): the model calls MCP tools until it answers.\n\nThe prompt's ``{vars}`` become input ports (like ``llm_call``). Each turn the\nmodel may emit tool calls (OpenAI tool-calling); the runtime runs them via\nMCP and feeds the results back, up to ``max_iterations``, then returns the\nfinal assistant text.\n\n``agents`` turns the node into an orchestrator: each referenced registry\nagent is offered to the model as an additional tool whose description comes\nfrom the agent's card; a call is delegated over A2A through the gateway.",
+        "properties": {
+          "resource": {
+            "description": "ModelProvider resource",
+            "pattern": "^[a-z0-9][a-z0-9-]{1,62}$",
+            "title": "Resource",
+            "type": "string"
+          },
+          "model": {
+            "default": "",
+            "title": "Model",
+            "type": "string"
+          },
+          "prompt": {
+            "title": "Prompt",
+            "type": "string"
+          },
+          "system_prompt": {
+            "default": "",
+            "title": "System Prompt",
+            "type": "string"
+          },
+          "tools": {
+            "items": {
+              "$ref": "#/$defs/AgentToolRef"
+            },
+            "title": "Tools",
+            "type": "array"
+          },
+          "agents": {
+            "description": "A2A agents (registry card names) the model may delegate to; resolved through the registry, called through the gateway.",
+            "items": {
+              "$ref": "#/$defs/A2aAgentRef"
+            },
+            "title": "Agents",
+            "type": "array"
+          },
+          "max_iterations": {
+            "default": 6,
+            "description": "Cap on tool-call turns before forcing a final answer.",
+            "maximum": 50,
+            "minimum": 1,
+            "title": "Max Iterations",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "resource",
+          "prompt"
+        ],
+        "title": "AgentNodeConfig",
+        "type": "object"
+      },
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "text",
+          "type": "text",
+          "label": "Text"
+        }
+      ],
+      "dynamic_inputs": "prompt_vars",
+      "dynamic_outputs": null,
+      "ui": {
+        "resource": {
+          "widget": "resource",
+          "label": "Model Provider",
+          "help": "",
+          "placeholder": "",
+          "resource_kind": "model_provider",
+          "advanced": false,
+          "toggleable": false
+        },
+        "model": {
+          "widget": "text",
+          "label": "Model",
+          "help": "",
+          "placeholder": "provider default",
+          "resource_kind": null,
+          "advanced": false,
+          "toggleable": false
+        },
+        "prompt": {
+          "widget": "prompt",
+          "label": "Prompt",
+          "help": "{vars} become input ports; keep {message} to pass the message through.",
+          "placeholder": "",
+          "resource_kind": null,
+          "advanced": false,
+          "toggleable": false
+        },
+        "system_prompt": {
+          "widget": "prompt",
+          "label": "System Prompt",
+          "help": "Behavior/instructions; {vars} become input ports here too.",
+          "placeholder": "",
+          "resource_kind": null,
+          "advanced": false,
+          "toggleable": false
+        },
+        "tools": {
+          "widget": "json",
+          "label": "MCP Tools",
+          "help": "MCP tools to offer: [{\"resource\": \"kb-tools\"}] (all) or {\"resource\": \"srv\", \"tool\": \"search\"} (one).",
+          "placeholder": "",
+          "resource_kind": null,
+          "advanced": true,
+          "toggleable": false
+        },
+        "agents": {
+          "widget": "json",
+          "label": "Sub-agents (A2A)",
+          "help": "Registered A2A agents to delegate to, by name: [{\"name\": \"billing-agent\"}].",
+          "placeholder": "",
+          "resource_kind": null,
+          "advanced": true,
+          "toggleable": false
+        },
+        "max_iterations": {
+          "widget": "number",
+          "label": "Max Iterations",
+          "help": "",
+          "placeholder": "",
+          "resource_kind": null,
+          "advanced": true,
+          "toggleable": false
+        }
+      },
+      "default_config": {
+        "prompt": "{message}",
+        "max_iterations": 6
+      }
+    },
+    {
       "type": "mcp_tool",
       "version": 1,
       "label": "MCP Tool",
@@ -335,14 +519,22 @@
       "description": "If/else branching: routes the input value to the first matching branch.",
       "config_schema": {
         "$defs": {
+          "JsonValue": {},
           "RouterRule": {
             "additionalProperties": false,
-            "description": "One branch condition, evaluated in order; first match wins.",
+            "description": "One branch condition, evaluated in order; first match wins.\n\n``path`` (dot notation, JSON inputs only) selects the value under test —\nempty means the whole input. ``equals``/``not_equals`` compare it to\n``value``; ``contains`` is substring/membership/key test; ``gt``/``gte``/\n``lt``/``lte`` compare numerically. A missing path resolves to null: it\nmatches ``empty`` and never matches a comparison.",
             "properties": {
               "when": {
                 "enum": [
                   "not_empty",
-                  "empty"
+                  "empty",
+                  "equals",
+                  "not_equals",
+                  "contains",
+                  "gt",
+                  "gte",
+                  "lt",
+                  "lte"
                 ],
                 "title": "When",
                 "type": "string"
@@ -351,6 +543,17 @@
                 "pattern": "^[a-z][a-z0-9_]*$",
                 "title": "Branch",
                 "type": "string"
+              },
+              "path": {
+                "default": "",
+                "description": "Dot path into a JSON input selecting the value under test; empty = input.",
+                "title": "Path",
+                "type": "string"
+              },
+              "value": {
+                "$ref": "#/$defs/JsonValue",
+                "default": null,
+                "description": "Comparison operand; required for every condition except empty/not_empty."
               }
             },
             "required": [
